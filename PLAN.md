@@ -101,6 +101,8 @@ without producing any snapshot bytes yet.
 
 * HTTP client (`nbsnap.http.client`) library choice locked in
   `docs/implementation/01-http-client.md` (RES-01), `requests>=2.31,<3`.
+  Runtime model is sync v1 per `docs/implementation/02-runtime.md`
+  (RES-02), with a documented async-swap trigger.
 * HTTP client (`nbsnap.http.client`) with:
   * Token-from-env auth (mirroring `nb2kea`).
   * Configurable timeout (default 30s; per-endpoint overrides).
@@ -287,7 +289,8 @@ the core tool.
 **Scope.**
 
 * Extension discovery via Python entry-points
-  (`nbsnap.plugin` group).
+  (`nbsnap.plugin` group). See `docs/implementation/02-runtime.md`
+  (RES-02) for the async-swap trigger that gates parallel reads.
 * Per-plugin registration shape (see
   `docs/frictions/09-plugin-objects.md`).
 * GraphQL evaluator: benchmark vs REST for the export's read passes.
