@@ -1,0 +1,47 @@
+# Build manifest for nbsnap.
+#
+# Python 3.11 floor reasons:
+#   * tomllib in the standard library (no third-party TOML parsing
+#     dep needed when we eventually read snapshot manifests).
+#   * PEP 695 type aliases for cleaner public schema annotations.
+#   * Exception groups for the planned multi-error import roll-up.
+#
+# Runtime dependencies stay empty here on purpose. RES-01 picks the
+# HTTP client and lands it in [project].dependencies in that ticket.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nbsnap"
+version = "0.0.1"
+description = "Portable, API-only snapshot tool for moving the NetBox network model between isolated NetBox installations."
+requires-python = ">=3.11"
+license = "BSD-3-Clause"
+# The `readme` field is added by INFRA-01c once README.md exists.
+# Hatchling refuses to build if `readme` points at a missing file.
+authors = [{name = "Louie", email = "louie@louie.se"}]
+maintainers = [{name = "Louie", email = "louie@louie.se"}]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+]
+
+[project.scripts]
+nbsnap = "nbsnap.cli:main"
+
+# Plugin extension entry point. Reserved for FEAT-31, the public
+# plugin discovery API. Left intentionally empty until that ticket
+# lands so existing entry-point scans see a valid (empty) group.
+[project.entry-points."nbsnap.plugin"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nbsnap"]
