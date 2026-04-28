@@ -103,3 +103,17 @@ module = "tests.*"
 disallow_untyped_defs = false
 check_untyped_defs = false
 
+# ---------------------------------------------------------------------------
+# Pytest configuration
+# ---------------------------------------------------------------------------
+# `pythonpath = ["src"]` lets tests import `nbsnap` without requiring
+# an editable install on every dev box. CI still runs the install
+# step so the published wheel layout is exercised somewhere.
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --strict-config"
+pythonpath = ["src"]
+testpaths = ["tests"]
+xfail_strict = true
+
+
