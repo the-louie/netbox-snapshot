@@ -45,3 +45,61 @@ nbsnap = "nbsnap.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nbsnap"]
+
+# Optional dependency group for contributors. Installed via:
+#     pip install -e ".[dev]"
+# CI re-uses the same group so the local and remote toolchains stay
+# in lockstep.
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "pre-commit>=3.7",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff configuration
+# ---------------------------------------------------------------------------
+# Style baseline. 100 columns leaves room for the deeply nested call
+# chains a NetBox traversal naturally produces without forcing too
+# many line breaks that hurt readability.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Curated rule set:
+#   E, F, W   pycodestyle + pyflakes baseline
+#   I         import sorting (replaces isort)
+#   B         bugbear, catches mutable-default-arg and similar traps
+#   UP        pyupgrade, keeps syntax current with the 3.11 floor
+#   ARG       unused-arguments, useful in a class-heavy code base
+#   SIM       simplify, suggests cleaner control-flow rewrites
+select = ["E", "F", "W", "I", "B", "UP", "ARG", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# Mypy configuration
+# ---------------------------------------------------------------------------
+# Strict typing inside src/nbsnap is non-negotiable; the dependency
+# graph between modules is large enough that a missed Optional will
+# bite at runtime. Tests are allowed to be looser because pytest
+# fixtures often have no meaningful return type.
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+warn_unused_ignores = true
+files = ["src/nbsnap"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+# Allow tests to omit return annotations and use untyped fixtures.
+disallow_untyped_defs = false
+check_untyped_defs = false
+
