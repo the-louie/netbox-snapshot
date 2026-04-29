@@ -37,8 +37,8 @@ def test_no_arguments_returns_one(capsys: pytest.CaptureFixture[str]) -> None:
 @pytest.mark.parametrize(
     "command",
     sorted(
-        set(TICKETS.keys()) - {"plan", "verify-natkeys", "export"}
-    ),  # implemented by FEAT-07a / FEAT-10b / FEAT-17a
+        set(TICKETS.keys()) - {"plan", "verify-natkeys", "export", "import"}
+    ),  # implemented by FEAT-07a / FEAT-10b / FEAT-17a / FEAT-25a
 )
 def test_stub_subcommand_reports_ticket(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     """Each stub sub-command exits 2 and names its tracking ticket."""

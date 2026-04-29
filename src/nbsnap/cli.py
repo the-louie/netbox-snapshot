@@ -115,6 +115,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
             add_export_args(sub)
             sub.set_defaults(func=run_export_cli)
+        elif name == "import":
+            from nbsnap.import_cli import add_import_args, run_import_cli
+
+            add_import_args(sub)
+            sub.set_defaults(func=run_import_cli)
         else:
             sub.set_defaults(func=_stub(name))
 
