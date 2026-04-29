@@ -22,9 +22,15 @@ The library underneath is `requests`, locked by RES-01
 
 from __future__ import annotations
 
+import email.utils
 import logging
 import os
+import time
+import warnings
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any, Literal
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -44,6 +50,62 @@ logger = logging.getLogger(__name__)
 # retry envelope; declared here so the constructor has the default
 # value for its kwarg.
 DEFAULT_BACKOFF: tuple[float, ...] = (0.5, 1.5, 3.0)
+
+# Page-shrink cascade for FEAT-01f. When a paginated GET times out
+# at the current page size, the client halves the limit (clamped to
+# the next entry in this list) and retries. Floor is 25, below that
+# the problem is not page size, it is the server.
+SHRINK_LADDER: tuple[int, ...] = (500, 200, 50, 25)
+
+
+# Module-level "warning already fired" sentinel for the TLS-off
+# message. Suppressing urllib3's per-request InsecureRequestWarning
+# is done exactly once at import time when the operator first asks
+# for an insecure session, so log volume stays sane.
+_TLS_WARNING_SUPPRESSED = False
+
+
+def _suppress_insecure_request_warning() -> None:
+    """Silence urllib3's per-request `InsecureRequestWarning`, once."""
+    global _TLS_WARNING_SUPPRESSED
+    if _TLS_WARNING_SUPPRESSED:
+        return
+    try:
+        from urllib3.exceptions import InsecureRequestWarning
+
+        warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+    except ImportError:  # pragma: no cover, urllib3 always ships with requests
+        return
+    _TLS_WARNING_SUPPRESSED = True
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Convert a `Retry-After` header into seconds-to-sleep.
+
+    Two RFC forms are supported, per friction-10 Q9 burndown:
+    integer seconds (`Retry-After: 5`) and HTTP-date
+    (`Retry-After: Wed, 21 Oct 2026 07:28:00 GMT`). Anything else
+    returns `None` so the caller falls back to the backoff schedule.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    # Integer seconds first, that's the common case.
+    try:
+        return max(0.0, float(stripped))
+    except ValueError:
+        pass
+    # HTTP-date, anchor to "now in UTC" so the subtraction is sane.
+    try:
+        target = email.utils.parsedate_to_datetime(stripped)
+    except (TypeError, ValueError):
+        return None
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    return max(0.0, (target - now).total_seconds())
 
 
 class NetboxHTTPError(RuntimeError):
@@ -109,9 +171,10 @@ class NetboxHTTP:
         if not verify_tls:
             # The local self-signed source endpoint needs this. We
             # log once at construction time so the operator sees the
-            # posture; suppression of urllib3's per-request warning
-            # lives in FEAT-01e.
+            # posture, and silence urllib3's per-request warning so
+            # the operator's terminal does not turn into noise.
             logger.warning("TLS verification disabled for %s", base_url)
+            _suppress_insecure_request_warning()
 
         # Dependency-injection seam, tests pass a mock Session so the
         # transport tests do not require a live socket.
@@ -220,31 +283,105 @@ class NetboxHTTP:
         if self._is_source and method.upper() not in READ_ONLY_VERBS:
             raise SourceWriteForbidden(method.upper(), self._base_url)
 
-    def _request(self, method: str, path: str, *, json: Any = None) -> Any:
-        """Run a single request, return parsed JSON or `None` on 204.
+    def _send(
+        self, method: str, url: str, *, json: Any = None, timeout: float | None = None
+    ) -> requests.Response:
+        """Single send through the session, no retries.
 
-        Retries are layered on top in FEAT-01d; this method stays
-        the single transport seam.
+        Kept separate from `_request` so the retry envelope wraps a
+        thin atomic call.
         """
-        self._enforce_readonly(method)
-        url = self._build_url(path)
         headers = self._headers()
         if json is not None:
             headers["Content-Type"] = "application/json"
-
-        response = self._session.request(
+        return self._session.request(
             method.upper(),
             url,
             headers=headers,
             json=json,
-            timeout=self._timeout,
+            timeout=timeout if timeout is not None else self._timeout,
             verify=self._verify_tls,
         )
-        if response.status_code >= 400:
-            raise NetboxHTTPError(method.upper(), url, response.status_code, response.text)
-        if response.status_code == 204 or not response.content:
-            return None
-        return response.json()
+
+    def _backoff_for(self, attempt_index: int) -> float:
+        """Return the backoff delay for the Nth retry, clamped to the schedule."""
+        if not self._backoff:
+            return 0.0
+        idx = min(attempt_index, len(self._backoff) - 1)
+        return self._backoff[idx]
+
+    def _request(self, method: str, path: str, *, json: Any = None) -> Any:
+        """Run a request with the friction-10 retry envelope.
+
+        Retry rules, mirroring `nb2kea`:
+
+        * Retry on a connection-level failure (no status), HTTP 429,
+          or HTTP 5xx.
+        * Honour `Retry-After` when the server sets it (integer or
+          HTTP-date forms).
+        * Exponential backoff `(0.5, 1.5, 3.0)`, reuse the last entry
+          if `max_retries` exceeds the schedule length.
+        * Cap at `max_retries` total retries. The original attempt
+          plus N retries means at most `1 + N` calls.
+        * No retry on 4xx other than 429.
+        """
+        self._enforce_readonly(method)
+        url = self._build_url(path)
+
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = self._send(method, url, json=json)
+            except (
+                requests.ConnectionError,
+                requests.Timeout,
+            ) as exc:
+                last_exc = exc
+                if attempt >= self._max_retries:
+                    break
+                wait = self._backoff_for(attempt)
+                logger.warning(
+                    "%s %s connection error %s, retrying in %.1fs",
+                    method.upper(),
+                    url,
+                    type(exc).__name__,
+                    wait,
+                )
+                time.sleep(wait)
+                continue
+
+            if response.status_code == 429:
+                if attempt >= self._max_retries:
+                    raise NetboxHTTPError(method.upper(), url, 429, response.text)
+                parsed = _parse_retry_after(response.headers.get("Retry-After"))
+                wait = parsed if parsed is not None else self._backoff_for(attempt)
+                logger.warning("%s %s -> 429, retrying in %.1fs", method.upper(), url, wait)
+                time.sleep(wait)
+                continue
+
+            if 500 <= response.status_code < 600:
+                if attempt >= self._max_retries:
+                    raise NetboxHTTPError(method.upper(), url, response.status_code, response.text)
+                wait = self._backoff_for(attempt)
+                logger.warning(
+                    "%s %s -> %d, retrying in %.1fs",
+                    method.upper(),
+                    url,
+                    response.status_code,
+                    wait,
+                )
+                time.sleep(wait)
+                continue
+
+            if response.status_code >= 400:
+                raise NetboxHTTPError(method.upper(), url, response.status_code, response.text)
+            if response.status_code == 204 or not response.content:
+                return None
+            return response.json()
+
+        # Exhausted retries with a connection-level exception.
+        assert last_exc is not None
+        raise last_exc
 
     # ------------------------------------------------------------------
     # Public verb wrappers
@@ -261,11 +398,115 @@ class NetboxHTTP:
         """Issue a PATCH, return parsed JSON or None."""
         return self._request("PATCH", path, json=body)
 
-    def get_all(self, path: str) -> Any:  # noqa: ARG002
-        """Iterate every page of a list endpoint.
+    def _append_limit(self, path: str, limit: int) -> str:
+        """Add `limit=<n>` to the query string, idempotent on existing limit."""
+        split = urlsplit(self._build_url(path))
+        existing = split.query
+        # Strip any prior `limit=`. We rebuild instead of `replace`
+        # because `replace` would happily mangle `?limit=500&other=...`.
+        kept = "&".join(
+            piece for piece in existing.split("&") if piece and not piece.startswith("limit=")
+        )
+        query = urlencode({"limit": limit})
+        if kept:
+            query = f"{kept}&{query}"
+        return urlunsplit((split.scheme, split.netloc, split.path, query, split.fragment))
 
-        Pagination is implemented in FEAT-01c, so this raises until
-        that ticket lands.
+    def _shrink_step(self, current: int) -> int | None:
+        """Return the next-smaller page size or None at the floor."""
+        for ladder_value in SHRINK_LADDER:
+            if ladder_value < current:
+                return ladder_value
+        return None
+
+    def get_all(self, path: str) -> Iterator[dict[str, Any]]:
+        """Iterate every page of a NetBox list endpoint.
+
+        Follows the `next` link returned by NetBox (friction-10 M2
+        forbids `?limit=0`; we walk pages defensively even when the
+        first response looks complete).
+
+        On a connection timeout, halves the page size and retries
+        until either success or the SHRINK_LADDER floor. The shrunk
+        size is cached on the instance so the rest of the run uses
+        the discovered upper bound.
         """
-        msg = "get_all is implemented in FEAT-01c"
-        raise NotImplementedError(msg)
+        self._enforce_readonly("GET")
+        url: str | None = self._append_limit(path, self._page_size)
+        expected_total: int | None = None
+        running_total = 0
+
+        while url is not None:
+            payload = self._get_with_shrink(url)
+            if expected_total is None:
+                expected_total = payload.get("count")
+
+            for row in payload.get("results") or []:
+                running_total += 1
+                yield row
+
+            next_url = payload.get("next")
+            url = next_url if isinstance(next_url, str) else None
+
+        if expected_total is not None and running_total != expected_total:
+            logger.warning(
+                "pagination count mismatch on %s: server reported %d, yielded %d",
+                path,
+                expected_total,
+                running_total,
+            )
+
+    def _get_with_shrink(self, url: str) -> dict[str, Any]:
+        """Single page GET with the FEAT-01f shrink ladder applied."""
+        current_limit = self._page_size
+        while True:
+            try:
+                response = self._send("GET", url)
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                next_limit = self._shrink_step(current_limit)
+                if next_limit is None:
+                    raise
+                logger.warning(
+                    "timeout at limit=%d on %s, shrinking to limit=%d (%s)",
+                    current_limit,
+                    url,
+                    next_limit,
+                    type(exc).__name__,
+                )
+                # Each shrink counts as a retry against the budget.
+                # The retry envelope on `_request` does not apply
+                # here because pagination has its own loop.
+                url = self._append_limit(url, next_limit)
+                current_limit = next_limit
+                self._page_size = next_limit  # cache for the rest of the run
+                continue
+
+            if response.status_code >= 400:
+                raise NetboxHTTPError("GET", url, response.status_code, response.text)
+            data = response.json()
+            assert isinstance(data, dict)
+            return data
+
+    def get_all_with_progress(self, path: str) -> Iterator[tuple[int, int, dict[str, Any]]]:
+        """Variant of `get_all` that yields `(index, total, row)` triples.
+
+        Lets callers show "page 12 of 47" style progress without doing
+        a separate count pass against the server. The total is `None`
+        until the first page arrives, so the first row reports the
+        total alongside it.
+        """
+        index = 0
+        total = 0
+        first_page = True
+        url: str | None = self._append_limit(path, self._page_size)
+
+        while url is not None:
+            payload = self._get_with_shrink(url)
+            if first_page:
+                total = int(payload.get("count") or 0)
+                first_page = False
+            for row in payload.get("results") or []:
+                index += 1
+                yield index, total, row
+            next_url = payload.get("next")
+            url = next_url if isinstance(next_url, str) else None

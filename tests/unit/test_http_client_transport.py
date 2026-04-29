@@ -90,12 +90,16 @@ def test_auth_header_set_on_every_request() -> None:
     assert kwargs["headers"]["Content-Type"] == "application/json"
 
 
-def test_get_all_still_raises_until_pagination_lands() -> None:
-    """`get_all` is documented as FEAT-01c, raises until that ticket."""
+def test_get_all_returns_an_iterator() -> None:
+    """`get_all` is implemented in FEAT-01c, returns an iterator."""
+
+    from collections.abc import Iterator
 
     client = NetboxHTTP("https://dest.example/", "tok")
-    with pytest.raises(NotImplementedError):
-        client.get_all("dcim/devices/")
+    result = client.get_all("dcim/devices/")
+    # An iterator is fine for the type check, full behaviour tests
+    # live in test_http_client_pagination.py.
+    assert isinstance(result, Iterator)
 
 
 def test_source_post_raises_before_socket(monkeypatch: pytest.MonkeyPatch) -> None:
