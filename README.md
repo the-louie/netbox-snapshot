@@ -96,6 +96,10 @@ pip install -e ".[dev]"
 pre-commit install        # ruff and formatting hooks at commit time
 ```
 
+The `.venv` is gitignored. `requests` and `responses` (test mocking)
+are pulled in by the editable install. CI uses the same install
+step so the local and remote toolchains stay in lockstep.
+
 CI runs the same `ruff check .`, `ruff format --check .`, and
 `mypy src/` commands locally available from the `dev` group. See
 [`TODO.md`](TODO.md) `INFRA-04*` for the CI workflow and

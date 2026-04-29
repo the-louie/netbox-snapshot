@@ -78,8 +78,9 @@ dev = [
 line-length = 100
 target-version = "py311"
 # __reference/ holds the read-only nb2kea prior-art project. Linting
-# someone else's code is noise, exclude the whole subtree.
-exclude = ["__reference"]
+# someone else's code is noise, exclude the whole subtree. .venv is
+# the dev sandbox, also off-limits.
+exclude = ["__reference", ".venv", "venv"]
 
 [tool.ruff.lint]
 # Curated rule set:

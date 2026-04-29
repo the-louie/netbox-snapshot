@@ -1,0 +1,47 @@
+# Secrets — never commit
+.env
+.env.*
+*.token
+.netrc
+
+# Claude Code working state (per-user, not project state)
+.claude/.credentials.json
+.claude/history.jsonl
+.claude/sessions/
+.claude/cache/
+.claude/paste-cache/
+.claude/projects/
+.claude/shell-snapshots/
+.claude/session-env/
+.claude/tasks/
+.claude/backups/
+.claude/file-history/
+.claude/.last-cleanup
+.claude/mcp-needs-auth-cache.json
+
+# Snapshot outputs (the tool's deliverable)
+/snapshot/
+/snapshot-*/
+*.jsonl.progress
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Project-local virtual environment used during development.
+.venv/
+venv/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
