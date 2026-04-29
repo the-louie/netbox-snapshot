@@ -104,7 +104,12 @@ def _build_parser() -> argparse.ArgumentParser:
             from nbsnap.plan_cli import add_plan_args, run_plan
 
             add_plan_args(sub)
-            sub.set_defaults(func=lambda args: run_plan(args))
+            sub.set_defaults(func=run_plan)
+        elif name == "verify-natkeys":
+            from nbsnap.natkey.verify import add_verify_natkeys_args, run_verify_natkeys
+
+            add_verify_natkeys_args(sub)
+            sub.set_defaults(func=run_verify_natkeys)
         else:
             sub.set_defaults(func=_stub(name))
 

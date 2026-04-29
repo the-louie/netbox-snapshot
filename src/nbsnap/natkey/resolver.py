@@ -1,0 +1,171 @@
+"""Natural-key resolvers (FEAT-09a/b/c).
+
+A *resolver* takes one record (the dict NetBox returned) plus the
+NK registry and returns a "natural-key tuple". The tuple is the
+form persisted in the snapshot file: an importer can re-look-up
+the destination's local id from the same tuple.
+
+Three strategies are wired:
+
+* `resolve_slug`: read a single field, surface it as a one-element
+  tuple. Used by Sites, Roles, Tags.
+* `resolve_composite`: read every field in `NKSpec.fields`. For
+  parent FK fields, recurse into the parent's record so the
+  parent's natural key replaces the FK id.
+* `resolve_polymorphic_set`: build an unordered set of
+  `(content_type, NK)` pairs. Used by Cable terminations.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from nbsnap.natkey.model import NKField, NKRegistry, NKSpec, Strategy
+
+# A `NaturalKey` is a tuple of primitives that uniquely identifies
+# one record. The empty tuple is the marker for "this content type
+# uses a polymorphic NK and resolve_polymorphic_set should be used".
+NaturalKey = tuple[Any, ...]
+
+
+def resolve(
+    registry: NKRegistry,
+    content_type: str,
+    record: Mapping[str, Any],
+    parent_lookup: Mapping[tuple[str, int], Mapping[str, Any]] | None = None,
+) -> NaturalKey:
+    """Dispatch to the strategy-specific resolver.
+
+    `parent_lookup` is an optional map `(content_type, id) -> record`
+    that the composite resolver consults when recursing into a
+    parent FK. The exporter builds this map once per content type;
+    the importer does not need it because it works the other way.
+    """
+
+    spec = registry.get(content_type)
+    if spec.strategy is Strategy.SLUG:
+        return resolve_slug(spec, record)
+    if spec.strategy is Strategy.COMPOSITE:
+        return resolve_composite(registry, spec, record, parent_lookup)
+    return resolve_polymorphic_set(spec, record, registry)
+
+
+def resolve_slug(spec: NKSpec, record: Mapping[str, Any]) -> NaturalKey:
+    """Single-field NK. Read the field, wrap in a tuple."""
+
+    if len(spec.fields) != 1:
+        msg = f"slug NK for {spec.content_type} must have exactly one field"
+        raise ValueError(msg)
+    field_name = spec.fields[0].name
+    value = record.get(field_name)
+    if value in (None, ""):
+        msg = (
+            f"slug NK field {field_name!r} is empty on a "
+            f"{spec.content_type} record"
+        )
+        raise ValueError(msg)
+    return (value,)
+
+
+def resolve_composite(
+    registry: NKRegistry,
+    spec: NKSpec,
+    record: Mapping[str, Any],
+    parent_lookup: Mapping[tuple[str, int], Mapping[str, Any]] | None,
+) -> NaturalKey:
+    """Composite NK. Read each field; recurse for parent FK fields."""
+
+    parts: list[Any] = []
+    for field in spec.fields:
+        value = record.get(field.name)
+        if field.parent_content_type is not None:
+            parts.append(
+                _resolve_parent(field, value, registry, parent_lookup)
+            )
+        else:
+            parts.append(value)
+    return tuple(parts)
+
+
+def _resolve_parent(
+    field: NKField,
+    raw: Any,
+    registry: NKRegistry,
+    parent_lookup: Mapping[tuple[str, int], Mapping[str, Any]] | None,
+) -> Any:
+    """Recurse into a parent FK to substitute its NK for the FK id."""
+
+    # NetBox 4.x serialises a FK as either a `{"id": int, ...}` dict
+    # (nested representation) or as a bare int (brief representation).
+    # We support both shapes so the same resolver works against
+    # different views of the API.
+    if isinstance(raw, Mapping):
+        parent_id = raw.get("id")
+        # The nested representation already carries enough fields
+        # for resolution if its NKSpec is shallow.
+        if not isinstance(parent_id, int):
+            return raw
+        # Prefer the parent_lookup map when supplied so we get the
+        # full record, not just the brief.
+        if parent_lookup is not None and field.parent_content_type is not None:
+            lookup_key = (field.parent_content_type, parent_id)
+            parent_record = parent_lookup.get(lookup_key)
+            if parent_record is not None:
+                return resolve(
+                    registry,
+                    field.parent_content_type,
+                    parent_record,
+                    parent_lookup,
+                )
+        # Fall back: resolve the nested representation itself.
+        if field.parent_content_type is None:
+            return raw
+        return resolve(registry, field.parent_content_type, raw, parent_lookup)
+    if isinstance(raw, int) and field.parent_content_type is not None:
+        if parent_lookup is None:
+            msg = (
+                f"cannot resolve {field.parent_content_type} id {raw} "
+                "without a parent_lookup map"
+            )
+            raise ValueError(msg)
+        lookup_key = (field.parent_content_type, raw)
+        parent_record = parent_lookup.get(lookup_key)
+        if parent_record is None:
+            msg = (
+                f"parent_lookup is missing {field.parent_content_type} "
+                f"id {raw}"
+            )
+            raise ValueError(msg)
+        return resolve(registry, field.parent_content_type, parent_record, parent_lookup)
+    return raw
+
+
+def resolve_polymorphic_set(
+    spec: NKSpec,
+    record: Mapping[str, Any],
+    _registry: NKRegistry,
+) -> NaturalKey:
+    """Cable-style NK: unordered set of `(content_type, NK)` pairs.
+
+    NetBox 4.x cables expose `a_terminations` and `b_terminations`
+    as lists of `{object_type, object_id}` dicts. We surface them
+    as a *sorted* tuple so the NK is stable across runs.
+    """
+
+    if spec.content_type != "dcim.cable":  # pragma: no cover, defensive
+        msg = f"polymorphic_set strategy not supported for {spec.content_type}"
+        raise ValueError(msg)
+    a = tuple(_termination_tuple(t) for t in record.get("a_terminations") or [])
+    b = tuple(_termination_tuple(t) for t in record.get("b_terminations") or [])
+    # The cable's two ends are interchangeable, so we sort each side
+    # then sort the pair so swapping a and b produces the same NK.
+    sides = tuple(sorted([tuple(sorted(a)), tuple(sorted(b))]))
+    return sides
+
+
+def _termination_tuple(termination: Mapping[str, Any]) -> tuple[str, Any]:
+    return (
+        str(termination.get("object_type") or ""),
+        termination.get("object_id"),
+    )

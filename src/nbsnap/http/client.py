@@ -399,8 +399,17 @@ class NetboxHTTP:
         return self._request("PATCH", path, json=body)
 
     def _append_limit(self, path: str, limit: int) -> str:
-        """Add `limit=<n>` to the query string, idempotent on existing limit."""
-        split = urlsplit(self._build_url(path))
+        """Add `limit=<n>` to the query string, idempotent on existing limit.
+
+        Handles two input shapes:
+          * a relative API path (`dcim/devices/`), wrapped through
+            `_build_url` to an absolute URL first.
+          * an already-absolute URL (the shrink loop hands the same
+            URL back in for the smaller limit), which we accept
+            without re-wrapping.
+        """
+        absolute = path if path.startswith("http") else self._build_url(path)
+        split = urlsplit(absolute)
         existing = split.query
         # Strip any prior `limit=`. We rebuild instead of `replace`
         # because `replace` would happily mangle `?limit=500&other=...`.
