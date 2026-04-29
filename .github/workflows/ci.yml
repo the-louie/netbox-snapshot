@@ -1,0 +1,144 @@
+# Continuous integration for nbsnap.
+#
+# Three jobs:
+#   lint        ruff check, ruff format --check, mypy strict
+#   unit        pytest tests/unit on a Python 3.11 + 3.12 matrix
+#   integration pytest tests/integration against a netbox-docker stack
+#
+# The integration job is gated on `draft == false` because the
+# netbox-docker stack is heavy. CI minutes are not free.
+
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  push:
+    branches: [main]
+
+# Cancel any in-flight runs on the same branch when a new push lands.
+# This avoids paying for outdated runs while a developer is iterating.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+
+      # Each lint step runs separately so a failure in one is
+      # visible without re-reading a single combined log block.
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Mypy strict
+        run: mypy src/
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      # `fail-fast: false` lets us see whether a failure is shared
+      # across Python versions or specific to one.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and dev deps
+        run: pip install -e ".[dev]"
+
+      - name: Pytest unit
+        run: pytest tests/unit -q --strict-markers --strict-config --junitxml=junit-${{ matrix.python-version }}.xml
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.python-version }}
+          path: junit-${{ matrix.python-version }}.xml
+
+  integration:
+    # Skip draft PRs, the netbox-docker stack is expensive to spin up.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The integration stack lives at tests/fixtures/source/docker-compose.yml,
+      # landed by INFRA-03a. Until that ticket ships, the job degrades
+      # to a no-op so a PR for an earlier ticket does not see a red X
+      # blocking review.
+      - name: Check for integration fixtures
+        id: fixtures
+        run: |
+          if [ -f tests/fixtures/source/docker-compose.yml ]; then
+            echo "have_fixtures=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_fixtures=false" >> "$GITHUB_OUTPUT"
+            echo "Integration fixtures not yet present, skipping the heavy steps."
+          fi
+
+      - name: Set up Python 3.11
+        if: steps.fixtures.outputs.have_fixtures == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # buildx with a GHA cache scope keeps NetBox image pulls fast
+      # across CI runs. The scope is shared across the workflow.
+      - name: Set up Docker Buildx
+        if: steps.fixtures.outputs.have_fixtures == 'true'
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+
+      - name: Install package and dev deps
+        if: steps.fixtures.outputs.have_fixtures == 'true'
+        run: pip install -e ".[dev]"
+
+      # zstd smoke step lands per RES-03 so an absent codec fails
+      # the integration job at the cheapest possible point.
+      - name: zstd smoke
+        if: steps.fixtures.outputs.have_fixtures == 'true'
+        run: zstd --version
+
+      - name: Bring NetBox test stacks up and seed them
+        if: steps.fixtures.outputs.have_fixtures == 'true'
+        run: make stack-up stack-wait stack-seed
+
+      - name: Pytest integration
+        if: steps.fixtures.outputs.have_fixtures == 'true'
+        run: pytest tests/integration -q --strict-markers
+
+      # Always tear down so a failed integration run does not leak
+      # NetBox containers on the runner.
+      - name: Tear down NetBox test stacks
+        if: always() && steps.fixtures.outputs.have_fixtures == 'true'
+        run: make stack-down
