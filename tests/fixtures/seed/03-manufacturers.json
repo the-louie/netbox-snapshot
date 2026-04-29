@@ -1,0 +1,6 @@
+[
+  {
+    "endpoint": "dcim/manufacturers/",
+    "payload": {"name": "Cisco", "slug": "cisco"}
+  }
+]

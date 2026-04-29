@@ -1,0 +1,18 @@
+[
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "172.16.1.10/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["d39a", "Vlan600"]]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "172.16.1.11/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["d39b", "Vlan600"]]}
+    }
+  }
+]

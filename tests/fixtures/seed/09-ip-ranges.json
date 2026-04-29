@@ -1,0 +1,9 @@
+[
+  {
+    "endpoint": "ipam/ip-ranges/",
+    "payload": {
+      "start_address": "172.16.1.100/24",
+      "end_address": "172.16.1.254/24"
+    }
+  }
+]

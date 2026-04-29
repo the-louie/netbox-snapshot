@@ -1,0 +1,10 @@
+[
+  {
+    "endpoint": "dcim/locations/",
+    "payload": {
+      "name": "The Forge",
+      "slug": "the-forge",
+      "site": {"_resolve": ["dcim.site", "hall-d"]}
+    }
+  }
+]

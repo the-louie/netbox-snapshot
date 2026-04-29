@@ -1,0 +1,6 @@
+[
+  {
+    "endpoint": "ipam/vlans/",
+    "payload": {"vid": 600, "name": "MGMT"}
+  }
+]

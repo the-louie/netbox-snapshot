@@ -1,0 +1,6 @@
+[
+  {
+    "endpoint": "dcim/device-roles/",
+    "payload": {"name": "Access Switch", "slug": "access_switch", "color": "1f6feb"}
+  }
+]

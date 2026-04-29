@@ -1,0 +1,11 @@
+[
+  {
+    "endpoint": "dcim/device-types/",
+    "payload": {
+      "manufacturer": {"_resolve": ["dcim.manufacturer", "cisco"]},
+      "model": "WS-C2950T-24",
+      "slug": "ws-c2950t-24",
+      "u_height": 1
+    }
+  }
+]

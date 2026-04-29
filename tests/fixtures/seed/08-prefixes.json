@@ -1,0 +1,9 @@
+[
+  {
+    "endpoint": "ipam/prefixes/",
+    "payload": {
+      "prefix": "172.16.1.0/24",
+      "vlan": {"_resolve": ["ipam.vlan", 600]}
+    }
+  }
+]

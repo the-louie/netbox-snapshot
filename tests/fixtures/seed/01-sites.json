@@ -1,0 +1,6 @@
+[
+  {
+    "endpoint": "dcim/sites/",
+    "payload": {"name": "Hall D", "slug": "hall-d"}
+  }
+]

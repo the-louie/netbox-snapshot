@@ -1,0 +1,24 @@
+[
+  {
+    "endpoint": "dcim/devices/",
+    "payload": {
+      "name": "d39a",
+      "role": {"_resolve": ["dcim.devicerole", "access_switch"]},
+      "device_type": {"_resolve": ["dcim.devicetype", "ws-c2950t-24"]},
+      "site": {"_resolve": ["dcim.site", "hall-d"]},
+      "location": {"_resolve": ["dcim.location", "the-forge"]},
+      "status": "active"
+    }
+  },
+  {
+    "endpoint": "dcim/devices/",
+    "payload": {
+      "name": "d39b",
+      "role": {"_resolve": ["dcim.devicerole", "access_switch"]},
+      "device_type": {"_resolve": ["dcim.devicetype", "ws-c2950t-24"]},
+      "site": {"_resolve": ["dcim.site", "hall-d"]},
+      "location": {"_resolve": ["dcim.location", "the-forge"]},
+      "status": "active"
+    }
+  }
+]

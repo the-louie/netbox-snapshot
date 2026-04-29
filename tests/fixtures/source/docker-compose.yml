@@ -1,0 +1,73 @@
+# NetBox test instance, "source" side of the round-trip pair.
+#
+# Ports:
+#   * NetBox HTTP on host port 8080.
+#
+# Volumes are suffixed -source so this compose can run side by side
+# with tests/fixtures/dest/docker-compose.yml without name collisions.
+#
+# Image tag is pinned via the NETBOX_DOCKER_TAG variable so a bump
+# is a single line change reviewed in a dedicated PR. The current
+# pin matches the production source NetBox version on file as
+# 4.6.x; the implementer confirms a match before flipping the tag.
+
+services:
+  netbox:
+    image: netboxcommunity/netbox:${NETBOX_DOCKER_TAG:-v4.6-3.4.1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    env_file:
+      - env/netbox.env
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "http://localhost:8080/api/status/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: netbox
+    volumes:
+      - netbox-postgres-data-source:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netbox -d netbox"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass netbox
+    volumes:
+      - netbox-redis-data-source:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "netbox", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis-cache:
+    image: redis:7-alpine
+    command: redis-server --requirepass netbox
+    volumes:
+      - netbox-redis-cache-data-source:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "netbox", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  netbox-postgres-data-source:
+  netbox-redis-data-source:
+  netbox-redis-cache-data-source:

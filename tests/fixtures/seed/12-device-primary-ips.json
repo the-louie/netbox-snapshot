@@ -1,0 +1,16 @@
+[
+  {
+    "endpoint": "dcim/devices/d39a/",
+    "method": "PATCH",
+    "payload": {
+      "primary_ip4": {"_resolve": ["ipam.ipaddress", "172.16.1.10/24"]}
+    }
+  },
+  {
+    "endpoint": "dcim/devices/d39b/",
+    "method": "PATCH",
+    "payload": {
+      "primary_ip4": {"_resolve": ["ipam.ipaddress", "172.16.1.11/24"]}
+    }
+  }
+]

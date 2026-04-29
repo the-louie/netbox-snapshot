@@ -1,0 +1,20 @@
+[
+  {
+    "endpoint": "dcim/cables/",
+    "payload": {
+      "a_terminations": [
+        {
+          "object_type": "dcim.interface",
+          "object_id": {"_resolve": ["dcim.interface", ["d39a", "Gi0/2"]]}
+        }
+      ],
+      "b_terminations": [
+        {
+          "object_type": "dcim.interface",
+          "object_id": {"_resolve": ["dcim.interface", ["d39b", "Gi0/2"]]}
+        }
+      ],
+      "status": "connected"
+    }
+  }
+]
