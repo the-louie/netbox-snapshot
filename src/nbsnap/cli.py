@@ -110,6 +110,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
             add_verify_natkeys_args(sub)
             sub.set_defaults(func=run_verify_natkeys)
+        elif name == "export":
+            from nbsnap.export_cli import add_export_args, run_export_cli
+
+            add_export_args(sub)
+            sub.set_defaults(func=run_export_cli)
         else:
             sub.set_defaults(func=_stub(name))
 
