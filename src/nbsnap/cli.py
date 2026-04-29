@@ -100,7 +100,13 @@ def _build_parser() -> argparse.ArgumentParser:
     # owning FEAT- tickets.
     for name in TICKETS:
         sub = subparsers.add_parser(name, help=f"{name} a NetBox snapshot")
-        sub.set_defaults(func=_stub(name))
+        if name == "plan":
+            from nbsnap.plan_cli import add_plan_args, run_plan
+
+            add_plan_args(sub)
+            sub.set_defaults(func=lambda args: run_plan(args))
+        else:
+            sub.set_defaults(func=_stub(name))
 
     return parser
 
