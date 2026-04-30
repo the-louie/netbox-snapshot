@@ -40,23 +40,34 @@ def test_iterable_over_triples() -> None:
     assert triples == [("dcim", "device", 1), ("ipam", "vlan", 2)]
 
 
-def test_fetch_prefers_first_endpoint_then_falls_back() -> None:
-    """If the first endpoint 404s the cache tries the second."""
+def test_fetch_prefers_modern_endpoint_first() -> None:
+    """NetBox 4.1+ install: `core/object-types/` is the first probe."""
+
+    http = MagicMock()
+    http.get_all.return_value = iter(
+        [{"app_label": "dcim", "model": "device", "id": 17}]
+    )
+
+    cache = ContentTypeCache.fetch(http)
+    assert cache.endpoint_used == "core/object-types/"
+    assert cache.id_for("dcim", "device") == 17
+
+
+def test_fetch_falls_back_through_legacy_paths() -> None:
+    """Old NetBox 3.x install: `core/object-types/` 404s, the cache
+    falls through `extras/object-types/` to `extras/content-types/`.
+    """
 
     from nbsnap.http.client import NetboxHTTPError
 
     http = MagicMock()
 
     def fake_get_all(endpoint: str):
-        if endpoint == "extras/content-types/":
+        if endpoint != "extras/content-types/":
             raise NetboxHTTPError("GET", endpoint, 404, "not found")
-        return iter(
-            [
-                {"app_label": "dcim", "model": "device", "id": 17},
-            ]
-        )
+        return iter([{"app_label": "dcim", "model": "device", "id": 17}])
 
     http.get_all.side_effect = fake_get_all
     cache = ContentTypeCache.fetch(http)
-    assert cache.endpoint_used == "extras/object-types/"
+    assert cache.endpoint_used == "extras/content-types/"
     assert cache.id_for("dcim", "device") == 17

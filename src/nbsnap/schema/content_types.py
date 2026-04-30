@@ -20,11 +20,21 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nbsnap.http.client import NetboxHTTP
 
-# Two endpoints, probed in this order. NetBox 4.6 supports both, the
-# older `content-types` is the deprecated alias.
+# NetBox renamed and relocated this concept twice in the 3.x -> 4.x
+# transition:
+#   * 3.x and 4.0:  extras/content-types/
+#   * 4.0:          extras/object-types/   (rename, same app)
+#   * 4.1+:         core/object-types/     (relocation to the core app)
+#
+# We probe newest first so a modern install short-circuits the
+# scan. Each path is tried exactly once, the first 200 wins and is
+# cached on the instance as `endpoint_used`. Confirmed against a
+# production NetBox 4.6.2 install where only `core/object-types/`
+# responds.
 _CONTENT_TYPE_ENDPOINTS: tuple[str, ...] = (
-    "extras/content-types/",
+    "core/object-types/",
     "extras/object-types/",
+    "extras/content-types/",
 )
 
 
