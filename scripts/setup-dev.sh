@@ -92,13 +92,35 @@ fi
 # install into the system Python.
 VENV_PY="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
+
+# Detect a broken venv up front, the most common cause is a venv
+# created against a Python that lives at a path no longer present
+# (a moved interpreter, a venv copied from another host, or a venv
+# carried across a container/host boundary). If the venv's own
+# Python cannot run, the only correct move is to recreate it.
+if ! "$VENV_PY" -c "import sys" >/dev/null 2>&1; then
+    warn "venv interpreter at $VENV_PY is broken (often from a moved or container-shared venv)"
+    say  "recreating venv from scratch"
+    rm -rf "$VENV_DIR"
+    "$PY" -m venv "$VENV_DIR"
+fi
+
 if [ ! -x "$VENV_PY" ]; then
-    die "venv interpreter missing at $VENV_PY; remove $VENV_DIR and re-run"
+    die "venv interpreter missing at $VENV_PY after recreate; investigate"
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3, install / update dependencies when pyproject.toml changed
+# Step 3, decide whether to (re)install dependencies
 # ---------------------------------------------------------------------------
+#
+# Two independent signals drive the decision:
+#
+#   1. pyproject.toml hash vs the stamp file (what we last installed).
+#   2. `import nbsnap` actually working in the venv right now.
+#
+# Either signal flipping forces a reinstall. Trusting only the hash
+# leaves the script vulnerable to stale `.venv` directories whose
+# stamp survived a botched install or a cross-host copy.
 
 current_hash="$(sha256sum pyproject.toml | awk '{print $1}')"
 stored_hash=""
@@ -106,14 +128,32 @@ if [ -f "$STAMP_FILE" ]; then
     stored_hash="$(cat "$STAMP_FILE")"
 fi
 
+# Live import check, runs in the venv. Captures the verdict in a
+# variable so the log line below can explain itself.
+if "$VENV_PY" -c "import nbsnap" >/dev/null 2>&1; then
+    nbsnap_importable=1
+else
+    nbsnap_importable=0
+fi
+
 if [ "$current_hash" != "$stored_hash" ]; then
-    say "pyproject.toml changed (or first install); refreshing dependencies"
+    reason="pyproject.toml changed (or first install)"
+    need_install=1
+elif [ "$nbsnap_importable" -eq 0 ]; then
+    reason="nbsnap is not importable from the venv (stale stamp or partial install)"
+    need_install=1
+else
+    need_install=0
+fi
+
+if [ "$need_install" -eq 1 ]; then
+    say "$reason; refreshing dependencies"
     "$VENV_PIP" install --quiet --upgrade pip
     "$VENV_PIP" install --quiet -e ".[dev]"
     echo "$current_hash" > "$STAMP_FILE"
     say "dependencies are up to date"
 else
-    say "pyproject.toml hash matches last install, no-op"
+    say "pyproject.toml hash matches and nbsnap imports cleanly, no-op"
 fi
 
 # ---------------------------------------------------------------------------
@@ -134,7 +174,9 @@ fi
 # ---------------------------------------------------------------------------
 
 say "verifying the editable install imports cleanly"
-"$VENV_PY" -c "import nbsnap; print(f'nbsnap {nbsnap.__version__} importable from venv')"
+if ! "$VENV_PY" -c "import nbsnap; print(f'nbsnap {nbsnap.__version__} importable from venv')"; then
+    die "post-install smoke check failed; remove $VENV_DIR and re-run for a clean rebuild"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 6, next-steps summary
