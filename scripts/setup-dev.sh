@@ -89,20 +89,41 @@ else
 fi
 
 # Use the venv's interpreter from here on so we never accidentally
-# install into the system Python.
+# install into the system Python. We deliberately invoke pip via
+# `python -m pip` rather than the `.venv/bin/pip` wrapper script,
+# the wrapper carries an absolute shebang line that breaks the
+# moment the venv is relocated (a venv created at /workspace inside
+# a container, then accessed on the host where /workspace does not
+# exist, is the canonical case).
 VENV_PY="$VENV_DIR/bin/python"
-VENV_PIP="$VENV_DIR/bin/pip"
 
-# Detect a broken venv up front, the most common cause is a venv
-# created against a Python that lives at a path no longer present
-# (a moved interpreter, a venv copied from another host, or a venv
-# carried across a container/host boundary). If the venv's own
-# Python cannot run, the only correct move is to recreate it.
-if ! "$VENV_PY" -c "import sys" >/dev/null 2>&1; then
-    warn "venv interpreter at $VENV_PY is broken (often from a moved or container-shared venv)"
+# Detect a broken venv up front. Three failure modes share the
+# same fix (recreate):
+#   1. The Python symlink target was removed (`python -c "import sys"` fails).
+#   2. The venv was created at a different absolute path and the
+#      pip wrapper's shebang now points nowhere ("python -m pip"
+#      fails because the bootstrap fails).
+#   3. The bin directory was partly deleted.
+# All three are unrecoverable without a recreate, so we do that
+# rather than asking the operator to.
+venv_broken=0
+if [ ! -x "$VENV_PY" ]; then
+    venv_broken=1
+elif ! "$VENV_PY" -c "import sys" >/dev/null 2>&1; then
+    venv_broken=1
+elif ! "$VENV_PY" -m pip --version >/dev/null 2>&1; then
+    venv_broken=1
+fi
+
+if [ "$venv_broken" -eq 1 ]; then
+    warn "venv at $VENV_DIR is broken (interpreter or pip cannot run)"
+    warn "common cause: the venv was created at a different absolute path"
+    warn "             (e.g. inside a container) and the bin/ shebangs no longer resolve"
     say  "recreating venv from scratch"
     rm -rf "$VENV_DIR"
     "$PY" -m venv "$VENV_DIR"
+    # Stamp file lives inside .venv so it is gone too; the next
+    # block will run a full install.
 fi
 
 if [ ! -x "$VENV_PY" ]; then
@@ -148,8 +169,8 @@ fi
 
 if [ "$need_install" -eq 1 ]; then
     say "$reason; refreshing dependencies"
-    "$VENV_PIP" install --quiet --upgrade pip
-    "$VENV_PIP" install --quiet -e ".[dev]"
+    "$VENV_PY" -m pip install --quiet --upgrade pip
+    "$VENV_PY" -m pip install --quiet -e ".[dev]"
     echo "$current_hash" > "$STAMP_FILE"
     say "dependencies are up to date"
 else
@@ -161,7 +182,10 @@ fi
 # ---------------------------------------------------------------------------
 
 if [ -d .git ] && [ ! -f .git/hooks/pre-commit.installed-by-nbsnap-setup ]; then
-    if "$VENV_DIR/bin/pre-commit" install >/dev/null 2>&1; then
+    # Invoke via `python -m pre_commit` so the shebang of
+    # .venv/bin/pre-commit (which can be broken on a relocated venv)
+    # does not bite us here.
+    if "$VENV_PY" -m pre_commit install >/dev/null 2>&1; then
         touch .git/hooks/pre-commit.installed-by-nbsnap-setup
         say "pre-commit hooks installed"
     else
