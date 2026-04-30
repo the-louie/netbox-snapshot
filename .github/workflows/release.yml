@@ -1,0 +1,57 @@
+# PyPI release workflow (REL-01a/b).
+#
+# Triggered manually via workflow_dispatch with the version tag.
+# Builds the sdist + wheel, signs them with sigstore, and publishes
+# to PyPI. The sigstore signing step uses GitHub's OIDC token so
+# no per-release secrets are kept in the repo.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tooling
+        run: pip install build hatchling
+
+      - name: Run release self-tests (security checklist)
+        run: |
+          pip install -e ".[dev]"
+          pytest tests/unit/test_guard_helper.py
+          pytest tests/unit/test_http_client_is_source.py
+
+      - name: Build sdist and wheel
+        run: python -m build --sdist --wheel
+
+      # REL-01b, Sigstore signing keyed off GitHub's OIDC token.
+      - name: Sign with Sigstore
+        uses: sigstore/gh-action-sigstore-python@v3.0.0
+        with:
+          inputs: |
+            dist/*.tar.gz
+            dist/*.whl
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
