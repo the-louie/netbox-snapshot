@@ -21,11 +21,12 @@ DEST_COMPOSE   := docker compose -f tests/fixtures/dest/docker-compose.yml   --p
 SOURCE_TOKEN ?= 0123456789abcdef0123456789abcdef01234567
 DEST_TOKEN   ?= abcdef0123456789abcdef0123456789abcdef01
 
-.PHONY: help stack-up stack-down stack-wait stack-seed stack-status \
+.PHONY: help setup stack-up stack-down stack-wait stack-seed stack-status \
         lint test test-unit test-integration
 
 help:
 	@printf 'nbsnap make targets\n'
+	@printf '  setup         idempotent venv + dev install via scripts/setup-dev.sh\n'
 	@printf '  stack-up      bring both NetBox test stacks up, detached\n'
 	@printf '  stack-down    tear both stacks down, including volumes\n'
 	@printf '  stack-wait    poll /api/status/ on both, fail after 90s\n'
@@ -35,6 +36,9 @@ help:
 	@printf '  test-unit     pytest tests/unit\n'
 	@printf '  test-integration  pytest tests/integration (stacks must be up)\n'
 	@printf '  test          unit + integration\n'
+
+setup:
+	./scripts/setup-dev.sh
 
 stack-up:
 	$(SOURCE_COMPOSE) up -d

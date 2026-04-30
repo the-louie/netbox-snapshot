@@ -87,11 +87,27 @@ verification on.
 
 ## Development
 
-Set up the dev tool-chain in a virtual environment:
+The fastest path: run the idempotent setup script. It verifies a
+Python 3.11+ interpreter, creates `.venv`, installs nbsnap editable
+plus the dev extras whenever `pyproject.toml` has changed, and
+installs the pre-commit hooks the first time:
 
 ```bash
-python -m venv .venv
+./scripts/setup-dev.sh
 source .venv/bin/activate
+```
+
+The script re-runs cheaply, a second invocation is a no-op when
+nothing has changed in `pyproject.toml`. The hash stamp lives at
+`.venv/.nbsnap-pyproject.sha256` so a CI-style "always run setup"
+costs nothing on the happy path.
+
+Manual equivalent if you prefer to see every step:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -e ".[dev]"
 pre-commit install        # ruff and formatting hooks at commit time
 ```
@@ -99,6 +115,25 @@ pre-commit install        # ruff and formatting hooks at commit time
 The `.venv` is gitignored. `requests` and `responses` (test mocking)
 are pulled in by the editable install. CI uses the same install
 step so the local and remote toolchains stay in lockstep.
+
+### Running the test suite
+
+```bash
+pytest tests/unit -q                  # fast, no docker needed
+make stack-up stack-wait stack-seed   # spin up the two NetBox stacks
+pytest tests/integration -q           # integration suite
+make stack-down                       # teardown
+```
+
+End-to-end round-trip against the test stacks:
+
+```bash
+nbsnap verify \
+    --source-url http://localhost:8080 \
+    --source-token 0123456789abcdef0123456789abcdef01234567 \
+    --dest-url http://localhost:8081 \
+    --dest-token abcdef0123456789abcdef0123456789abcdef01
+```
 
 CI runs the same `ruff check .`, `ruff format --check .`, and
 `mypy src/` commands locally available from the `dev` group. See
