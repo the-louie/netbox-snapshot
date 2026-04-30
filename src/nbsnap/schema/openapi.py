@@ -296,10 +296,52 @@ class OpenAPI:
         return None
 
     def _inline_or_ref(self, schema: dict[str, Any]) -> dict[str, Any]:
-        """Resolve a one-level `$ref`; return inline schemas untouched."""
-        ref = schema.get("$ref") if isinstance(schema, dict) else None
+        """Resolve a schema reference into its inline form.
+
+        Handles three cases that NetBox's OpenAPI surface uses:
+
+        1. A direct ``$ref`` to a component schema. The reference is
+           resolved and the target schema is returned.
+        2. A ``oneOf`` wrapper that lists alternatives (NetBox 4.6+
+           uses this for endpoints that accept either a single record
+           or an array of records for bulk POST/PATCH). We pick the
+           **single-record** branch (the one whose target is an
+           object), recurse into it so any inner ``$ref`` is also
+           resolved.
+        3. A plain inline schema. Returned untouched.
+
+        Without the oneOf handler, the v4.6 allowlist computation
+        returns the empty set for every model, which silently strips
+        every field from every snapshot row.
+        """
+        if not isinstance(schema, dict):
+            return schema
+
+        ref = schema.get("$ref")
         if isinstance(ref, str):
-            return self._resolve_ref(ref)
+            return self._inline_or_ref(self._resolve_ref(ref))
+
+        one_of = schema.get("oneOf")
+        if isinstance(one_of, list) and one_of:
+            for alternative in one_of:
+                if not isinstance(alternative, dict):
+                    continue
+                # Skip the array wrapper, that is the bulk variant.
+                # We want the per-record schema.
+                if alternative.get("type") == "array":
+                    continue
+                resolved = self._inline_or_ref(alternative)
+                # The resolved branch should look like an object
+                # schema with a `properties` dict; if it does not,
+                # fall through to the next alternative.
+                if isinstance(resolved, dict) and (
+                    resolved.get("type") == "object" or "properties" in resolved
+                ):
+                    return resolved
+            # No good alternative found; resolve the first item as
+            # a best effort so the caller does not lose information.
+            return self._inline_or_ref(one_of[0])
+
         return schema
 
     def _field_schema(self, parent: dict[str, Any], field_name: str) -> dict[str, Any] | None:

@@ -97,3 +97,78 @@ def test_post_and_patch_allowlists_are_separate() -> None:
     openapi = OpenAPI(_device_schema())
     assert openapi.post_allowlist("dcim.device") == frozenset({"name", "site", "role"})
     assert openapi.patch_allowlist("dcim.device") == frozenset({"name", "site"})
+
+
+def _netbox_4_6_style_oneof_schema() -> dict:
+    """A schema fragment mimicking NetBox 4.6's oneOf request bodies.
+
+    NetBox 4.6 wraps every write endpoint's request body in
+    `oneOf: [<single>, <array>]` to express the bulk-write
+    alternative. The allowlist computation must reach the single
+    branch through the array wrapper without losing fields.
+    """
+
+    return {
+        "components": {
+            "schemas": {
+                "WritableDeviceRequest": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "custom_fields": {"type": "object"},
+                        "primary_ip4": {"type": "integer"},
+                    },
+                }
+            }
+        },
+        "paths": {
+            "/api/dcim/devices/": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"id": {}, "name": {}}}
+                                }
+                            }
+                        }
+                    }
+                },
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "oneOf": [
+                                        {"$ref": "#/components/schemas/WritableDeviceRequest"},
+                                        {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/WritableDeviceRequest"
+                                            },
+                                        },
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        },
+    }
+
+
+def test_oneof_wrapper_resolves_to_single_record_branch() -> None:
+    """NetBox 4.6's oneOf wrapper around request bodies must not eat the schema.
+
+    Regression test for the v4.6 critical bug: without oneOf
+    handling, the allowlist comes back empty and every field is
+    silently stripped from every snapshot row.
+    """
+
+    openapi = OpenAPI(_netbox_4_6_style_oneof_schema())
+    allowlist = openapi.post_allowlist("dcim.device")
+    assert "name" in allowlist
+    assert "custom_fields" in allowlist
+    assert "primary_ip4" in allowlist
