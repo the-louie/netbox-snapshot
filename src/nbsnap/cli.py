@@ -120,6 +120,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
             add_import_args(sub)
             sub.set_defaults(func=run_import_cli)
+        elif name == "diff":
+            from nbsnap.verify.diff import add_diff_args, run_diff
+
+            add_diff_args(sub)
+            sub.set_defaults(func=run_diff)
+        elif name == "verify":
+            from nbsnap.verify.roundtrip import add_verify_args, run_verify
+
+            add_verify_args(sub)
+            sub.set_defaults(func=run_verify)
         else:
             sub.set_defaults(func=_stub(name))
 
