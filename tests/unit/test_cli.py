@@ -34,13 +34,25 @@ def test_no_arguments_returns_one(capsys: pytest.CaptureFixture[str]) -> None:
     assert "usage:" in captured.err.lower()
 
 
-@pytest.mark.parametrize(
-    "command",
-    sorted(
-        set(TICKETS.keys())
-        - {"plan", "verify-natkeys", "export", "import", "diff", "verify"}
-    ),  # implemented by FEAT-07a/-10b/-17a/-25a/-26b/-27b
+_REMAINING_STUBS = sorted(
+    set(TICKETS.keys())
+    - {
+        "plan",
+        "verify-natkeys",
+        "export",
+        "import",
+        "diff",
+        "verify",
+        "pack",
+        "unpack",
+    }
 )
+
+
+@pytest.mark.skipif(
+    not _REMAINING_STUBS, reason="all sub-commands implemented; no stubs remain"
+)
+@pytest.mark.parametrize("command", _REMAINING_STUBS or ["__none__"])
 def test_stub_subcommand_reports_ticket(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     """Each stub sub-command exits 2 and names its tracking ticket."""
 

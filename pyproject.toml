@@ -39,6 +39,7 @@ classifiers = [
 # pulls in the urllib3 v2 series so the retry adapter has the modern API.
 dependencies = [
     "requests>=2.31,<3",
+    "zstandard>=0.22",
 ]
 
 [project.scripts]

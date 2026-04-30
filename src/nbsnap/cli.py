@@ -130,6 +130,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
             add_verify_args(sub)
             sub.set_defaults(func=run_verify)
+        elif name == "pack":
+            from nbsnap.pack import add_pack_args, run_pack
+
+            add_pack_args(sub)
+            sub.set_defaults(func=run_pack)
+        elif name == "unpack":
+            from nbsnap.pack import add_unpack_args, run_unpack
+
+            add_unpack_args(sub)
+            sub.set_defaults(func=run_unpack)
         else:
             sub.set_defaults(func=_stub(name))
 
