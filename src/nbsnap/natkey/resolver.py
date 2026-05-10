@@ -74,7 +74,17 @@ def resolve_composite(
     record: Mapping[str, Any],
     parent_lookup: Mapping[tuple[str, int], Mapping[str, Any]] | None,
 ) -> NaturalKey:
-    """Composite NK. Read each field; recurse for parent FK fields."""
+    """Composite NK. Read each field; recurse for parent FK fields.
+
+    Polymorphic pair handling: NetBox stores generic FKs as paired
+    fields, `<prefix>_object_type` (the content type) and
+    `<prefix>_object_id` (the id on that content type). When the
+    NKSpec includes the `_id` half (e.g. ipam.ipaddress NK uses
+    assigned_object_id) the raw int alone is not portable across
+    NetBox installs; we substitute the target's natural key by
+    consulting the `_type` sibling and the nested
+    `<prefix>_object` representation if available.
+    """
 
     parts: list[Any] = []
     for field in spec.fields:
@@ -83,9 +93,59 @@ def resolve_composite(
             parts.append(
                 _resolve_parent(field, value, registry, parent_lookup)
             )
+        elif _looks_like_polymorphic_id(field.name, record):
+            parts.append(_resolve_polymorphic_id_in_nk(field.name, record, registry, parent_lookup))
         else:
             parts.append(value)
     return tuple(parts)
+
+
+def _looks_like_polymorphic_id(field_name: str, record: Mapping[str, Any]) -> bool:
+    """True iff `field_name` is `<prefix>_object_id` and a matching
+    `<prefix>_object_type` field exists on the record carrying a
+    content-type string.
+    """
+    if not field_name.endswith("_object_id"):
+        return False
+    type_field = field_name[: -len("_id")] + "_type"
+    return isinstance(record.get(type_field), str) and "." in record.get(type_field, "")
+
+
+def _resolve_polymorphic_id_in_nk(
+    field_name: str,
+    record: Mapping[str, Any],
+    registry: NKRegistry,
+    parent_lookup: Mapping[tuple[str, int], Mapping[str, Any]] | None,
+) -> Any:
+    """Compute the NK of a polymorphic FK target from the
+    `<prefix>_object` nested representation, the `<prefix>_object_type`
+    name, and the bare id.
+
+    Returns the NK tuple of the target record, or the bare id when
+    the target's content type has no NKSpec or its record is not
+    accessible.
+    """
+    prefix = field_name[: -len("_id")]  # `<prefix>_object`
+    type_field = prefix + "_type"
+    nested_field = prefix  # `<prefix>_object`
+    target_ct = record.get(type_field)
+    if not isinstance(target_ct, str) or not registry.has(target_ct):
+        return record.get(field_name)
+    nested = record.get(nested_field)
+    if isinstance(nested, Mapping):
+        try:
+            return resolve(registry, target_ct, nested, parent_lookup=parent_lookup)
+        except (KeyError, ValueError):
+            pass
+    bare_id = record.get(field_name)
+    if isinstance(bare_id, int) and parent_lookup is not None:
+        full = parent_lookup.get((target_ct, bare_id))
+        if full is not None:
+            try:
+                return resolve(registry, target_ct, full, parent_lookup=parent_lookup)
+            except (KeyError, ValueError):
+                pass
+    return bare_id
 
 
 def _resolve_parent(
@@ -165,7 +225,16 @@ def resolve_polymorphic_set(
 
 
 def _termination_tuple(termination: Mapping[str, Any]) -> tuple[str, Any]:
-    return (
-        str(termination.get("object_type") or ""),
-        termination.get("object_id"),
-    )
+    """Read one cable termination shape into a (type, id-or-nk) tuple.
+
+    NetBox's raw response shape is `{object_type, object_id, object}`
+    where the id is an integer. After the export-side FK rewriter
+    runs, the id is replaced by `object_natural_key` carrying the
+    target's NK tuple. We accept both shapes so NK computation
+    works whether the resolver is called before the rewrite
+    (raw record) or after (rewritten body).
+    """
+    object_type = str(termination.get("object_type") or "")
+    if "object_natural_key" in termination:
+        return (object_type, termination["object_natural_key"])
+    return (object_type, termination.get("object_id"))
