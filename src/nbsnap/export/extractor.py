@@ -134,11 +134,17 @@ def _rewrite_fks(
         # Category 3a: paired generic FK, the id half.
         paired_type = paired.get(field_name)
         if paired_type is not None:
+            # NetBox includes a sibling field with the nested
+            # representation: for `assigned_object_id` look at
+            # `assigned_object`, for `<prefix>_object_id` look at
+            # `<prefix>_object`. Use the nested dict directly so
+            # we do not depend on parent_lookup ordering.
+            nested = _paired_nested_value(body, field_name)
             try:
-                rewritten[field_name] = rewrite_simple_fk(
-                    value, paired_type, registry, parent_lookup
+                rewritten[field_name] = _rewrite_with_fallback(
+                    value, nested, paired_type, registry, parent_lookup
                 )
-            except KeyError as exc:
+            except (KeyError, ValueError) as exc:
                 _warn_dropped(content_type, field_name, paired_type, exc)
             continue
 
@@ -170,7 +176,7 @@ def _rewrite_fks(
                 rewritten[field_name] = rewrite_m2m(
                     value, spec.fk_target, registry, parent_lookup
                 )
-            except KeyError as exc:
+            except (KeyError, ValueError) as exc:
                 _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
 
@@ -179,9 +185,43 @@ def _rewrite_fks(
             rewritten[field_name] = rewrite_simple_fk(
                 value, spec.fk_target, registry, parent_lookup
             )
-        except KeyError as exc:
+        except (KeyError, ValueError) as exc:
             _warn_dropped(content_type, field_name, spec.fk_target, exc)
     return rewritten
+
+
+def _paired_nested_value(body: Mapping[str, Any], id_field: str) -> Mapping[str, Any] | None:
+    """Return the sibling nested-record field for `<prefix>_object_id`.
+
+    For `assigned_object_id` look up `assigned_object`. NetBox 4.x
+    includes both shapes in the GET response: the bare id pair and
+    the full nested representation. Using the nested representation
+    avoids depending on parent_lookup being populated for the
+    target content type, which matters when the parent type comes
+    later in the topo order.
+    """
+
+    if not id_field.endswith("_id"):
+        return None
+    base = id_field[: -len("_id")]
+    nested = body.get(base)
+    return nested if isinstance(nested, Mapping) else None
+
+
+def _rewrite_with_fallback(
+    value: Any,
+    nested: Mapping[str, Any] | None,
+    target_ct: str,
+    registry: NKRegistry,
+    parent_lookup: ParentLookup,
+) -> Any:
+    """Try the nested dict first (no parent_lookup dependency), then
+    fall back to the bare-id path.
+    """
+
+    if nested is not None:
+        return rewrite_simple_fk(nested, target_ct, registry, parent_lookup)
+    return rewrite_simple_fk(value, target_ct, registry, parent_lookup)
 
 
 # Module-level sentinel so the "we already warned about this" check
@@ -191,7 +231,7 @@ _WARNED_UNREGISTERED: set[tuple[str, str, str]] = set()
 
 
 def _warn_dropped(
-    content_type: str, field_name: str, fk_target: str, exc: KeyError
+    content_type: str, field_name: str, fk_target: str, exc: Exception
 ) -> None:
     """Log once per (ct, field, target) triple and drop the FK field."""
 
@@ -218,11 +258,11 @@ def _safe_polymorphic_item(
     content_type: str,
     field_name: str,
 ) -> dict[str, Any] | None:
-    """Run rewrite_polymorphic, drop the item (warn) on KeyError."""
+    """Run rewrite_polymorphic, drop the item (warn) on a soft error."""
 
     try:
         return rewrite_polymorphic(item, registry, parent_lookup)
-    except KeyError as exc:
+    except (KeyError, ValueError) as exc:
         target = str(item.get("object_type") or "?")
         _warn_dropped(content_type, field_name, target, exc)
         return None

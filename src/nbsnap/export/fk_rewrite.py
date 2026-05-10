@@ -82,6 +82,12 @@ def rewrite_polymorphic(
     Returns a `{object_type, object_natural_key}` dict so the
     importer can do the inverse lookup against the destination's
     NK index.
+
+    When the input carries a nested `object` field (NetBox 4.x
+    cable terminations and similar shapes include the full record
+    inline next to the id and type), we prefer it over the bare id
+    path so the resolver does not depend on parent_lookup being
+    populated for the target content type.
     """
     if value is None:
         return None
@@ -91,5 +97,9 @@ def rewrite_polymorphic(
     object_id = value.get("object_id")
     if not isinstance(object_type, str) or not isinstance(object_id, int):
         return None
-    nk = rewrite_simple_fk(object_id, object_type, registry, parent_lookup)
+    nested = value.get("object")
+    if isinstance(nested, Mapping):
+        nk = rewrite_simple_fk(nested, object_type, registry, parent_lookup)
+    else:
+        nk = rewrite_simple_fk(object_id, object_type, registry, parent_lookup)
     return {"object_type": object_type, "object_natural_key": nk}
