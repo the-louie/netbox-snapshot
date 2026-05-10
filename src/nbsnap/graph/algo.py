@@ -137,15 +137,18 @@ def pick_deferred_edges(graph: Graph, scc: list[Node]) -> list[Edge]:
     requiring human input.
     """
     if len(scc) <= 1:
-        # Self-loop on a single node is the simple cycle case. We
-        # still defer the self-edge so the planner runs cleanly.
+        # Self-loop on a single node. Defer *every* eligible
+        # self-edge, not just the first; NetBox models often have
+        # more than one self-edge (IPAddress has `nat_inside` and
+        # `nat_outside`, Prefix has `parent`, etc.) and leaving any
+        # of them behind would re-introduce the cycle the size-1
+        # SCC was supposed to break.
         deferred: list[Edge] = []
         for node in scc:
             for edge in graph.out_edges(node):
                 if Node(edge.parent) in scc and (edge.nullable or edge.is_m2m):
                     deferred.append(edge)
-                    return deferred
-        return []
+        return deferred
 
     candidates: list[Edge] = []
     scc_set = set(scc)
@@ -206,13 +209,27 @@ def topological_order(graph: Graph, deferred: list[Edge]) -> list[str]:
 
 
 def plan(graph: Graph) -> Plan:
-    """End-to-end planning, detect SCCs, defer cycle-closers, sort."""
+    """End-to-end planning, detect SCCs, defer cycle-closers, sort.
+
+    The Tarjan pass + per-SCC deferred-edge selection handles every
+    "well-shaped" cycle: a clean back-edge per SCC member. NetBox
+    has a few asymmetric cases (a node with two self-edges,
+    overlapping cycles across SCC boundaries when scope is narrow)
+    where one defer-pass leaves residual cycles.
+
+    To make the planner robust against those edge cases we wrap the
+    final topological sort in a defer-and-retry loop: any
+    `CycleError` from the sort surfaces the offending node tuple,
+    we then add the first eligible back-edge between those nodes
+    to the deferred list and retry. The loop has a hard cap so a
+    truly broken graph fails loudly instead of hanging.
+    """
+
+    from graphlib import CycleError
 
     sccs = strongly_connected_components(graph)
     deferred: list[Edge] = []
     for scc in sccs:
-        # Trivial SCC of size 1 with no self-loop never needs a
-        # deferred edge.
         if len(scc) == 1:
             node = scc[0]
             self_loop = any(Node(e.parent) == node for e in graph.out_edges(node))
@@ -220,5 +237,41 @@ def plan(graph: Graph) -> Plan:
                 continue
         deferred.extend(pick_deferred_edges(graph, scc))
 
-    order = topological_order(graph, deferred)
-    return Plan(order=order, deferred=deferred)
+    # Defer-and-retry safety net. A NetBox graph has under a hundred
+    # cycles even at the largest scope, so a cap of 50 retries is
+    # generous; in practice this loop fires at most once or twice.
+    for _attempt in range(50):
+        try:
+            order = topological_order(graph, deferred)
+            return Plan(order=order, deferred=deferred)
+        except CycleError as exc:
+            cycle_nodes = [str(n) for n in exc.args[1] if isinstance(n, str)]
+            extra = _pick_one_back_edge_in_cycle(graph, cycle_nodes, deferred)
+            if extra is None:
+                # No nullable/m2m edge available to break; surface
+                # the error so the operator sees it.
+                raise
+            deferred.append(extra)
+
+    # 50 retries without convergence means something is deeply
+    # wrong; let the last CycleError propagate.
+    return Plan(order=topological_order(graph, deferred), deferred=deferred)
+
+
+def _pick_one_back_edge_in_cycle(
+    graph: Graph, cycle_nodes: list[str], already_deferred: list[Edge]
+) -> Edge | None:
+    """Find a nullable/m2m edge between any pair of nodes in the cycle."""
+
+    deferred_keys = {(e.child, e.parent, e.field) for e in already_deferred}
+    cycle_set = set(cycle_nodes)
+    for node_name in sorted(cycle_set):
+        for edge in graph.out_edges(Node(node_name)):
+            if edge.parent not in cycle_set:
+                continue
+            key = (edge.child, edge.parent, edge.field)
+            if key in deferred_keys:
+                continue
+            if edge.nullable or edge.is_m2m:
+                return edge
+    return None
