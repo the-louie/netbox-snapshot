@@ -40,6 +40,7 @@ CURATED_ENDPOINT_CONTENT_TYPES: dict[str, str] = {
     "dcim/rear-ports/": "dcim.rearport",
     "dcim/console-ports/": "dcim.consoleport",
     "dcim/console-server-ports/": "dcim.consoleserverport",
+    "ipam/prefixes/": "ipam.prefix",
     "ipam/ip-addresses/": "ipam.ipaddress",
     "ipam/ip-ranges/": "ipam.iprange",
     "ipam/asn-ranges/": "ipam.asnrange",
@@ -79,20 +80,36 @@ class FieldSpec:
 
 
 def _singularise(plural: str) -> str:
-    """Crude English-plural-to-singular.
+    """Crude English-plural-to-singular for NetBox endpoint names.
 
-    NetBox endpoint paths are quite regular; this rule covers
-    every shape we see in v4.6 with a tiny pattern table.
-    Anything that defies the rule belongs in
+    Two flavours of "-es" plural to distinguish:
+
+    1. Stem ends in a sibilant (-ss, -sh, -ch, -x, -zz) so the
+       plural is formed by adding "es" wholesale. Singularise by
+       stripping "es":
+           addresses -> address      (sses)
+           prefixes  -> prefix       (xes)
+           boxes     -> box          (xes)
+           branches  -> branch       (ches)
+           dishes    -> dish         (shes)
+           buzzes    -> buzz         (zzes)
+
+    2. Stem ends in a silent "e" so the plural is just "+s".
+       Singularise by stripping the "s" only:
+           leases    -> lease
+           ranges    -> range
+           services  -> service
+           devices   -> device
+
+    Anything that defies the rule lives in
     `CURATED_ENDPOINT_CONTENT_TYPES`.
     """
     word = plural.replace("-", "")
     if word.endswith("ies"):
         return word[:-3] + "y"
-    if word.endswith("ses"):
-        return word[:-2]  # addresses -> address
-    if word.endswith("es") and not word.endswith("ases"):
-        # leases, ranges -> lease, range
+    if word.endswith("sses") or word.endswith(("xes", "ches", "shes", "zzes")):
+        return word[:-2]
+    if word.endswith("es"):
         return word[:-1]
     if word.endswith("s"):
         return word[:-1]

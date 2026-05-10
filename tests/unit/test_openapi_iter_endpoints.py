@@ -12,6 +12,34 @@ def test_url_convention_singularises_plural() -> None:
     assert _derive_content_type("/api/dcim/manufacturers/") == "dcim.manufacturer"
 
 
+def test_singulariser_handles_sibilant_endings() -> None:
+    """`-xes`, `-ches`, `-shes`, `-zzes`, `-sses` strip the full 'es'.
+
+    Regression test for the v4.6 production bug, `prefixes -> prefixe`
+    used to silently break every Prefix's NK resolution.
+    """
+
+    from nbsnap.schema.openapi import _singularise
+
+    assert _singularise("prefixes") == "prefix"
+    assert _singularise("boxes") == "box"
+    assert _singularise("branches") == "branch"
+    assert _singularise("dishes") == "dish"
+    assert _singularise("buzzes") == "buzz"
+    assert _singularise("addresses") == "address"
+
+
+def test_singulariser_strips_only_s_for_soft_e_endings() -> None:
+    """`-ses`, `-ges`, `-ces`, `-ves` strip just the 's'."""
+
+    from nbsnap.schema.openapi import _singularise
+
+    assert _singularise("leases") == "lease"
+    assert _singularise("ranges") == "range"
+    assert _singularise("services") == "service"
+    assert _singularise("devices") == "device"
+
+
 def test_curated_entries_win_over_convention() -> None:
     """The curated table overrides the URL convention."""
 
