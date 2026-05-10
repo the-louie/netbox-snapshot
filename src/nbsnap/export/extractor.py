@@ -134,9 +134,12 @@ def _rewrite_fks(
         # Category 3a: paired generic FK, the id half.
         paired_type = paired.get(field_name)
         if paired_type is not None:
-            rewritten[field_name] = rewrite_simple_fk(
-                value, paired_type, registry, parent_lookup
-            )
+            try:
+                rewritten[field_name] = rewrite_simple_fk(
+                    value, paired_type, registry, parent_lookup
+                )
+            except KeyError as exc:
+                _warn_dropped(content_type, field_name, paired_type, exc)
             continue
 
         spec = openapi.field_spec(content_type, field_name)
@@ -151,7 +154,7 @@ def _rewrite_fks(
             and "object_id" in value[0]
         ):
             rewritten[field_name] = [
-                rewrite_polymorphic(item, registry, parent_lookup)
+                _safe_polymorphic_item(item, registry, parent_lookup, content_type, field_name)
                 for item in value
                 if isinstance(item, Mapping)
             ]
@@ -163,14 +166,66 @@ def _rewrite_fks(
 
         # Category 2: m2m list of simple FK values.
         if spec.is_m2m:
-            rewritten[field_name] = rewrite_m2m(value, spec.fk_target, registry, parent_lookup)
+            try:
+                rewritten[field_name] = rewrite_m2m(
+                    value, spec.fk_target, registry, parent_lookup
+                )
+            except KeyError as exc:
+                _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
 
         # Category 1: simple FK.
-        rewritten[field_name] = rewrite_simple_fk(
-            value, spec.fk_target, registry, parent_lookup
-        )
+        try:
+            rewritten[field_name] = rewrite_simple_fk(
+                value, spec.fk_target, registry, parent_lookup
+            )
+        except KeyError as exc:
+            _warn_dropped(content_type, field_name, spec.fk_target, exc)
     return rewritten
+
+
+# Module-level sentinel so the "we already warned about this" check
+# is process-wide. The warning is informational and noisy when a
+# whole export hits the same unregistered content type on every row.
+_WARNED_UNREGISTERED: set[tuple[str, str, str]] = set()
+
+
+def _warn_dropped(
+    content_type: str, field_name: str, fk_target: str, exc: KeyError
+) -> None:
+    """Log once per (ct, field, target) triple and drop the FK field."""
+
+    import logging
+
+    key = (content_type, field_name, fk_target)
+    if key in _WARNED_UNREGISTERED:
+        return
+    _WARNED_UNREGISTERED.add(key)
+    logger = logging.getLogger(__name__)
+    logger.warning(
+        "dropping FK %s.%s -> %s, no NKSpec registered (%s)",
+        content_type,
+        field_name,
+        fk_target,
+        exc.args[0] if exc.args else str(exc),
+    )
+
+
+def _safe_polymorphic_item(
+    item: Mapping[str, Any],
+    registry: NKRegistry,
+    parent_lookup: ParentLookup,
+    content_type: str,
+    field_name: str,
+) -> dict[str, Any] | None:
+    """Run rewrite_polymorphic, drop the item (warn) on KeyError."""
+
+    try:
+        return rewrite_polymorphic(item, registry, parent_lookup)
+    except KeyError as exc:
+        target = str(item.get("object_type") or "?")
+        _warn_dropped(content_type, field_name, target, exc)
+        return None
 
 
 def _detect_polymorphic_pairs(body: Mapping[str, Any]) -> dict[str, str]:

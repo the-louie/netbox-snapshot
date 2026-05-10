@@ -19,6 +19,18 @@ def default() -> NKRegistry:
     r = NKRegistry()
 
     # ------------------------------------------------------------------
+    # Organisational hierarchy above Site, registered with slug NKs
+    # so an FK like dcim.site.region resolves cleanly. Region and
+    # SiteGroup are themselves out of the network-only scope, but
+    # the sites we ARE exporting carry FKs into them, and dropping
+    # the FKs silently would lose data. Tenants stay unregistered;
+    # the network-only banner forbids tenant export so any tenant
+    # FK on a site is left as a hard drop by the rewriter.
+    # ------------------------------------------------------------------
+    r.register(NKSpec("dcim.region", Strategy.SLUG, (NKField("slug"),)))
+    r.register(NKSpec("dcim.sitegroup", Strategy.SLUG, (NKField("slug"),)))
+
+    # ------------------------------------------------------------------
     # FEAT-08b1, DCIM (Site through Cable)
     # ------------------------------------------------------------------
     r.register(NKSpec("dcim.site", Strategy.SLUG, (NKField("slug"),)))
