@@ -71,10 +71,19 @@ def extract(
             yield None, flag
             continue
 
+        body = _apply_allowlist(record, allowlist)
+        body = _rewrite_fks(content_type, body, openapi, registry, parent_lookup)
+
+        # Compute the natural key from the REWRITTEN body so any FK
+        # fields the NKSpec references (e.g. IPAddress's NK has
+        # assigned_object_id) carry the destination-resolvable NK
+        # tuple instead of the source's numeric id. Resolving from
+        # the raw record would leak source ids into NKs and break
+        # destination lookups, because the destination's interface
+        # ids do not match the source's.
         try:
-            nk = resolve(registry, content_type, record, parent_lookup=parent_lookup)
+            nk = resolve(registry, content_type, body, parent_lookup=parent_lookup)
         except (KeyError, ValueError):
-            # Cannot compute NK; skip the record and surface a flag.
             yield (
                 None,
                 Flag(
@@ -86,8 +95,6 @@ def extract(
             )
             continue
 
-        body = _apply_allowlist(record, allowlist)
-        body = _rewrite_fks(content_type, body, openapi, registry, parent_lookup)
         yield ExtractedRow(content_type=content_type, natural_key=nk, body=body), None
 
 
