@@ -263,7 +263,40 @@ class OpenAPI:
         return self._verb_request_schema(content_type, "PATCH")
 
     def _get_response_schema(self, content_type: str) -> dict[str, Any] | None:
-        """Return the GET (detail) response schema for a content type."""
+        """Return the per-record GET response schema for a content type.
+
+        NetBox's list endpoint returns a paginated wrapper
+        (``PaginatedXList`` with ``count``, ``next``, ``previous``,
+        ``results``); the per-record fields live two levels deep
+        inside ``results.items``. We unwrap that here so callers
+        get the model schema directly.
+
+        Tries the list endpoint first (always present) and unwraps
+        if needed; falls back to the detail endpoint (``{id}/``
+        sibling) if the list-side unwrap fails to produce an
+        object schema.
+        """
+        list_schema = self._list_endpoint_schema(content_type)
+        if list_schema is not None:
+            unwrapped_items = self._unwrap_paginated(list_schema)
+            if unwrapped_items is not None:
+                # `items` is typically `{"$ref": ".../Device"}`. Resolve
+                # so we get the model schema's properties; the field-
+                # level `$ref` markers inside that schema survive
+                # because `_field_schema` no longer eats them.
+                resolved = self._inline_or_ref(unwrapped_items)
+                if isinstance(resolved, dict) and "properties" in resolved:
+                    return resolved
+
+        # Detail endpoint fallback: scan for a path that shares the
+        # same prefix but ends with ``/{id}/``. Detail responses
+        # carry the model schema directly, no paginated wrapper.
+        detail_schema = self._detail_endpoint_schema(content_type)
+        if detail_schema is not None:
+            return detail_schema
+        return list_schema
+
+    def _list_endpoint_schema(self, content_type: str) -> dict[str, Any] | None:
         for endpoint in self.iter_endpoints():
             if endpoint.content_type != content_type:
                 continue
@@ -277,9 +310,47 @@ class OpenAPI:
             content = (two_oh_oh.get("content") or {}).get("application/json")
             if not isinstance(content, dict):
                 continue
-            schema = content.get("schema") or {}
-            return self._inline_or_ref(schema)
+            return self._inline_or_ref(content.get("schema") or {})
         return None
+
+    def _detail_endpoint_schema(self, content_type: str) -> dict[str, Any] | None:
+        """Hunt for the detail endpoint sibling and return its schema."""
+        list_endpoint_path = None
+        for endpoint in self.iter_endpoints():
+            if endpoint.content_type == content_type:
+                list_endpoint_path = endpoint.path
+                break
+        if list_endpoint_path is None:
+            return None
+        # Detail path is the list path with `{id}/` appended.
+        detail_path = list_endpoint_path.rstrip("/") + "/{id}/"
+        for endpoint in self.iter_endpoints():
+            if endpoint.path != detail_path:
+                continue
+            op = endpoint.methods.get("GET")
+            if op is None:
+                continue
+            responses = op.raw.get("responses") or {}
+            two_oh_oh = responses.get("200") or responses.get(200)
+            if not isinstance(two_oh_oh, dict):
+                continue
+            content = (two_oh_oh.get("content") or {}).get("application/json")
+            if not isinstance(content, dict):
+                continue
+            return self._inline_or_ref(content.get("schema") or {})
+        return None
+
+    @staticmethod
+    def _unwrap_paginated(schema: dict[str, Any]) -> dict[str, Any] | None:
+        """If `schema` is a `PaginatedXList`, return the inner item schema."""
+        if not isinstance(schema, dict):
+            return None
+        props = schema.get("properties") or {}
+        results = props.get("results")
+        if not isinstance(results, dict) or results.get("type") != "array":
+            return None
+        items = results.get("items")
+        return items if isinstance(items, dict) else None
 
     def _verb_request_schema(self, content_type: str, verb: str) -> dict[str, Any] | None:
         for endpoint in self.iter_endpoints():
@@ -345,12 +416,20 @@ class OpenAPI:
         return schema
 
     def _field_schema(self, parent: dict[str, Any], field_name: str) -> dict[str, Any] | None:
-        """Lookup a field's schema inside a parent object schema."""
+        """Lookup a field's schema inside a parent object schema.
+
+        Returns the schema **without** resolving any ``$ref`` so that
+        the FK-target detector can still see the reference path and
+        derive the target content type from the component name.
+        Resolving the ``$ref`` here would replace ``{"$ref": "...
+        BriefSite"}`` with an anonymous ``{type: object, properties:
+        {...}}`` and the target name would be unknowable.
+        """
         properties = parent.get("properties") or {}
         sub = properties.get(field_name)
         if not isinstance(sub, dict):
             return None
-        return self._inline_or_ref(sub)
+        return sub
 
     def field_spec(self, content_type: str, field_name: str) -> FieldSpec:
         """Return the shape metadata for `content_type.field_name`."""
@@ -381,27 +460,75 @@ class OpenAPI:
         )
 
     def _infer_fk_target(self, schema: Any) -> str | None:
-        """Three-layer FK target detection per Q11 burndown."""
+        """FK target detection that handles every NetBox wrapper shape.
+
+        NetBox 4.6 surfaces nested FK fields in three shapes inside
+        the response schema:
+
+        1. Direct ``$ref``:  ``{"$ref": ".../BriefSite"}``
+        2. ``allOf`` wrapper for nullable FKs:
+           ``{"allOf": [{"$ref": "..."}], "nullable": true}``
+        3. ``oneOf`` wrapper (rare in response shapes but used in
+           request bodies, included here for symmetry):
+           ``{"oneOf": [{"$ref": "..."}, ...]}``
+
+        This method walks every wrapper looking for a ``$ref``,
+        derives the component name from the path, strips the
+        Brief/Nested prefix/suffix, and looks the model up in the
+        reverse index built from ``iter_endpoints()``. Falls back to
+        a ``title`` lookup on the resolved schema for the rare case
+        where the component is inline (NetBox 4.x does this for
+        Tag and a few others).
+        """
         if not isinstance(schema, dict):
             return None
-        # Layer 1: direct $ref to a model schema.
+
+        candidate_refs = list(self._collect_refs(schema))
+        for ref in candidate_refs:
+            target_name = ref.rsplit("/", 1)[-1]
+            stripped = _strip_brief(target_name)
+            mapped = self._reverse_index().get(stripped.lower())
+            if mapped is not None:
+                return mapped
+
+        # Title-based fallback. If the schema (or any of its
+        # wrappers' immediate children) carries a `title` like
+        # `BriefIPAddress`, use that as the lookup key.
+        for title in self._collect_titles(schema):
+            stripped = _strip_brief(title)
+            mapped = self._reverse_index().get(stripped.lower())
+            if mapped is not None:
+                return mapped
+
+        return None
+
+    def _collect_refs(self, schema: dict[str, Any]) -> list[str]:
+        """Walk allOf / oneOf wrappers, collect every direct $ref."""
+        refs: list[str] = []
         ref = schema.get("$ref")
         if isinstance(ref, str):
-            target_name = ref.rsplit("/", 1)[-1]
-            # Strip Brief/Nested prefixes/suffixes used by NetBox.
-            stripped = _strip_brief(target_name)
-            if stripped.lower() in self._reverse_index():
-                return self._reverse_index()[stripped.lower()]
-        # Layer 2: NetBox sometimes inlines an object with `properties`
-        # that contain only `id` and a couple of natural-key fields.
-        # The component name often leaks into the response title.
+            refs.append(ref)
+        for key in ("allOf", "oneOf", "anyOf"):
+            items = schema.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        refs.extend(self._collect_refs(item))
+        return refs
+
+    def _collect_titles(self, schema: dict[str, Any]) -> list[str]:
+        """Collect `title` values from this schema and its wrappers."""
+        titles: list[str] = []
         title = schema.get("title")
         if isinstance(title, str):
-            stripped = _strip_brief(title)
-            if stripped.lower() in self._reverse_index():
-                return self._reverse_index()[stripped.lower()]
-        # Layer 3: hand-curated exception table. Initially empty.
-        return None
+            titles.append(title)
+        for key in ("allOf", "oneOf", "anyOf"):
+            items = schema.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        titles.extend(self._collect_titles(item))
+        return titles
 
     # ------------------------------------------------------------------
     # Field allowlist (FEAT-02d)

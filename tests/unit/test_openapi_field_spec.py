@@ -161,3 +161,157 @@ def test_field_spec_required_field_has_required_flag() -> None:
     openapi = OpenAPI(_schema_with_fk())
     spec = openapi.field_spec("dcim.device", "name")
     assert spec.required is True
+
+
+def _netbox_4_6_paginated_with_refs() -> dict:
+    """NetBox 4.6 shape: list endpoint returns PaginatedXList, fields use $ref."""
+    return {
+        "components": {
+            "schemas": {
+                "PaginatedDeviceList": {
+                    "type": "object",
+                    "properties": {
+                        "count": {"type": "integer"},
+                        "results": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/DeviceWithConfigContext"},
+                        },
+                    },
+                },
+                "DeviceWithConfigContext": {
+                    "type": "object",
+                    "required": ["name", "site", "role"],
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "site": {"$ref": "#/components/schemas/BriefSite"},
+                        "role": {"$ref": "#/components/schemas/BriefDeviceRole"},
+                        "primary_ip4": {
+                            "allOf": [{"$ref": "#/components/schemas/BriefIPAddress"}],
+                            "nullable": True,
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/NestedTag"},
+                        },
+                    },
+                },
+                "BriefSite": {"type": "object", "properties": {"id": {}, "slug": {}}},
+                "BriefDeviceRole": {"type": "object", "properties": {"id": {}, "slug": {}}},
+                "BriefIPAddress": {"type": "object", "properties": {"id": {}, "address": {}}},
+                "NestedTag": {"type": "object", "properties": {"id": {}, "slug": {}}},
+            }
+        },
+        "paths": {
+            "/api/dcim/sites/": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"id": {}, "slug": {}}}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/api/dcim/device-roles/": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"id": {}, "slug": {}}}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/api/ipam/ip-addresses/": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"id": {}, "address": {}}}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/api/extras/tags/": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"id": {}, "slug": {}}}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/api/dcim/devices/": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/PaginatedDeviceList"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "name": {},
+                                        "site": {},
+                                        "role": {},
+                                        "primary_ip4": {},
+                                        "tags": {},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+        },
+    }
+
+
+def test_fk_detection_descends_into_paginated_list_response() -> None:
+    """List endpoint returns PaginatedXList wrapper; unwrap to find FKs."""
+
+    openapi = OpenAPI(_netbox_4_6_paginated_with_refs())
+    site_spec = openapi.field_spec("dcim.device", "site")
+    assert site_spec.fk_target == "dcim.site"
+
+
+def test_fk_detection_handles_allof_wrapper_for_nullable_fks() -> None:
+    """`primary_ip4` uses `allOf: [{$ref}]` plus `nullable: true`."""
+
+    openapi = OpenAPI(_netbox_4_6_paginated_with_refs())
+    spec = openapi.field_spec("dcim.device", "primary_ip4")
+    assert spec.fk_target == "ipam.ipaddress"
+    assert spec.nullable is True
+
+
+def test_fk_detection_handles_m2m_array_with_ref_items() -> None:
+    """`tags` is `type: array, items: {$ref: ...}`."""
+
+    openapi = OpenAPI(_netbox_4_6_paginated_with_refs())
+    spec = openapi.field_spec("dcim.device", "tags")
+    assert spec.is_m2m is True
+    assert spec.fk_target == "extras.tag"
