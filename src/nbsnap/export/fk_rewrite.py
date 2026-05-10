@@ -35,8 +35,8 @@ def rewrite_simple_fk(
     """Rewrite a single-FK field value to a natural-key tuple.
 
     Args:
-        value: The FK as returned by NetBox; can be a nested dict,
-            a bare int, or `None`.
+        value: The FK as returned by NetBox; can be a nested dict
+            (Brief representation), a bare int, or `None`.
         parent_ct: The content type the FK points at.
         registry: Natural-key registry, source of NK strategy.
         parent_lookup: `(content_type, id) -> record` map.
@@ -44,20 +44,47 @@ def rewrite_simple_fk(
     Returns:
         The natural-key tuple, or `None` when the source FK was
         null.
+
+    Resolution rule:
+        Prefer the full record from `parent_lookup` whenever we
+        have the parent's id, regardless of whether the value
+        arrived as a Brief dict or a bare int. NetBox's Brief
+        representation strips parent fields (e.g. a nested
+        Location omits its Site), and computing the NK from the
+        Brief alone produces null slots in the composite key.
+        Looking up the full record gives the resolver access to
+        every field the NKSpec might reference.
     """
     if value is None:
         return None
+
+    # If we have an id, try to upgrade to the full parent record.
+    parent_id: int | None = None
     if isinstance(value, Mapping):
+        rid = value.get("id")
+        if isinstance(rid, int):
+            parent_id = rid
+    elif isinstance(value, int):
+        parent_id = value
+
+    if parent_id is not None:
+        full_record = parent_lookup.get((parent_ct, parent_id))
+        if full_record is not None:
+            return resolve(registry, parent_ct, full_record, parent_lookup=parent_lookup)
+
+    # No full record available, fall back to whatever we have.
+    if isinstance(value, Mapping):
+        # Brief dict, partial fields. Resolve against it directly
+        # and let the NK strategy do its best; this is where the
+        # null-slot composite NKs come from when parent_lookup is
+        # incomplete for this content type.
         return resolve(registry, parent_ct, value, parent_lookup=parent_lookup)
     if isinstance(value, int):
-        parent_record = parent_lookup.get((parent_ct, value))
-        if parent_record is None:
-            msg = (
-                f"FK to {parent_ct} id {value} cannot be resolved; "
-                "parent_lookup is missing this record"
-            )
-            raise ValueError(msg)
-        return resolve(registry, parent_ct, parent_record, parent_lookup=parent_lookup)
+        msg = (
+            f"FK to {parent_ct} id {value} cannot be resolved; "
+            "parent_lookup is missing this record"
+        )
+        raise ValueError(msg)
     return value
 
 

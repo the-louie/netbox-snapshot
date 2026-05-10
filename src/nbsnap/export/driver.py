@@ -95,7 +95,19 @@ def run_export(
     completed: set[str] = resume_from(out_dir / PROGRESS_FILENAME) if resume else set()
     registry = default_registry()
     parent_lookup: dict[tuple[str, int], dict[str, Any]] = {}
+    cached_records: dict[str, list[dict[str, Any]]] = {}
 
+    # ------------------------------------------------------------------
+    # Phase C-1, fetch every content type into parent_lookup BEFORE
+    # extracting any of them. The plan order is correct for the import
+    # side (parent before child) but the export-side FK rewriter needs
+    # to look up parent records for every FK regardless of order,
+    # including polymorphic FKs whose targets the planner cannot see
+    # statically (Interface, Device referenced by IPAddress's
+    # assigned_object_*). A two-pass walk doubles the in-memory
+    # footprint briefly but eliminates the "null in composite NK
+    # because parent_lookup did not have the parent yet" failure mode.
+    # ------------------------------------------------------------------
     for content_type in plan_obj.order:
         if content_type not in effective_scope:
             continue
@@ -104,20 +116,28 @@ def run_export(
         endpoint = CONTENT_TYPE_ENDPOINTS.get(content_type)
         if endpoint is None:
             continue
-
-        with perf.timer(f"extract:{content_type}"):
-            rows: list[ExtractedRow] = []
-            records_iter = list(http.get_all(endpoint))
-            # Populate parent_lookup eagerly so subsequent content
-            # types can resolve back-references without an extra GET.
-            for record in records_iter:
+        with perf.timer(f"fetch:{content_type}"):
+            records = list(http.get_all(endpoint))
+            cached_records[content_type] = records
+            for record in records:
                 rid = record.get("id")
                 if isinstance(rid, int):
                     parent_lookup[(content_type, rid)] = record
 
+    # ------------------------------------------------------------------
+    # Phase C-2, extract each content type's records using the now-
+    # complete parent_lookup. No network IO in this phase, only
+    # JSON-shaping and file IO.
+    # ------------------------------------------------------------------
+    for content_type in plan_obj.order:
+        if content_type not in cached_records:
+            continue
+
+        with perf.timer(f"extract:{content_type}"):
+            rows: list[ExtractedRow] = []
             for extracted, flag in extract(
                 content_type,
-                iter(records_iter),
+                iter(cached_records[content_type]),
                 openapi=openapi,
                 registry=registry,
                 parent_lookup=parent_lookup,
