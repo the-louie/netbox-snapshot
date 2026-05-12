@@ -2692,6 +2692,467 @@ clear assertion message.
 
 **Estimated Effort:** 1-2h
 
+### [FEAT-36-blocker] Enum-dict serialisation mismatch on write
+
+**Context:** the actual production rescue import (logged at
+`tmp/nbsnap-rescue-10/import-attempt-3.log`) failed 5105 of 5153
+rows. The root cause is **not** ordering, it is the enum-dict
+shape:
+
+    POST /api/ipam/ip-addresses/ -> HTTP 400:
+    {"status": ["Value must be passed directly
+                (e.g. \"foo\": 123); do not use a dictionary
+                or list."]}
+
+NetBox's GET response surfaces enum fields as
+`{"value": "active", "label": "Active"}` for human-readable
+labels; the matching POST/PATCH endpoint refuses that shape and
+expects the bare value string. The snapshot wrote the GET shape
+verbatim, so every record with a `status`, `airflow`, `face`,
+`type`-on-interface, or any other enum field is rejected by
+NetBox before its FKs are even evaluated. The cascade of "FK
+target not found" warnings later in the log is downstream of
+this: sites failed to POST, so dependent locations / racks /
+devices cannot resolve them.
+
+The fix lives on the export side so existing snapshots stay
+forward-compatible; an import-side coerce is the belt-and-braces
+fallback.
+
+**Requirements:**
+
+- During the export's body rewrite step, when a field's value is
+  a dict containing exactly `{"value", "label"}` and the
+  OpenAPI request schema for that field is `type: string` (or
+  an enum), replace the dict with the `value` string.
+- A small recogniser helper, `_collapse_enum_dict(value, schema)
+  -> Any`, is the right place; called from `_apply_allowlist`
+  or right before `_rewrite_fks`.
+- On the import side, mirror the same coercion at the boundary
+  of `upsert._matches` and the POST body assembly, so an old
+  snapshot exported before this ticket can still be imported.
+- Common offenders to confirm by inspection of the rescue
+  snapshot, all v4.6: `status`, `airflow`, `face`, `duplex`,
+  `mode` (interface), `rf_role`, `rf_channel_width`, `type`
+  (on Interface, Cable, IPRange, Service), `algorithm` (on VPN).
+- Regression test: hand-crafted snapshot row with `status: {
+  "value": "active", "label": "Active"}`, run through the
+  extractor's rewrite, assert the body has `status: "active"`.
+
+**Testing:** unit test in
+`tests/unit/test_export_enum_collapse.py` covering five common
+enum fields. After this ticket, re-running the production
+rescue import should succeed for the body of records that
+previously failed on enum 400s.
+
+**Estimated Effort:** 1-2h
+
+**Priority:** BLOCKER, every other FEAT-36 ticket below is
+nearly useless until this lands because the records they would
+upsert get rejected at the HTTP layer.
+
+### [FEAT-36a] Snapshot natural-key index loader
+
+**Context:** the v1 rescue import dropped large numbers of FK
+references because their targets did not yet exist on the
+destination, even though the snapshot itself contained them. The
+import driver walks content types in topological order, but
+several real-world cases evade clean ordering: polymorphic FKs
+(Cable terminations to Interface, IPAddress.assigned_object_id
+to Interface) cannot be ordered statically; nullable self-edges
+(DeviceRole.parent, Platform.parent) force the planner to defer
+the back-edge; cycles via Device.primary_ip4 are by design.
+
+Concrete examples from the rescue log (after FEAT-36-blocker
+is fixed, the cascade still produces these even with correct
+ordering because of the polymorphic/cycle cases):
+
+    dropping FK dcim.devicerole.parent -> dcim.devicerole,
+            NK ('hypervisor',) not found on destination
+    dropping FK ipam.prefix.vlan -> ipam.vlan,
+            NK (None, 3060) not found on destination
+    dropping FK dcim.device.primary_ip4 -> ipam.ipaddress,
+            NK ('172.16.255.23/32', 'dcim.interface',
+                ((('b',), 'B-GCF-SW'), 'lo0.0'))
+            not found on destination
+    dropping FK dcim.interface.device -> dcim.device,
+            NK (('b',), 'B-GCF-SW') not found on destination
+
+This ticket builds the foundation for FEAT-36b through FEAT-36e,
+an in-memory `(content_type, NaturalKey) -> body` map that
+covers every record the snapshot carries. The map is the
+secondary source the FK resolver consults when the destination's
+NK index misses.
+
+**Requirements:**
+
+- `src/nbsnap/import_/snapshot_index.py` with
+  `class SnapshotIndex`.
+- `SnapshotIndex.from_snapshot(snapshot_dir: Path) -> SnapshotIndex`
+  walks every `*.jsonl` under the snapshot, parses each row, and
+  fills a `dict[tuple[str, NaturalKey], dict[str, Any]]`.
+- `SnapshotIndex.lookup(content_type, natural_key) -> dict | None`
+  returns the snapshot body for that NK, or `None` if absent.
+- `SnapshotIndex.has(content_type, natural_key) -> bool`.
+- Memory budget, store the body dicts as-is (≈100 bytes per row
+  for the renderer-minimum scope; ~5 MB for a 50,000-row
+  snapshot). Document the expected footprint in the docstring.
+- Loaded once at the start of `run_import`, before Phase-1
+  walks anything. Subsequent calls are pure lookups, no IO.
+
+**Testing:** unit test in
+`tests/unit/test_import_snapshot_index.py`. Build a small
+snapshot dir with a few content types and a handful of rows
+each. Assert `lookup` returns the right body, `has` answers
+correctly, an unknown `(ct, nk)` returns `None`.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36b] Demand-driven FK resolution with cycle detection
+
+**Context:** consumer of `FEAT-36a`. When the FK resolver in
+`import_/driver.py:_resolve_body` misses against the destination
+NK index, instead of dropping the field, look up the target in
+the `SnapshotIndex` and recursively upsert it on the destination
+first. Comes back to resolve the original field once the target
+exists.
+
+Two real-world traps the implementation must handle:
+
+* **Cycles.** `Device.primary_ip4 → IPAddress.assigned_object →
+  Interface.device → Device`. Maintain a "being processed" stack
+  keyed on `(content_type, NK)`; when an attempted recursion
+  hits a member of the stack, defer the cycle-closing FK to the
+  Phase-2 PATCH queue (FEAT-36c) and let the outer upsert proceed
+  without that field.
+* **Genuinely out-of-scope targets.** `dcim.site.region →
+  dcim.region` references a content type the snapshot does not
+  carry (network-only scope, `docs/01-scope.md`). The
+  `SnapshotIndex.lookup` returns `None`; the resolver drops the
+  field with the existing `_warn_dropped` machinery, no change
+  to current behaviour for that path.
+
+**Requirements:**
+
+- Extend `import_/driver.py` so the FK resolver consults
+  `SnapshotIndex` after the destination NK index misses.
+- New `import_/resolver_with_lookahead.py` (or extend
+  `fk_resolve.py`) holds the recursive `upsert_target_now(
+  http, snapshot_index, content_type, nk, processing_stack,
+  ...)` helper.
+- The processing stack is a `set[tuple[str, NaturalKey]]` passed
+  through the recursion, gates the cycle-detection branch.
+- On a detected cycle, return `None` and append to a
+  `deferred_fk_queue: list[DeferredFK]` the driver maintains.
+  `DeferredFK` carries `(child_content_type, child_nk,
+  field_name, target_content_type, target_nk)`.
+- The recursive `upsert_target_now` is the same upsert path
+  Phase-1 uses, so created records land in the NKIndex
+  automatically and subsequent lookups for the same NK hit fast.
+- Add a hard cap (suggest 200 nested levels) so a malformed
+  snapshot cannot cause unbounded recursion.
+
+**Testing:** unit tests in
+`tests/unit/test_import_demand_driven.py`. Three cases:
+(1) plain forward-reference, devices walked before sites,
+the resolver creates the site on demand and then the device,
+both end up on the destination; (2) cycle, Device.primary_ip4 →
+IPAddress.assigned_object → Interface.device → Device, the
+cycle is detected and the closing FK is queued; (3)
+out-of-scope target, NK miss falls through to the existing
+warn-and-drop path.
+
+**Estimated Effort:** 2-4h
+
+### [FEAT-36c] Real Phase-2 deferred-FK writer
+
+**Context:** `FEAT-23` lands the structural Phase-2 skeleton.
+This ticket fills in the body so cycle-closing FKs queued by
+`FEAT-36b` actually get PATCHed after Phase-1 completes.
+
+**Requirements:**
+
+- In `import_/driver.py`, after the Phase-1 loop, walk the
+  `deferred_fk_queue` populated by FEAT-36b.
+- For each `DeferredFK`, resolve the target NK against the
+  now-complete destination NKIndex (it should hit; if not, log
+  a per-row failure and continue).
+- Compute a minimal PATCH body, just the one deferred field.
+- Issue the PATCH through `NetboxHTTP.patch`, capture the
+  outcome (`UPDATED` or `FAILED`) in the run summary alongside
+  the Phase-1 counts.
+- The summary's `created/updated/noop/failed` counters add a
+  `phase2_updated` and `phase2_failed` so the operator can see
+  the split.
+
+**Testing:** integration test in
+`tests/integration/test_phase2_deferred.py` against the netbox-
+docker stacks. Seed the source with a device whose
+`primary_ip4` points at the device's own interface IP (the
+classic cycle). Export, import, confirm the destination device
+has `primary_ip4` set after the Phase-2 pass.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36d] Polymorphic-FK ordering hints for the planner
+
+**Context:** the topological planner cannot see polymorphic FKs
+(Cable.a_terminations → Interface, IPAddress.assigned_object →
+Interface or VMInterface) because their target content type is
+expressed in a sibling field at runtime, not in the static
+schema. So the planner happily emits `dcim.cable` before
+`dcim.interface`. Demand-driven resolution (`FEAT-36b`) is the
+runtime safety net; ordering hints are the cheap upfront fix
+that keeps the demand path from firing on the common case.
+
+Inspected plan order against the production rescue (20
+in-scope content types):
+
+    1. extras.tag
+    2. ipam.prefix              <- WRONG, before ipam.vlan
+    3. extras.customfieldchoiceset
+    4. ipam.ipaddress           <- WRONG, before dcim.interface
+    5. dcim.manufacturer
+    6. ipam.role
+    7. dcim.site
+    8. dcim.cable               <- WRONG, before dcim.interface
+    9. dcim.devicerole
+   10. extras.customfield
+   11. dcim.platform
+   12. ipam.iprange
+   13. ipam.vlan                <- should be above ipam.prefix
+   14. dcim.location
+   15. dcim.devicetype
+   16. dcim.rack
+   17. dcim.device              <- should be above dcim.interface
+   18. dcim.rearport
+   19. dcim.interface           <- should be above dcim.cable
+   20. dcim.frontport
+
+ipam.prefix is at #2 because `prefix.vlan` is nullable (planner
+deferred the edge). ipam.ipaddress and dcim.cable are at #4 and
+#8 because their FKs to Interface are polymorphic and thus
+invisible to the planner.
+
+**Requirements:**
+
+- Extend `src/nbsnap/graph/polymorphic.py` with
+  `polymorphic_target_hints() -> list[tuple[str, str]]` that
+  returns the curated `(owner_content_type, possible_target)`
+  pairs we know about: Cable → Interface, IPAddress →
+  Interface (the common case), Service → Interface,
+  WirelessLink → Interface.
+- In `graph/build.py`, after the static FK edges land, add a
+  synthetic edge per hint with `nullable=True, is_m2m=True` so
+  the planner can still defer if a real cycle exists, but the
+  default order has Interface before Cable.
+- Document each hint inline with a one-line comment naming the
+  NetBox model and version it was last verified against.
+
+**Testing:** unit test in
+`tests/unit/test_graph_polymorphic_hints.py`. Build a fixture
+schema with Cable and Interface, call `from_openapi`, confirm
+the plan order has `dcim.interface` before `dcim.cable`.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36e] Out-of-scope vs missing-in-snapshot audit split
+
+**Context:** the current drop log groups every "FK not resolved"
+event under one warning. After FEAT-36a/b/c, the categories
+diverge:
+
+* "target out of scope" (region, virtualization.*, vrf): the
+  snapshot legitimately does not carry the target.
+* "target missing from destination AND from snapshot": a data
+  hygiene issue on the source.
+* "target deferred due to cycle, will be PATCHed in Phase-2":
+  expected, not an error.
+
+The operator wants to see these split so the "structural
+incompleteness" signal is not buried in "expected cycle
+defers".
+
+**Requirements:**
+
+- `import_/audit.py` with a `DropCategory` enum (`OUT_OF_SCOPE`,
+  `MISSING_FROM_SOURCE`, `DEFERRED_TO_PHASE2`).
+- The resolver tags each drop with one of these before logging.
+- At end of run, the summary table breaks counts down by
+  category per `(content_type, field)`.
+- A JSON-format report file `audit.jsonl` under the snapshot
+  directory (or `--audit-out`), one line per drop, machine-
+  parseable.
+
+**Testing:** unit test in
+`tests/unit/test_import_audit_split.py` exercising all three
+categories via stubbed FK resolution, asserting each entry in
+the audit log lands in the right bucket.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36f] `nbsnap import --single-pass` becomes the default
+
+**Context:** end state of the FEAT-36 series. With `FEAT-36a..e`
+landed, a single `nbsnap import` invocation should suffice for
+any well-formed snapshot. Today the workaround is "run it
+twice". This ticket retires that workaround.
+
+**Requirements:**
+
+- Remove the "run a second pass" note from the README and
+  operator runbooks.
+- The CLI's exit code 2 (row failures) now indicates real,
+  non-cycle, non-out-of-scope failures only. Cycles handled
+  through Phase-2 do not contribute to the exit code.
+- Update the integration test in
+  `tests/integration/test_idempotency.py` (TEST-06) to assert
+  the second run is now a pure NOOP, not a failure-recovery pass.
+
+**Testing:** the integration suite is the assertion. Run
+`make stack-up stack-wait stack-seed` then a single
+`nbsnap import`, confirm the run completes with `failed: 0`
+and `phase2_failed: 0` against the renderer-minimum fixture.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36g] Prefer real edges over deferred for nullable FKs that have a true partner
+
+**Context:** the planner currently defers EVERY nullable FK in
+a size-1 SCC, even when the target content type would otherwise
+sit safely earlier in the topo order. `ipam.prefix.vlan` is
+nullable, so the planner treats the edge as a deferred candidate
+and frees prefix from "must wait for vlan". prefix ends up at
+plan position 2; vlan at 13. With FEAT-36-blocker fixed, the
+prefix POST would succeed but with a `null` vlan, then no
+Phase-2 step puts the vlan back.
+
+The right rule: a nullable FK should only be deferred when
+deferring is the **only** way to make the graph acyclic. In a
+purely acyclic relationship like prefix→vlan (vlan never
+references prefix), defer is wasteful.
+
+**Requirements:**
+
+- In `src/nbsnap/graph/algo.py`, change `pick_deferred_edges` to
+  only consider edges that participate in a real SCC of size >
+  1, or that are a self-edge. A nullable edge whose endpoints
+  are otherwise in topologically-distinct SCCs should NOT be
+  deferred.
+- Re-running the planner against the production schema should
+  produce an order where ipam.vlan precedes ipam.prefix and
+  ipam.iprange.
+
+**Testing:** unit test in
+`tests/unit/test_graph_no_unnecessary_defer.py` building a
+two-node graph A→B with A.b nullable. Confirm B comes before A
+in the topo order and the deferred-edge list is empty.
+
+Also re-run the production schema through the planner (fixture
+captured in `tests/fixtures/openapi-prod-4.6.json`) and assert
+ipam.vlan precedes ipam.prefix.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36h] Fail-fast preflight rejects snapshots with enum-dict shape
+
+**Context:** while FEAT-36-blocker is the real fix, we want
+the import to refuse a known-bad snapshot up front rather than
+producing 5000+ failure rows that confuse the diagnosis. The
+preflight check can spot the enum-dict pattern by sampling the
+first row of each content type's JSONL.
+
+**Requirements:**
+
+- Extend `import_/preflight.py` with a `sample_enum_dict_check`
+  that opens the first 1 KB of each `*.jsonl`, parses the row,
+  and looks for any field value matching the
+  `{"label": <str>, "value": <str>}` pattern.
+- A finding adds an entry to
+  `PreflightReport.snapshot_format_issues: list[str]` (new
+  field).
+- `is_blocking` returns True when this list is non-empty
+  (unless the operator passes `--allow-enum-dict-bypass`, a
+  hidden flag for the export-side fix-in-progress window).
+- CLI prints a clear message: "snapshot was exported with the
+  enum-dict bug, re-export with nbsnap ≥ <version>".
+
+**Testing:** unit test in
+`tests/unit/test_preflight_enum_dict.py` constructing two
+snapshot dirs, one with the enum-dict pattern and one without.
+Assert preflight blocks the bad one with a clear message and
+passes the good one.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-36i] Polymorphic FK target may also be a content type that uses Brief NK
+
+**Context:** observed in the rescue log:
+
+    dropping FK dcim.device.oob_ip -> ipam.ipaddress,
+            NK ('172.31.255.100/24', 'dcim.interface',
+                ((('d',), 'esxi0.infra.glitched.se'), 'ipmi'))
+            not found on destination
+
+The IPAddress's natural key is composite, *including* the
+polymorphic assigned_object_id. So an IPAddress assigned to a
+DIFFERENT IPAddress's hosting interface produces a deep nested
+NK. The destination's NK index must support indexing these
+deeply-nested NKs (which it does via tuple equality) BUT the
+build step must walk the interfaces and IPAddresses on the
+destination in the order needed to compute those NKs.
+
+This is an interaction between FEAT-36a (snapshot index) and
+the NK index build order. The fix is to make
+`NKIndex.ensure_built(http, registry, content_type)` cascade
+into its NK dependencies, so building the IPAddress NK index
+also forces the Interface NK index to be built first.
+
+**Requirements:**
+
+- `import_/nk_index.py:ensure_built` recursively builds any
+  content types referenced by the NKSpec of the current
+  content type. For IPAddress, that means
+  `extras.tag`, `dcim.interface`, plus the dependencies of
+  Interface (Device), etc.
+- Cycle-safe: a `building: set[str]` parameter blocks infinite
+  recursion when the NK chain itself has cycles.
+- Add an assertion that the destination NK index for IPAddress,
+  after `ensure_built`, contains at least one entry whose NK
+  has three nested levels matching the production shape.
+
+**Testing:** unit test in
+`tests/unit/test_nk_index_recursive_build.py` with a fake HTTP
+that records the order of `get_all` calls. Assert Interface is
+queried before IPAddress when the caller asks for IPAddress's
+index.
+
+**Estimated Effort:** 1-2h
+
+### [TEST-10] Integration test for demand-driven import order
+
+**Context:** the proof that FEAT-36a–c work together. The test
+exercises a snapshot whose JSONL order deliberately violates
+the normal topological order, then asserts the import still
+produces a correct destination tree.
+
+**Requirements:**
+
+- `tests/integration/test_import_demand_driven.py`.
+- Build a one-shot snapshot directory under `tmp_path` with
+  three content types in a deliberately wrong order (devices
+  before sites, cables before interfaces).
+- Run `nbsnap.import_.driver.run_import` against the dest stack.
+- Assert: every snapshot row lands on the destination; the
+  audit log shows zero `MISSING_FROM_SOURCE` drops; deferred
+  edges (e.g. primary_ip4) end up resolved after Phase-2.
+
+**Testing:** the integration test above is the testing step.
+Marked `@pytest.mark.usefixtures("require_stack")` so it skips
+cleanly when the netbox-docker stack is down.
+
+**Estimated Effort:** 1-2h
+
 ---
 
 ## Open, Phase 6, Verification
