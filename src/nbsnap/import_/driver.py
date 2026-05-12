@@ -25,7 +25,6 @@ from nbsnap.export.writer import CONTENT_TYPE_FILES
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.import_.fk_resolve import (
     normalise_nk,
-    resolve_m2m,
     resolve_polymorphic,
     resolve_simple_fk,
 )
@@ -109,14 +108,40 @@ def run_import(
     return summary
 
 
-def _content_type_order(manifest: Manifest, _snapshot_dir: Path) -> list[str]:
-    """Recover the create-order from the manifest counts.
+def _content_type_order(manifest: Manifest, snapshot_dir: Path) -> list[str]:
+    """Compute the import order, parents before children.
 
-    Ideally the manifest stores the plan order explicitly; for v1
-    we sort alphabetically so the order is deterministic and
-    falls back to a stable choice when the manifest is silent.
+    Re-runs the topological planner against the snapshot's
+    OpenAPI schema so the import side honours the same ordering
+    constraints as the export side: tags before devices, devices
+    before interfaces, sites before locations, etc.
+
+    Without this, an alphabetical sort would import dcim.cable
+    and dcim.device before extras.tag and ipam.* before dcim.*,
+    breaking every FK reference that points "later" in the
+    alphabet.
+
+    Falls back to alphabetical when the schema is unreadable so
+    a damaged snapshot still attempts an import rather than
+    aborting up front.
     """
-    return sorted(manifest.counts.keys())
+    from nbsnap.graph import from_openapi
+    from nbsnap.graph import plan as build_plan
+
+    scope = set(manifest.counts.keys())
+    try:
+        openapi_local = OpenAPI.load(snapshot_dir / SCHEMA_PATH)
+        graph = from_openapi(openapi_local, scope=scope)
+        plan_obj = build_plan(graph)
+    except Exception:  # noqa: BLE001 - any failure falls back to alphabetical
+        return sorted(scope)
+    # Filter to content types actually present in the manifest.
+    ordered = [ct for ct in plan_obj.order if ct in scope]
+    # Anything in scope but not surfaced by the planner gets
+    # appended at the end so we still try to import it.
+    seen = set(ordered)
+    ordered.extend(sorted(scope - seen))
+    return ordered
 
 
 def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
@@ -137,7 +162,24 @@ def _resolve_body(
     http: NetboxHTTP,
     registry: Any,
 ) -> dict[str, Any]:
-    """Resolve every FK NK in `body` back to a destination id."""
+    """Resolve every FK NK in `body` back to a destination id.
+
+    Three graceful-degrade rules apply per field, so one missing
+    reference never aborts the whole import:
+
+    * Simple FK: KeyError on the target lookup -> drop the field
+      from the body. The destination row is created without that
+      FK; Phase-2 (FEAT-23) can backfill if the target appears
+      later in the same run.
+    * M2M: each item is resolved independently. Items that 404
+      against the destination NK index are dropped from the list;
+      surviving items are kept.
+    * Polymorphic: same as simple FK, drop the field on KeyError.
+
+    Each soft drop emits a once-per-(content_type, field, target)
+    log line so the operator can audit which FKs the import did
+    not carry through.
+    """
 
     resolved: dict[str, Any] = {}
     for field_name, value in body.items():
@@ -146,22 +188,74 @@ def _resolve_body(
             resolved[field_name] = value
             continue
         if spec.is_m2m:
-            resolved[field_name] = resolve_m2m(
-                value, spec.fk_target, index, http=http, registry=registry
+            resolved[field_name] = _safe_resolve_m2m(
+                value, spec.fk_target, index, http, registry, content_type, field_name
             )
             continue
         if isinstance(value, dict) and "object_type" in value:
-            resolved[field_name] = resolve_polymorphic(
-                value, index, http=http, registry=registry
-            )
+            try:
+                resolved[field_name] = resolve_polymorphic(
+                    value, index, http=http, registry=registry
+                )
+            except (KeyError, ValueError) as exc:
+                _warn_dropped(content_type, field_name, value.get("object_type", "?"), exc)
             continue
         try:
             resolved[field_name] = resolve_simple_fk(
                 value, spec.fk_target, index, http=http, registry=registry
             )
-        except KeyError:
-            # FK resolution may fail when the deferred-edge target
-            # has not yet been created. Drop the field in that
-            # case; Phase-2 will PATCH it later.
+        except (KeyError, ValueError) as exc:
+            _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
     return resolved
+
+
+def _safe_resolve_m2m(
+    values: Any,
+    parent_ct: str,
+    index: NKIndex,
+    http: NetboxHTTP,
+    registry: Any,
+    content_type: str,
+    field_name: str,
+) -> list[int]:
+    """Resolve each m2m item independently; drop the ones that miss."""
+
+    from nbsnap.import_.fk_resolve import resolve_simple_fk as resolve_one
+
+    if not isinstance(values, list):
+        return []
+    out: list[int] = []
+    for item in values:
+        try:
+            resolved = resolve_one(item, parent_ct, index, http=http, registry=registry)
+        except (KeyError, ValueError) as exc:
+            _warn_dropped(content_type, field_name, parent_ct, exc)
+            continue
+        if resolved is not None:
+            out.append(resolved)
+    return out
+
+
+# Module-level "already warned" sentinel, dedupes per (ct, field, target).
+_WARNED_MISSING_FK: set[tuple[str, str, str]] = set()
+
+
+def _warn_dropped(
+    content_type: str, field_name: str, target: str, exc: Exception
+) -> None:
+    """Log once per (ct, field, target) triple when an FK is dropped."""
+
+    import logging
+
+    key = (content_type, field_name, target)
+    if key in _WARNED_MISSING_FK:
+        return
+    _WARNED_MISSING_FK.add(key)
+    logging.getLogger(__name__).warning(
+        "dropping FK %s.%s -> %s, %s",
+        content_type,
+        field_name,
+        target,
+        exc.args[0] if exc.args else str(exc),
+    )
