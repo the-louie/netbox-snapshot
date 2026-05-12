@@ -69,8 +69,14 @@ def upsert(
     index.ensure_built(http, registry, content_type)
     existing_id = index.lookup(content_type, natural_key)
     if existing_id is None:
+        # Defensive: collapse enum-dicts at the boundary so a
+        # snapshot exported before FEAT-36-blocker (which carries
+        # the {value, label} GET shape) can still import. New
+        # snapshots after the fix already have flat values; this
+        # is a no-op for them.
+        post_body = _coerce_body_for_write(body)
         try:
-            created = http.post(endpoint, dict(body))
+            created = http.post(endpoint, post_body)
         except Exception as exc:  # noqa: BLE001 - surface anything to audit
             return UpsertResult(
                 outcome=UpsertOutcome.FAILED,
@@ -102,7 +108,7 @@ def upsert(
             message="no diff",
         )
     try:
-        http.patch(f"{endpoint}{existing_id}/", diff)
+        http.patch(f"{endpoint}{existing_id}/", _coerce_body_for_write(diff))
     except Exception as exc:  # noqa: BLE001
         return UpsertResult(
             outcome=UpsertOutcome.FAILED,
@@ -131,3 +137,22 @@ def _matches(current: Any, desired: Any) -> bool:
     if isinstance(current, dict) and isinstance(desired, int):
         return bool(current.get("id") == desired)
     return bool(current == desired)
+
+
+def _coerce_body_for_write(body: Mapping[str, Any]) -> dict[str, Any]:
+    """Defensive enum-dict collapse at the write boundary.
+
+    The canonical fix for the {value, label} write bug lives on
+    the export side (`nbsnap.export.extractor._collapse_enum_dict`),
+    but we also coerce here so an old snapshot exported before
+    that fix can still import without a re-export. Fresh
+    snapshots already have flat values, this call is a no-op for
+    them.
+
+    Re-uses the export-side helper so the rule lives in one
+    place and stays in lockstep.
+    """
+
+    from nbsnap.export.extractor import _collapse_enum_dict
+
+    return {k: _collapse_enum_dict(v) for k, v in body.items()}

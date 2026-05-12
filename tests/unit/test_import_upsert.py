@@ -50,6 +50,34 @@ def test_upsert_noops_when_values_match() -> None:
     http.patch.assert_not_called()
 
 
+def test_upsert_coerces_legacy_enum_dict_in_post_body() -> None:
+    """Defensive import-side coerce: an old snapshot's
+    `{value, label}` status survives the POST as the bare value.
+
+    Regression for the legacy-compat half of FEAT-36-blocker.
+    The canonical fix lives in the export side, but a snapshot
+    written before that fix must still upload cleanly.
+    """
+
+    http = _http_with({"post": {"id": 99}})
+    index = NKIndex()
+    upsert(
+        http,
+        content_type="dcim.site",
+        natural_key=("hall-d",),
+        body={
+            "name": "Hall D",
+            "slug": "hall-d",
+            "status": {"value": "active", "label": "Active"},
+        },
+        index=index,
+        registry=default_registry(),
+    )
+    posted_body = http.post.call_args.args[1]
+    assert posted_body["status"] == "active"
+    assert posted_body["name"] == "Hall D"
+
+
 def test_upsert_patches_only_changed_fields() -> None:
     http = _http_with({"get_one": {"id": 7, "name": "Hall D", "slug": "hall-d"}})
     index = NKIndex()
