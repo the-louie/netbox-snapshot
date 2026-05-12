@@ -3393,371 +3393,237 @@ def test_audit_files_are_skipped(tmp_path: Path) -> None:
 
 **Estimated Effort:** 1-2h
 
-### [REFINED] [FEAT-36b] Demand-driven FK resolution with cycle detection
+### [FEAT-36b1] Look-ahead module skeleton with DeferredFK dataclass
 
-#### Architectural specification
+**Context:** the parent ticket FEAT-36b is decomposed into five
+atomic sub-tickets. This first one lands the module file and
+the data shape later sub-tickets reuse. No NetBox API calls
+happen here, just the dataclass and the import-side scaffolding.
 
-Today's FK resolver is single-tier: if the destination's
-`NKIndex` does not have the target, the field is dropped and a
-warning is logged. The result is a snapshot where most rows
-land but most of their FKs do not, producing a
-structurally-broken NetBox that "looks like the source" only
-superficially.
+The downstream sub-tickets (FEAT-36b2 through FEAT-36b5)
+gradually add the destination-tier lookup, the snapshot-tier
+lookup, the cycle detection, and the driver wiring. Keeping
+the data shape stable up front lets those tickets land in any
+order.
 
-The new resolver becomes two-tier:
+**Requirements:**
 
-1. **Destination tier** (existing `NKIndex`). Look up the target
-   by `(content_type, NK)` on the destination. Hit = use the id.
-2. **Snapshot tier** (`SnapshotIndex` from `FEAT-36a`). On a
-   destination miss, ask "is this target in the snapshot?". If
-   yes, recursively run the same upsert path Phase-1 uses on
-   that target first. The recursion populates the destination
-   `NKIndex` with the new id, then the original FK resolves
-   correctly.
+- Create `src/nbsnap/import_/lookahead.py` with a module
+  docstring explaining the two-tier resolution model
+  (destination NKIndex first, snapshot SnapshotIndex second).
+- Define `MAX_DEPTH = 200` as a module-level constant so a
+  malformed snapshot cannot cause unbounded recursion in
+  later sub-tickets.
+- Define the frozen dataclass:
 
-This turns plan-order from a hard requirement into a
-performance optimisation. The plan still controls "what to
-process now"; the resolver handles "what to pull in early when
-this row needs it".
+      @dataclass(frozen=True)
+      class DeferredFK:
+          child_content_type: str
+          child_nk: tuple
+          field_name: str
+          target_content_type: str
+          target_nk: tuple
 
-Two real-world traps:
+- Add a module-level `logger = logging.getLogger(__name__)`.
+- Export `DeferredFK` and `MAX_DEPTH` via `__all__` so the
+  driver can `from nbsnap.import_.lookahead import DeferredFK`.
 
-* **Cycles.** `Device.primary_ip4 → IPAddress.assigned_object
-  → Interface.device → Device`. Maintain a `processing_stack:
-  set[(content_type, NK)]` threaded through the recursion. If
-  the recursion sees a target already on the stack, do not
-  recurse; instead push a `DeferredFK` onto a queue the driver
-  walks during Phase-2 (`FEAT-36c`). The outer upsert proceeds
-  without the cycle-closing field.
-* **Out-of-scope targets** (e.g. `dcim.site.region →
-  dcim.region`). `SnapshotIndex.lookup` returns `None`; fall
-  through to the existing `_warn_dropped` path. No change to
-  user-visible behaviour, but the audit log will categorise
-  this differently in `FEAT-36e`.
+**Testing:**
 
-#### REST API details
+- Unit test in `tests/unit/test_import_lookahead_skeleton.py`.
+- Verify `DeferredFK` is frozen by attempting to set an
+  attribute and catching `dataclasses.FrozenInstanceError`.
+- Verify two `DeferredFK` instances with identical fields
+  hash to the same value and compare equal (needed for the
+  Phase-2 dedupe in a later ticket).
+- Verify `MAX_DEPTH == 200` so a future bump shows up as a
+  test diff.
 
-The recursive resolver calls into the same NetBox REST API
-calls Phase-1 already uses. No new endpoints, just a deeper
-call chain:
+**Estimated Effort:** 1h
 
-* **Lookup target by NK (NKIndex build, the cheap path).**
+### [FEAT-36b2] Destination-tier resolve_or_create helper
 
-      GET /api/<endpoint>/?brief=true&limit=500
+**Context:** layer 1 of the two-tier resolver. Looks up the
+target in the destination's NKIndex and returns the id when
+present. Returns `None` on miss so the caller can fall through
+to the snapshot-tier check that lands in FEAT-36b3.
 
-  Documented under each content type's `list` operation in the
-  Swagger UI. NetBox's `brief=true` mode strips most nested
-  fields, leaving only `id`, `display`, the slug or other NK
-  field, and a `url`. We page via the `next` link until
-  exhausted, then memoise into `NKIndex._by_key`.
+**Requirements:**
 
-* **Create the missing target (POST).**
+- In `src/nbsnap/import_/lookahead.py`, add:
 
-      POST /api/<endpoint>/
-      Content-Type: application/json
-      Authorization: Token <token>
+      def resolve_or_create(
+          http, snapshot_index, dest_index, registry, *,
+          content_type, natural_key,
+          processing_stack, deferred_queue, depth=0,
+      ) -> int | None:
 
-      <body, with all FK fields resolved to destination ids>
+- The body for this sub-ticket implements ONLY the
+  destination check: call `dest_index.ensure_built(http,
+  registry, content_type)`, then `dest_index.lookup(content_type,
+  natural_key)`. Return the id if found, return `None`
+  otherwise. The snapshot fallback, cycle detection, and
+  recursion belong to later sub-tickets and should be left as
+  TODO comments referencing FEAT-36b3 and FEAT-36b4.
+- Add the depth-cap check at the top of the function so
+  later sub-tickets do not need to add it: if `depth >=
+  MAX_DEPTH`, log a warning and return `None`.
+- Mark `processing_stack` and `deferred_queue` as unused for
+  now (`_ = processing_stack`) so mypy and ruff stay quiet
+  until FEAT-36b4 wires them in.
 
-  Documented under each content type's `create` operation.
-  Returns 201 with the created object including `id`. We then
-  call `NKIndex.insert(content_type, nk, id)` so the same NK
-  will hit the destination index on the next lookup.
+**Testing:**
 
-* **Update an already-existing target (PATCH, when the snapshot
-  body differs).** Re-uses the existing `upsert()` skip-if-equal
-  path, see `src/nbsnap/import_/upsert.py`. The PATCH body
-  carries only the differing fields:
+- Unit test in `tests/unit/test_import_lookahead_destination_tier.py`.
+- Case 1, destination has the target: pre-populate
+  `dest_index.insert("dcim.site", ("hall-d",), 42)`, call
+  `resolve_or_create` for that NK, assert it returns 42 and
+  did not call `http.post` (use `MagicMock`).
+- Case 2, destination missing the target: empty NKIndex,
+  call `resolve_or_create`, assert it returns `None` and did
+  not call `http.post`.
+- Case 3, depth >= MAX_DEPTH returns `None` without consulting
+  the index.
 
-      PATCH /api/<endpoint>/<id>/
-      Content-Type: application/json
-      {"<changed_field>": "<new_value>"}
+**Estimated Effort:** 1-2h
 
-#### Implementation
+### [FEAT-36b3] Snapshot-tier fallback with recursive upsert
 
-```python
-# src/nbsnap/import_/lookahead.py
-"""Demand-driven FK resolver.
+**Context:** layer 2 of the two-tier resolver. When the
+destination misses, the resolver consults `SnapshotIndex` (from
+FEAT-36a). If the target is in the snapshot, recursively upsert
+it on the destination, then return the new id so the caller's
+FK resolves cleanly.
 
-When the destination NKIndex misses on an FK target, consult
-the SnapshotIndex. If the target is present in the snapshot,
-recursively upsert it first, then return the new destination
-id so the outer FK resolves cleanly.
-"""
+NetBox endpoints touched by this sub-ticket are the same the
+existing `upsert()` path uses:
 
-from __future__ import annotations
+* `POST /api/<endpoint>/` for the recursive create.
+* `GET /api/<endpoint>/<id>/` for the upsert detail check.
 
-import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any
+**Requirements:**
 
-from nbsnap.http.client import NetboxHTTP
-from nbsnap.import_.nk_index import NKIndex
-from nbsnap.import_.snapshot_index import SnapshotIndex
-from nbsnap.import_.upsert import UpsertOutcome, upsert
-from nbsnap.natkey.model import NKRegistry
+- Extend `resolve_or_create` from FEAT-36b2. After the
+  destination-tier miss, do:
 
-logger = logging.getLogger(__name__)
+      snapshot_body = snapshot_index.lookup(content_type, natural_key)
+      if snapshot_body is None:
+          return None
+      from nbsnap.import_.upsert import upsert
+      result = upsert(
+          http, content_type=content_type, natural_key=natural_key,
+          body=dict(snapshot_body), index=dest_index, registry=registry,
+      )
+      return result.destination_id if result.outcome is not UpsertOutcome.FAILED else None
 
-# Hard cap on recursion depth so a malformed snapshot cannot
-# cause unbounded growth of the processing stack. 200 is
-# generous for any real NetBox topology; cycles are detected
-# explicitly via the stack membership check below.
-MAX_DEPTH = 200
+- Import `UpsertOutcome` and `upsert` lazily inside the
+  function to avoid a circular import between
+  `lookahead.py` and `upsert.py`.
+- Do NOT yet thread the recursion through `_resolve_body`,
+  cycle detection lands in FEAT-36b4.
 
+**Testing:**
 
-@dataclass(frozen=True)
-class DeferredFK:
-    """One FK reference that could not be resolved during Phase-1
-    because the target sits in a cycle with the current record.
-    The Phase-2 writer (FEAT-36c) walks this queue and PATCHes
-    the parent record after both endpoints exist.
-    """
+- Unit test in `tests/unit/test_import_lookahead_snapshot_tier.py`.
+- Case 1, snapshot has the target: pre-populate the
+  `SnapshotIndex` with one row, stub `http.post` to return
+  `{"id": 99, "slug": "hall-d", "name": "Hall D"}`. Call
+  `resolve_or_create`. Assert the function returns 99 and
+  `dest_index.lookup` for that NK now returns 99 (the upsert
+  inserted it).
+- Case 2, snapshot also misses: empty index AND empty
+  snapshot, assert the function returns `None` and made no
+  POST.
 
-    child_content_type: str
-    child_nk: tuple
-    field_name: str
-    target_content_type: str
-    target_nk: tuple
+**Estimated Effort:** 1-2h
 
+### [FEAT-36b4] Cycle detection with processing_stack and DeferredFK queue
 
-def resolve_or_create(
-    http: NetboxHTTP,
-    snapshot_index: SnapshotIndex,
-    dest_index: NKIndex,
-    registry: NKRegistry,
-    *,
-    content_type: str,
-    natural_key: tuple,
-    processing_stack: set[tuple[str, tuple]],
-    deferred_queue: list[DeferredFK],
-    depth: int = 0,
-) -> int | None:
-    """Return the destination id for `(content_type, NK)`.
+**Context:** the cycle Device.primary_ip4 -> IPAddress -> Interface
+-> Device requires explicit detection. When recursion encounters
+a target that is already on the processing stack, we push a
+`DeferredFK` onto the queue and return `None` so the outer
+upsert proceeds without that field. Phase-2 (FEAT-36c) later
+PATCHes the deferred field.
 
-    Three-step strategy:
-      1. Destination index hit -> return the id.
-      2. Cycle detected (target already on processing stack)
-         -> defer to Phase-2, return None.
-      3. Snapshot has the target -> recursively upsert it,
-         insert into NKIndex, return the new id.
-      4. Snapshot misses too -> return None; the caller drops
-         the FK via the existing _warn_dropped path.
-    """
-    key = (content_type, natural_key)
+**Requirements:**
 
-    # Step 1, destination already has it.
-    dest_index.ensure_built(http, registry, content_type)
-    existing = dest_index.lookup(content_type, natural_key)
-    if existing is not None:
-        return existing
+- Add cycle detection to `resolve_or_create`:
+  - At the top, compute `key = (content_type, natural_key)`.
+  - If `key in processing_stack`, log a debug message,
+    append a `DeferredFK` to `deferred_queue` (caller is
+    responsible for the child fields, this sub-ticket
+    surfaces an empty `child_content_type=""` placeholder
+    that FEAT-36b5 fills in via the wrapper helper), and
+    return `None`.
+- Push and pop `key` from `processing_stack` around the
+  recursive `upsert` call so siblings can detect the cycle.
+  Use a `try / finally` block to guarantee the discard runs
+  even if the inner call raises.
+- Confirm `MAX_DEPTH` still applies after pushing onto the
+  stack, so a very deep non-cyclic chain still terminates.
 
-    # Step 2, cycle, defer.
-    if key in processing_stack:
-        # Caller knows the child it is creating; the actual
-        # DeferredFK gets pushed at the caller site where the
-        # child_nk and field_name are available.
-        return None
+**Testing:**
 
-    if depth >= MAX_DEPTH:
-        logger.warning(
-            "max look-ahead depth %d hit at %s NK=%r; dropping FK",
-            MAX_DEPTH, content_type, natural_key,
-        )
-        return None
+- Unit test in `tests/unit/test_import_lookahead_cycle_detection.py`.
+- Case 1, cycle: pre-seed `processing_stack` with a key,
+  call `resolve_or_create` for the same key, assert it
+  returns `None`, `http.post` is never called, and the
+  `deferred_queue` grew by exactly one entry whose
+  `target_content_type` and `target_nk` match the input.
+- Case 2, stack is cleaned up on success: empty
+  destination + snapshot has the target, after the call
+  succeeds, `processing_stack` is back to its prior state.
+- Case 3, stack is cleaned up on failure: stub `upsert` to
+  raise an exception, assert the stack is empty afterwards
+  and the exception propagates.
 
-    # Step 3, snapshot has the target.
-    snapshot_body = snapshot_index.lookup(content_type, natural_key)
-    if snapshot_body is None:
-        return None  # Step 4, genuine miss.
+**Estimated Effort:** 1-2h
 
-    # Recurse: resolve the target's own FKs (which may
-    # themselves trigger more lookups), then upsert. Adding to
-    # the processing stack BEFORE the recursive _resolve_body
-    # call closes the cycle detection: if any FK in the body
-    # points back to ourselves, the inner resolve_or_create
-    # hits step 2 and defers.
-    processing_stack.add(key)
-    try:
-        from nbsnap.import_.driver import _resolve_body  # local import, avoid cycle
-        # _resolve_body needs access to the openapi schema and
-        # to the same resolution machinery; in practice we pass
-        # them in via a context object the driver builds once.
-        # For brevity here, we re-fetch from the driver module.
-        from nbsnap.schema.openapi import OpenAPI  # noqa
-        # openapi must be passed in by the caller; this code is
-        # illustrative — the real implementation receives it as
-        # a parameter.
-        openapi = _ctx_openapi()  # provided by the driver
-        resolved_body = _resolve_body(
-            content_type, dict(snapshot_body), openapi, dest_index, http, registry,
-            snapshot_index=snapshot_index,
-            processing_stack=processing_stack,
-            deferred_queue=deferred_queue,
-            depth=depth + 1,
-        )
-        result = upsert(
-            http,
-            content_type=content_type,
-            natural_key=natural_key,
-            body=resolved_body,
-            index=dest_index,
-            registry=registry,
-        )
-        if result.outcome is UpsertOutcome.FAILED:
-            logger.warning(
-                "look-ahead upsert failed for %s NK=%r: %s",
-                content_type, natural_key, result.message,
-            )
-            return None
-        return result.destination_id
-    finally:
-        processing_stack.discard(key)
+### [FEAT-36b5] Wire look-ahead into _resolve_body in the import driver
 
+**Context:** consumes FEAT-36b1 through FEAT-36b4 and brings
+demand-driven resolution into the actual import path. The
+driver passes the `snapshot_index`, `processing_stack`, and
+`deferred_queue` through `_resolve_body` so every simple-FK
+miss has a chance to recover via look-ahead.
 
-def _ctx_openapi():  # pragma: no cover, real impl in driver
-    raise NotImplementedError("provided by run_import context")
-```
+**Requirements:**
 
-The driver-level integration is small. Inside
-`_resolve_body`'s simple-FK branch, replace the existing
-`resolve_simple_fk` call with:
+- In `src/nbsnap/import_/driver.py`:
+  - Build `SnapshotIndex.from_snapshot(snapshot_dir)` at the
+    top of `run_import`.
+  - Build `deferred_queue: list[DeferredFK] = []` and pass
+    it through `_resolve_body`.
+  - Initialise `processing_stack: set[tuple[str, tuple]] = set()`
+    per-row inside the Phase-1 loop.
+- In `_resolve_body`, replace the existing simple-FK
+  KeyError-drop branch with a call to `resolve_or_create`.
+  When the call returns `None` AND the queue grew, the field
+  was deferred to Phase-2 (do not log a `_warn_dropped`);
+  when it returns `None` without queue growth, the target is
+  out-of-scope (call the existing `_warn_dropped`).
+- The `current_nk` and `field_name` that get baked into the
+  `DeferredFK` come from the caller; have `resolve_or_create`
+  return the queue-length delta so the caller can patch the
+  most recent entry with the missing fields.
 
-```python
-# src/nbsnap/import_/driver.py
-try:
-    rid = resolve_simple_fk(
-        value, spec.fk_target, dest_index,
-        http=http, registry=registry,
-    )
-except KeyError:
-    # Destination miss. Try the snapshot.
-    rid = resolve_or_create(
-        http, snapshot_index, dest_index, registry,
-        content_type=spec.fk_target,
-        natural_key=value if isinstance(value, tuple) else tuple(value),
-        processing_stack=processing_stack,
-        deferred_queue=deferred_queue,
-    )
-    if rid is None:
-        # Either an out-of-scope target or a deferred cycle.
-        # Drop the field; if it was a cycle, push the DeferredFK
-        # so Phase-2 can PATCH it later.
-        if cycle_detected:
-            deferred_queue.append(
-                DeferredFK(
-                    child_content_type=content_type,
-                    child_nk=current_nk,
-                    field_name=field_name,
-                    target_content_type=spec.fk_target,
-                    target_nk=tuple(value),
-                )
-            )
-        _warn_dropped(content_type, field_name, spec.fk_target, KeyError())
-        continue
-resolved[field_name] = rid
-```
+**Testing:**
 
-#### Regression tests
+- Unit test in `tests/unit/test_import_driver_lookahead.py`.
+- Build a minimal `OpenAPI` schema with a Device whose `site`
+  is an FK to Site, a `SnapshotIndex` containing a Site row,
+  and an empty `NKIndex`.
+- Call `_resolve_body("dcim.device", {"name": "d39a", "site":
+  ["hall-d"]}, ...)`.
+- Assert the resolved body has `site` set to the destination
+  id of the newly-created Site (proves the look-ahead created
+  the parent on demand).
+- Run the full unit suite (`pytest tests/unit -q`) and confirm
+  no regressions against the existing 158 tests.
 
-```python
-# tests/unit/test_import_demand_driven.py
-"""Three end-to-end scenarios for the look-ahead resolver."""
+**Estimated Effort:** 1-2h
 
-from unittest.mock import MagicMock
-
-from nbsnap.import_.lookahead import DeferredFK, resolve_or_create
-from nbsnap.import_.nk_index import NKIndex
-from nbsnap.import_.snapshot_index import SnapshotIndex
-from nbsnap.natkey.registry import default as default_registry
-
-
-def test_forward_reference_creates_target_on_demand() -> None:
-    """Device written before its Site: the resolver creates the
-    Site on demand and returns its new id."""
-
-    http = MagicMock()
-    http.get_all.return_value = iter([])  # empty destination
-    http.post.return_value = {"id": 42, "name": "Hall-D", "slug": "hall-d"}
-
-    snap = SnapshotIndex()
-    snap._by_key[("dcim.site", ("hall-d",))] = {"name": "Hall-D", "slug": "hall-d"}
-
-    dest = NKIndex()
-    stack: set = set()
-    q: list[DeferredFK] = []
-    rid = resolve_or_create(
-        http, snap, dest, default_registry(),
-        content_type="dcim.site",
-        natural_key=("hall-d",),
-        processing_stack=stack,
-        deferred_queue=q,
-    )
-    assert rid == 42
-    # Subsequent lookups for the same NK now hit dest_index.
-    assert dest.lookup("dcim.site", ("hall-d",)) == 42
-
-
-def test_cycle_defers_closing_fk() -> None:
-    """Device → IPAddress → Interface → Device cycles. The
-    inner-most attempt to recurse back into 'dcim.device d39a'
-    must defer, not loop."""
-
-    http = MagicMock()
-    http.get_all.return_value = iter([])
-    # Pre-populate the stack as if we are mid-recursion on Device.
-    snap = SnapshotIndex()
-    dest = NKIndex()
-    stack = {("dcim.device", (("hall-d",), "d39a"))}
-    q: list[DeferredFK] = []
-
-    rid = resolve_or_create(
-        http, snap, dest, default_registry(),
-        content_type="dcim.device",
-        natural_key=(("hall-d",), "d39a"),
-        processing_stack=stack,
-        deferred_queue=q,
-    )
-    assert rid is None  # cycle, deferred
-    # http.post was never called; we did not try to create.
-    http.post.assert_not_called()
-
-
-def test_out_of_scope_target_falls_through() -> None:
-    """If the snapshot does not have the target either, we just
-    return None and let the caller drop the FK with a warning."""
-
-    http = MagicMock()
-    http.get_all.return_value = iter([])
-    snap = SnapshotIndex()  # empty
-    dest = NKIndex()
-    rid = resolve_or_create(
-        http, snap, dest, default_registry(),
-        content_type="dcim.region",
-        natural_key=("elmia",),
-        processing_stack=set(),
-        deferred_queue=[],
-    )
-    assert rid is None
-    http.post.assert_not_called()
-```
-
-#### Acceptance criteria
-
-After this ticket lands, the rescue snapshot import:
-
-1. Reduces `failed` count from thousands to single digits.
-2. Produces a non-empty `deferred_queue` only for genuine
-   cycles (Device.primary_ip4 chain, devicerole.parent
-   self-loops). The queue size should be roughly the number of
-   devices with primary_ip4 set, plus a handful for the
-   self-loop hierarchies.
-3. Out-of-scope targets (`dcim.region`, `ipam.vrf`) still log
-   the same single warning per `(content_type, field, target)`
-   triple as today. No new noise.
-
-**Estimated Effort:** 2-4h
 
 ### [REFINED] [FEAT-36c] Wire Phase-2 deferred-FK writer into the import driver
 
@@ -6122,594 +5988,296 @@ Confirm `--skip-sha-check` lets it through with a clear warning.
 
 **Estimated Effort:** 1-2h
 
-### [FEAT-37] `nbsnap reset-destination`, wipe in-scope objects from the destination NetBox
-
-**Status:** open (unchecked).
-
-**Context:** during testing, rescue iteration, and the
-"oops, the import wrote the wrong thing" scenario, an operator
-needs a way to bring the destination NetBox back to a clean
-slate so the next `nbsnap import` can run from scratch. Today
-the only options are (a) drop the destination's PostgreSQL
-database (heavy hammer, requires shell access), or (b) click
-through the NetBox UI per content type (slow, error-prone).
-
-This ticket introduces a new CLI sub-command,
-`nbsnap reset-destination`, that walks every in-scope content
-type in **reverse topological order** and DELETEs each record
-via the destination NetBox's REST API. Reverse-topo because
-children must die before their parents to avoid Django's
-`PROTECT` foreign-key constraint.
-
-**Critical safety constraints, locked in at design time:**
-
-1. The command **refuses to run against `NB_SOURCE_URL`**. Both
-   guard-rail layers (constructor + per-request) already in
-   `NetboxHTTP` apply, plus an explicit double-check in the
-   subcommand that calls `client.is_source()` and exits 4 with
-   "destination URL matches NB_SOURCE_URL, refusing to delete"
-   before any GET.
-2. **Dry-run is the default.** Without `--apply`, the command
-   enumerates what it WOULD delete and prints a per-content-type
-   count, but issues zero DELETE calls.
-3. **Explicit destructive flag required.** Even with `--apply`,
-   the command refuses unless `--i-know-what-im-doing` is also
-   passed. No interactive prompts so the command is scriptable
-   in CI, but both flags must appear in the invocation.
-4. **Scope is opt-in.** Default scope is the renderer-minimum
-   set (`nbsnap.export.driver.DEFAULT_SCOPE`). `--content-types`
-   narrows or widens. The command never touches
-   `users.*`, `extras.objectpermission`, `extras.token`,
-   `core.*`, or any plugin content type unless explicitly named.
-5. **`--keep` exclusions.** `--keep <slug-or-name>` repeatable,
-   lets the operator pin specific records that survive the wipe
-   (e.g. `--keep "admin@example.invalid"`-tagged tags, the
-   bootstrap "default-site").
-
-#### Architectural specification
-
-Three phases per content type, all driven by the same NetBox
-REST API patterns nbsnap already uses elsewhere:
-
-1. **Enumerate.** `GET /api/<endpoint>/?limit=500` paginated
-   via the `next` link, collect `id` for every row. Apply the
-   `--keep` filter at this stage so kept rows never enter the
-   delete queue.
-2. **Confirm.** When dry-run, print
-   `<content_type>: would delete <n> records`.
-   When `--apply --i-know-what-im-doing`, print
-   `<content_type>: deleting <n> records...` and proceed.
-3. **Delete.** Issue `DELETE /api/<endpoint>/` with a body
-   `[{"id": 1}, {"id": 2}, ...]`, batched at 100 ids per call
-   to stay under typical front-proxy body-size limits.
-
-The reverse-topo order comes from running the existing planner
-(`nbsnap.graph.plan`) over the same OpenAPI schema, then
-iterating the plan in reverse. This guarantees Cables die
-before Interfaces before Devices before Locations before
-Sites, etc. Any record whose DELETE 409s because something
-out-of-scope still references it gets logged as a failure
-(`--on-error continue` carries on; `--on-error stop` aborts).
-
-#### REST API details
-
-All endpoints are read-write on the destination NetBox. Source
-guard refuses if the base URL matches `NB_SOURCE_URL`.
-
-* **Enumerate** (paged GET):
-
-      GET /api/<endpoint>/?limit=500
-      Authorization: Token <NB_DESTINATION_TOKEN>
-      Accept: application/json
-
-  Response:
-
-      200 OK
-      {
-        "count": 130,
-        "next": "https://.../?limit=500&offset=500",
-        "previous": null,
-        "results": [
-          {"id": 1, "url": "...", "display": "...", "name": "..."},
-          ...
-        ]
-      }
-
-  Reference: `https://netboxlabs.com/docs/netbox/integrations/rest-api/`
-  pagination section. The endpoint table reuses
-  `nbsnap.natkey.verify.CONTENT_TYPE_ENDPOINTS`.
-
-* **Bulk delete** (NetBox 4.x supports an array body on the
-  list endpoint, documented at the Swagger UI under each
-  resource's `bulk_destroy`):
-
-      DELETE /api/<endpoint>/
-      Authorization: Token <NB_DESTINATION_TOKEN>
-      Content-Type: application/json
-
-      [{"id": 1}, {"id": 2}, {"id": 3}]
-
-  Response on success:
-
-      204 No Content
-
-  Response on FK constraint violation:
-
-      409 Conflict
-      {"detail": "Unable to delete object. <Other> objects depend on it."}
-
-  Reference: `https://demo.netbox.dev/api/schema/swagger-ui/`,
-  search each content type's `_bulk_destroy` operation.
-
-* **Single delete fallback**, in case bulk fails for one bad
-  row in the batch:
-
-      DELETE /api/<endpoint>/<id>/
-      Authorization: Token <NB_DESTINATION_TOKEN>
-
-  Response: `204 No Content` on success, `409 Conflict` if the
-  record still has dependents.
-
-The implementation should attempt bulk first per batch, and on
-a 4xx response that names a single offending id, fall back to
-single-row DELETE for the rest of the batch so one bad row
-does not stall the whole content type.
-
-#### Implementation
-
-```python
-# src/nbsnap/reset_cli.py
-"""nbsnap reset-destination, wipe in-scope objects from the dest.
-
-Three safety layers:
-  1. Source-URL guard rail (NetboxHTTP already enforces).
-  2. --apply must be passed explicitly; dry-run is the default.
-  3. --i-know-what-im-doing must ALSO be passed before any DELETE.
-
-Reverse-topological delete order so Django PROTECT FKs do not
-trip on a parent that still has children.
-"""
-
-from __future__ import annotations
-
-import argparse
-import json
-import logging
-import sys
-from collections import Counter
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
-
-from nbsnap.export.driver import DEFAULT_SCOPE
-from nbsnap.graph import from_openapi, plan as build_plan
-from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
-from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
-from nbsnap.schema.openapi import OpenAPI
-
-logger = logging.getLogger(__name__)
-EXIT_OK = 0
-EXIT_BLOCKED_BY_SOURCE_GUARD = 4
-EXIT_NEEDS_APPLY_FLAGS = 1
-EXIT_DELETE_FAILURES = 2
-BATCH = 100
-
-
-def add_reset_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--url", help="NetBox base URL; defaults to NB_DESTINATION_URL")
-    parser.add_argument("--token", help="NetBox API token; defaults to NB_DESTINATION_TOKEN")
-    parser.add_argument("--no-verify-tls", action="store_true",
-                        help="disable TLS verification")
-    parser.add_argument("--content-types",
-                        help="comma-separated content types; default is the renderer-minimum scope")
-    parser.add_argument("--keep", action="append", default=[],
-                        metavar="<name-or-slug>",
-                        help="exclude records whose name/slug matches; repeatable")
-    parser.add_argument("--apply", action="store_true",
-                        help="actually issue DELETE calls; default is dry-run")
-    parser.add_argument("--i-know-what-im-doing", action="store_true", dest="confirmed",
-                        help="required alongside --apply, no interactive prompt")
-    parser.add_argument("--on-error", choices=["stop", "continue"], default="stop")
-    parser.add_argument("--audit-out", type=Path, default=None,
-                        help="write a per-record JSONL audit of deletes (default stderr only)")
-
-
-def run_reset_cli(args: argparse.Namespace) -> int:
-    """Entry point. Builds the client, computes the reverse plan,
-    walks each content type, and DELETEs."""
-
-    # Construct the client. The standard from_env() helper does
-    # the role-specific env lookup AND attaches the source guard.
-    http = NetboxHTTP.from_env(
-        "destination",
-        url=args.url, token=args.token, verify_tls=not args.no_verify_tls,
-    )
-
-    # Safety layer 1: triple-check the source guard at the CLI
-    # boundary, in case the operator passed --url that happens
-    # to match NB_SOURCE_URL.
-    if http.is_source():
-        sys.stderr.write(
-            "nbsnap reset-destination: refusing, destination URL matches "
-            f"NB_SOURCE_URL ({http.base_url}). The source NetBox is read-only "
-            "by policy (see CLAUDE.md).\n"
-        )
-        return EXIT_BLOCKED_BY_SOURCE_GUARD
-
-    # Safety layer 2 + 3: dry-run vs explicit destructive flag.
-    if args.apply and not args.confirmed:
-        sys.stderr.write(
-            "nbsnap reset-destination: --apply also requires "
-            "--i-know-what-im-doing.\n"
-            "This command will DELETE every in-scope object on:\n"
-            f"  {http.base_url}\n"
-            "Re-run with both flags to proceed.\n"
-        )
-        return EXIT_NEEDS_APPLY_FLAGS
-
-    # Resolve scope.
-    scope = (
-        set(DEFAULT_SCOPE)
-        if not args.content_types
-        else {t.strip() for t in args.content_types.split(",") if t.strip()}
-    )
-    keep = set(args.keep)
-
-    # Build reverse-topo plan from the destination's live schema.
-    # We could load a snapshot's schema too, but the destination is
-    # the authoritative source of truth for which records exist.
-    openapi = OpenAPI.fetch(http)
-    graph = from_openapi(openapi, scope=scope)
-    plan_obj = build_plan(graph)
-    delete_order = list(reversed(plan_obj.order))
-
-    audit_lines: list[str] = []
-    counts: Counter[str] = Counter()
-    failures: list[tuple[str, int, str]] = []
-
-    for ct in delete_order:
-        if ct not in scope:
-            continue
-        endpoint = CONTENT_TYPE_ENDPOINTS.get(ct)
-        if endpoint is None:
-            continue
-
-        ids = list(_enumerate_ids(http, endpoint, keep_names=keep))
-        if not ids:
-            counts[ct] = 0
-            continue
-
-        verb = "DELETING" if args.apply and args.confirmed else "would delete"
-        sys.stderr.write(f"  {ct}: {verb} {len(ids)} records\n")
-
-        if not (args.apply and args.confirmed):
-            counts[ct] = len(ids)
-            continue
-
-        for batch in _chunks(ids, BATCH):
-            try:
-                _bulk_delete(http, endpoint, batch)
-                counts[ct] += len(batch)
-                for rid in batch:
-                    audit_lines.append(json.dumps(
-                        {"content_type": ct, "id": rid, "outcome": "deleted"}
-                    ))
-            except NetboxHTTPError as exc:
-                # Fall back to per-id deletes so one bad row
-                # does not stall the rest of the batch.
-                for rid in batch:
-                    try:
-                        http._request("DELETE", f"{endpoint}{rid}/")
-                        counts[ct] += 1
-                        audit_lines.append(json.dumps(
-                            {"content_type": ct, "id": rid, "outcome": "deleted-fallback"}
-                        ))
-                    except NetboxHTTPError as one_exc:
-                        failures.append((ct, rid, str(one_exc)))
-                        audit_lines.append(json.dumps(
-                            {"content_type": ct, "id": rid, "outcome": "failed",
-                             "message": str(one_exc)[:200]}
-                        ))
-                        if args.on_error == "stop":
-                            _flush_audit(args, audit_lines)
-                            _summary(counts, failures, dry_run=False)
-                            return EXIT_DELETE_FAILURES
-
-    _flush_audit(args, audit_lines)
-    _summary(counts, failures, dry_run=not (args.apply and args.confirmed))
-    return EXIT_DELETE_FAILURES if failures else EXIT_OK
-
-
-# Helpers --------------------------------------------------------
-
-def _enumerate_ids(
-    http: NetboxHTTP, endpoint: str, keep_names: set[str]
-) -> Iterable[int]:
-    """Yield every id NetBox lists for `endpoint`, minus --keep matches."""
-
-    for row in http.get_all(endpoint):
-        rid = row.get("id")
-        if not isinstance(rid, int):
-            continue
-        name = row.get("name") or row.get("slug") or ""
-        if name in keep_names:
-            continue
-        yield rid
-
-
-def _chunks(items: list[int], n: int) -> Iterable[list[int]]:
-    for i in range(0, len(items), n):
-        yield items[i : i + n]
-
-
-def _bulk_delete(http: NetboxHTTP, endpoint: str, ids: list[int]) -> None:
-    """NetBox bulk DELETE expects `[{"id": <int>}, ...]` body."""
-
-    body = [{"id": rid} for rid in ids]
-    http._request("DELETE", endpoint, json=body)
-
-
-def _flush_audit(args: argparse.Namespace, lines: list[str]) -> None:
-    if args.audit_out is None:
-        return
-    args.audit_out.parent.mkdir(parents=True, exist_ok=True)
-    args.audit_out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _summary(
-    counts: Counter[str], failures: list[tuple[str, int, str]], *, dry_run: bool
-) -> None:
-    sys.stderr.write("# nbsnap reset-destination "
-                     + ("(dry-run)" if dry_run else "complete") + "\n")
-    for ct, n in sorted(counts.items()):
-        sys.stderr.write(f"  {ct}: {n}\n")
-    if failures:
-        sys.stderr.write(f"  failed: {len(failures)}\n")
-        sys.stderr.write(f"  first failure: {failures[0][0]} id={failures[0][1]} "
-                         f"{failures[0][2][:160]}\n")
-```
-
-Wire into `src/nbsnap/cli.py` alongside the other sub-commands.
-Append `"reset-destination": "FEAT-37"` to the `TICKETS` map and
-add the dispatcher branch:
-
-```python
-elif name == "reset-destination":
-    from nbsnap.reset_cli import add_reset_args, run_reset_cli
-    add_reset_args(sub)
-    sub.set_defaults(func=run_reset_cli)
-```
-
-#### Tests
-
-```python
-# tests/unit/test_reset_cli.py
-"""Test the safety layers, dry-run accounting, and bulk-DELETE wiring."""
-
-import argparse
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
-from nbsnap.reset_cli import (
-    EXIT_BLOCKED_BY_SOURCE_GUARD,
-    EXIT_NEEDS_APPLY_FLAGS,
-    EXIT_OK,
-    run_reset_cli,
-)
-
-
-def _args(**over) -> argparse.Namespace:
-    defaults = {
-        "url": "https://dest.example/",
-        "token": "tok",
-        "no_verify_tls": False,
-        "content_types": None,
-        "keep": [],
-        "apply": False,
-        "confirmed": False,
-        "on_error": "stop",
-        "audit_out": None,
+### [FEAT-37a] `nbsnap reset-destination` module skeleton and CLI dispatch
+
+**Priority:** HIGH (set 2026-06-15). The whole FEAT-37 series
+should land before FEAT-36 implementation starts; the
+look-ahead and Phase-2 work needs a clean destination to test
+against, and dropping postgres between every test run is
+heavyweight. FEAT-37a is the prerequisite that the four
+subsequent sub-tickets stack on.
+
+**Context:** the parent FEAT-37 ticket is decomposed into five
+atomic sub-tickets. This first one creates the module file,
+wires argparse, plugs the new sub-command into `cli.py`, and
+prints a dry-run summary table. NO writes happen here, no
+deletion logic yet. The safety layers (FEAT-37b), enumeration
+(FEAT-37c), bulk delete (FEAT-37d), and audit (FEAT-37e)
+follow.
+
+**Requirements:**
+
+- Create `src/nbsnap/reset_cli.py` with the module docstring
+  and the constants `EXIT_OK = 0`, `EXIT_NEEDS_APPLY_FLAGS = 1`,
+  `EXIT_DELETE_FAILURES = 2`, `EXIT_BLOCKED_BY_SOURCE_GUARD = 4`,
+  `BATCH = 100`.
+- Define `add_reset_args(parser)` with these flags: `--url`,
+  `--token`, `--no-verify-tls`, `--content-types`, `--keep`
+  (repeatable), `--apply`, `--i-know-what-im-doing`,
+  `--on-error {stop,continue}`, `--audit-out`.
+- Define `run_reset_cli(args)` that returns `EXIT_OK` and
+  prints "# nbsnap reset-destination (dry-run)" plus an empty
+  per-content-type summary. Real behaviour comes in later
+  sub-tickets.
+- In `src/nbsnap/cli.py`, add `"reset-destination": "FEAT-37"`
+  to `TICKETS` and a new dispatch branch:
+
+      elif name == "reset-destination":
+          from nbsnap.reset_cli import add_reset_args, run_reset_cli
+          add_reset_args(sub)
+          sub.set_defaults(func=run_reset_cli)
+
+- Update the stub-sub-command sweep in
+  `tests/unit/test_cli.py` to exclude `reset-destination`
+  from `_REMAINING_STUBS` (same list that already excludes
+  the other implemented sub-commands).
+
+**Testing:**
+
+- Unit test in `tests/unit/test_reset_cli_skeleton.py`.
+- Confirm `nbsnap reset-destination --help` lists every new
+  flag, achieved by parsing via `_build_parser` from `cli.py`
+  and reading the `--help` output (capture via `capsys`).
+- Confirm `run_reset_cli(args)` returns `EXIT_OK` when called
+  with dry-run defaults and a stubbed `NetboxHTTP`.
+- Run `pytest tests/unit -q`, confirm no regressions.
+
+**Estimated Effort:** 1-2h
+
+### [FEAT-37b] Triple safety check for reset-destination
+
+**Context:** the destructive nature of the new sub-command
+demands three independent safety gates. Source-URL guard
+refuses to touch `NB_SOURCE_URL`. `--apply` must be passed
+explicitly to switch off dry-run. `--i-know-what-im-doing`
+must be passed alongside `--apply` so a stray "--apply" in CI
+does not wipe a real destination.
+
+**Requirements:**
+
+- In `run_reset_cli`, immediately after constructing
+  `NetboxHTTP.from_env("destination", ...)`, call
+  `http.is_source()` and exit with
+  `EXIT_BLOCKED_BY_SOURCE_GUARD` (4) if True. Error message:
+  "nbsnap reset-destination: refusing, destination URL
+  matches NB_SOURCE_URL ({base_url}). The source NetBox is
+  read-only by policy (see CLAUDE.md)."
+- Then, if `args.apply` is True but `args.confirmed` is
+  False, exit with `EXIT_NEEDS_APPLY_FLAGS` (1) and print:
+  "nbsnap reset-destination: --apply also requires
+  --i-know-what-im-doing." Plus a two-line block naming the
+  URL and the action.
+- Both checks happen BEFORE any GET or DELETE. Do not even
+  fetch the OpenAPI schema until both gates pass.
+
+**Testing:**
+
+- Unit test in `tests/unit/test_reset_cli_safety.py`.
+- Case 1, source-URL guard: monkeypatch
+  `NB_SOURCE_URL=https://prod.example/`, call
+  `run_reset_cli(_args(url="https://prod.example/"))`,
+  assert return code 4 and the stderr message contains
+  "matches NB_SOURCE_URL".
+- Case 2, apply without confirmation: stub `NetboxHTTP.from_env`
+  to return a non-source mock, pass `apply=True,
+  confirmed=False`, assert return code 1 and the stderr
+  message contains "also requires --i-know-what-im-doing".
+- Case 3, dry-run is the default: `apply=False`, assert
+  return code 0 and no DELETE calls were issued.
+
+**Estimated Effort:** 1h
+
+### [FEAT-37c] Enumerate destination IDs with --keep filter
+
+**Context:** before deletion the command needs to know which
+record IDs exist for each in-scope content type. Enumeration
+uses NetBox's paged list endpoint with the `?limit=500`
+convention and the `next` link, the same pattern
+`NetboxHTTP.get_all` already implements. `--keep <name-or-slug>`
+filters out specific records so an operator can preserve a
+small set of pinned objects across the wipe.
+
+NetBox REST endpoint used:
+
+    GET /api/<endpoint>/?limit=500
+    Authorization: Token <NB_DESTINATION_TOKEN>
+    Accept: application/json
+
+Response shape:
+
+    200 OK
+    {
+      "count": N,
+      "next": "<url-or-null>",
+      "previous": "<url-or-null>",
+      "results": [
+        {"id": <int>, "url": "...", "display": "...",
+         "name": "...", "slug": "..."},
+        ...
+      ]
     }
-    defaults.update(over)
-    return argparse.Namespace(**defaults)
 
+Endpoint table comes from
+`nbsnap.natkey.verify.CONTENT_TYPE_ENDPOINTS`.
 
-@pytest.fixture(autouse=True)
-def _isolate_env(monkeypatch):
-    for k in ("NB_SOURCE_URL", "NB_SOURCE_TOKEN",
-              "NB_DESTINATION_URL", "NB_DESTINATION_TOKEN"):
-        monkeypatch.delenv(k, raising=False)
+**Requirements:**
 
+- In `src/nbsnap/reset_cli.py`, add:
 
-def test_refuses_to_run_against_source_url(monkeypatch):
-    """The source-URL guard fires at the CLI boundary."""
-    monkeypatch.setenv("NB_SOURCE_URL", "https://prod.example/")
-    rc = run_reset_cli(_args(url="https://prod.example/"))
-    assert rc == EXIT_BLOCKED_BY_SOURCE_GUARD
+      def _enumerate_ids(http, endpoint, keep_names: set[str]) -> Iterable[int]:
+          for row in http.get_all(endpoint):
+              rid = row.get("id")
+              if not isinstance(rid, int):
+                  continue
+              name = row.get("name") or row.get("slug") or ""
+              if name in keep_names:
+                  continue
+              yield rid
 
+- Wire `_enumerate_ids` into `run_reset_cli`: after the
+  safety gates, iterate the in-scope content types and call
+  `_enumerate_ids(http, endpoint, keep_names=set(args.keep))`
+  for each, accumulating counts in a `Counter[str]`. Print
+  the per-content-type "would delete N records" line on
+  stderr. Still no DELETE in this sub-ticket.
 
-def test_refuses_apply_without_confirmation():
-    """--apply alone is not enough."""
-    with patch("nbsnap.reset_cli.NetboxHTTP.from_env",
-               return_value=MagicMock(is_source=lambda: False)):
-        rc = run_reset_cli(_args(apply=True, confirmed=False))
-    assert rc == EXIT_NEEDS_APPLY_FLAGS
+**Testing:**
 
+- Unit test in `tests/unit/test_reset_cli_enumerate.py`.
+- Stub `http.get_all` to yield three rows, one with `name=
+  "keep-me"`, two without. Pass `keep_names={"keep-me"}` to
+  `_enumerate_ids`, assert exactly two ids return.
+- Stub a content type with zero rows, confirm
+  `_enumerate_ids` yields nothing and does not raise.
+- End-to-end through `run_reset_cli` (dry-run): assert the
+  printed line "dcim.site: would delete 2 records" appears
+  when the stub returns 2 sites.
 
-def test_dry_run_does_not_call_delete():
-    """Default mode enumerates but does not delete."""
+**Estimated Effort:** 1h
 
-    http = MagicMock()
-    http.is_source.return_value = False
-    http.base_url = "https://dest.example/"
-    http.get_all.return_value = iter([
-        {"id": 1, "name": "A"}, {"id": 2, "name": "B"},
-    ])
-    http._request.return_value = None
+### [FEAT-37d] Bulk DELETE with per-id 409 fallback
 
-    with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http), \
-         patch("nbsnap.reset_cli.OpenAPI.fetch", return_value=MagicMock()), \
-         patch("nbsnap.reset_cli.from_openapi") as fop, \
-         patch("nbsnap.reset_cli.build_plan") as bp:
-        bp.return_value = MagicMock(order=["dcim.site"])
-        fop.return_value = MagicMock()
-        rc = run_reset_cli(_args(apply=False, confirmed=False))
+**Context:** NetBox 4.x supports a bulk DELETE on the list
+endpoint, the array body `[{"id": 1}, {"id": 2}]`. When a
+batch fails because one row has dependent objects, fall back
+to per-id deletes so the rest of the batch completes.
 
-    assert rc == EXIT_OK
-    # No DELETE was issued.
-    delete_calls = [c for c in http._request.mock_calls
-                    if c.args and c.args[0] == "DELETE"]
-    assert delete_calls == []
+NetBox REST endpoints used:
 
+    DELETE /api/<endpoint>/
+    Authorization: Token <NB_DESTINATION_TOKEN>
+    Content-Type: application/json
 
-def test_apply_with_confirmation_issues_bulk_delete():
-    """Both safety flags set, bulk DELETE fires with a list body."""
+    [{"id": 1}, {"id": 2}, ...]
 
-    http = MagicMock()
-    http.is_source.return_value = False
-    http.base_url = "https://dest.example/"
-    http.get_all.return_value = iter([
-        {"id": 1, "name": "A"}, {"id": 2, "name": "B"},
-    ])
-    http._request.return_value = None  # 204
+    -> 204 No Content (success)
+    -> 409 Conflict (something depends on one of the rows)
 
-    with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http), \
-         patch("nbsnap.reset_cli.OpenAPI.fetch", return_value=MagicMock()), \
-         patch("nbsnap.reset_cli.from_openapi") as fop, \
-         patch("nbsnap.reset_cli.build_plan") as bp:
-        bp.return_value = MagicMock(order=["dcim.site"])
-        fop.return_value = MagicMock()
-        rc = run_reset_cli(_args(apply=True, confirmed=True))
+    DELETE /api/<endpoint>/<id>/
+    Authorization: Token <NB_DESTINATION_TOKEN>
 
-    assert rc == EXIT_OK
-    delete_calls = [c for c in http._request.mock_calls
-                    if c.args and c.args[0] == "DELETE"]
-    assert len(delete_calls) == 1
-    _, kwargs = delete_calls[0].kwargs, delete_calls[0]
-    assert delete_calls[0].kwargs["json"] == [{"id": 1}, {"id": 2}]
+    -> 204 No Content (success)
+    -> 409 Conflict (PROTECT FK from out-of-scope record)
 
+Reference: NetBox Swagger UI `*_bulk_destroy` and
+`*_destroy` operations.
 
-def test_keep_excludes_named_records():
-    """--keep <name> drops the matching row from the delete list."""
+**Requirements:**
 
-    http = MagicMock()
-    http.is_source.return_value = False
-    http.base_url = "https://dest.example/"
-    http.get_all.return_value = iter([
-        {"id": 1, "name": "keep-me"},
-        {"id": 2, "name": "B"},
-    ])
+- Add `_bulk_delete(http, endpoint, ids: list[int])`:
 
-    with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http), \
-         patch("nbsnap.reset_cli.OpenAPI.fetch", return_value=MagicMock()), \
-         patch("nbsnap.reset_cli.from_openapi") as fop, \
-         patch("nbsnap.reset_cli.build_plan") as bp:
-        bp.return_value = MagicMock(order=["dcim.site"])
-        fop.return_value = MagicMock()
-        run_reset_cli(_args(apply=True, confirmed=True, keep=["keep-me"]))
+      body = [{"id": rid} for rid in ids]
+      http._request("DELETE", endpoint, json=body)
 
-    delete_calls = [c for c in http._request.mock_calls
-                    if c.args and c.args[0] == "DELETE"]
-    assert delete_calls[0].kwargs["json"] == [{"id": 2}]
+- Add `_chunks(items, n)` helper that yields successive
+  `n`-sized slices.
+- Compute the reverse-topo deletion order once at the top of
+  `run_reset_cli`: load the destination OpenAPI via
+  `OpenAPI.fetch(http)`, build the graph with
+  `from_openapi(openapi, scope=scope)`, run `plan(graph)`,
+  iterate `reversed(plan.order)`. Use the existing
+  `nbsnap.graph` exports.
+- When `args.apply and args.confirmed`, for each content
+  type, iterate `_chunks(ids, BATCH)` and call
+  `_bulk_delete`. On `NetboxHTTPError`, fall back to per-id
+  `http._request("DELETE", f"{endpoint}{rid}/")` for each id
+  in the failed batch. Track per-id outcomes; on a single-row
+  failure, append `(content_type, rid, str(exc))` to a
+  `failures` list and continue or stop per `args.on_error`.
+- Return `EXIT_DELETE_FAILURES` (2) when `failures` is non-
+  empty, else `EXIT_OK`.
 
+**Testing:**
 
-def test_audit_jsonl_written_when_path_given(tmp_path: Path):
-    """--audit-out persists per-record outcomes for forensics."""
+- Unit test in `tests/unit/test_reset_cli_bulk_delete.py`.
+- Case 1, happy path: stub `http._request` to return None
+  (204), assert one DELETE call per batch and final return
+  code 0.
+- Case 2, bulk fails, per-id succeeds: stub the first
+  `DELETE /api/x/` call to raise `NetboxHTTPError(409, ...)`
+  then per-id `DELETE /api/x/<id>/` returns 204. Assert the
+  fallback fires for every id in the batch, total return
+  code 0.
+- Case 3, per-id also fails: per-id raises 409 too, assert
+  the failure is recorded and `on_error="stop"` returns
+  code 2 immediately. With `on_error="continue"`, assert all
+  ids in the remaining content types are still attempted.
 
-    http = MagicMock()
-    http.is_source.return_value = False
-    http.base_url = "https://dest.example/"
-    http.get_all.return_value = iter([{"id": 7, "name": "X"}])
-    http._request.return_value = None
+**Estimated Effort:** 1-2h
 
-    audit_path = tmp_path / "audit.jsonl"
-    with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http), \
-         patch("nbsnap.reset_cli.OpenAPI.fetch", return_value=MagicMock()), \
-         patch("nbsnap.reset_cli.from_openapi") as fop, \
-         patch("nbsnap.reset_cli.build_plan") as bp:
-        bp.return_value = MagicMock(order=["dcim.site"])
-        fop.return_value = MagicMock()
-        run_reset_cli(_args(apply=True, confirmed=True, audit_out=audit_path))
+### [FEAT-37e] Audit JSONL writer and integration test
 
-    rows = [json.loads(line) for line in audit_path.read_text().splitlines() if line]
-    assert {"content_type": "dcim.site", "id": 7, "outcome": "deleted"} in rows
-```
+**Context:** for forensics on a destructive operation, the
+command writes a JSONL audit of every record it touched, one
+JSON object per deleted (or failed) id. Plus an integration
+test against the netbox-docker dest stack that proves the
+end-to-end flow.
 
-#### Integration test, against the docker stack
+**Requirements:**
 
-```python
-# tests/integration/test_reset_destination.py
-"""End-to-end against the dest stack: seed it, reset, confirm empty."""
+- In `src/nbsnap/reset_cli.py`, add `_flush_audit(args,
+  lines: list[str])`:
 
-import pytest
-import requests
+      if args.audit_out is None:
+          return
+      args.audit_out.parent.mkdir(parents=True, exist_ok=True)
+      args.audit_out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-from nbsnap.http.client import NetboxHTTP
-from nbsnap.reset_cli import run_reset_cli
+- Append a JSON line to the in-memory `audit_lines` list for
+  every per-id outcome:
+  `{"content_type": ct, "id": rid, "outcome": "deleted"}`
+  on bulk success,
+  `{"content_type": ct, "id": rid, "outcome": "deleted-fallback"}`
+  after the per-id fallback succeeds,
+  `{"content_type": ct, "id": rid, "outcome": "failed",
+    "message": <truncated>}` on failure.
+- Call `_flush_audit(args, audit_lines)` once at the end of
+  `run_reset_cli` (and on the early-exit failure path so the
+  partial audit lands too).
 
-DEST_URL = "http://localhost:8081"
-DEST_TOKEN = "abcdef0123456789" * 2 + "abcdef01"
+**Testing:**
 
+- Unit test in `tests/unit/test_reset_cli_audit.py`.
+- Stub one content type with two ids, both delete cleanly.
+  Pass `audit_out=tmp_path / "audit.jsonl"`. Assert the file
+  contains two JSON lines with `outcome: "deleted"`.
+- Stub a per-id failure, assert the JSON line carries
+  `outcome: "failed"` and the message is truncated to 200
+  chars.
 
-def _args(**over):
-    import argparse
-    a = argparse.Namespace(
-        url=DEST_URL, token=DEST_TOKEN, no_verify_tls=True,
-        content_types=None, keep=[], apply=True, confirmed=True,
-        on_error="continue", audit_out=None,
-    )
-    for k, v in over.items():
-        setattr(a, k, v)
-    return a
+- Integration test in
+  `tests/integration/test_reset_destination.py`,
+  decorated with `@pytest.mark.usefixtures("require_stack")`.
+- Run `make stack-seed` ahead of the test (CI hook).
+- Confirm `GET /api/dcim/sites/` returns `count > 0` before
+  the reset call (sanity check the seed ran).
+- Call `run_reset_cli` with apply=True, confirmed=True,
+  url and token pointing at localhost:8081.
+- Confirm `GET /api/dcim/sites/` returns `count == 0` after.
+- Confirm the audit JSONL file exists and lists at least
+  the seeded site id.
 
-
-@pytest.mark.usefixtures("require_stack")
-def test_reset_clears_seeded_destination():
-    """After `make stack-seed`, destination has sites and devices.
-    After reset, those endpoints return zero."""
-
-    # Sanity check, the seed put data in.
-    headers = {"Authorization": f"Token {DEST_TOKEN}"}
-    pre = requests.get(f"{DEST_URL}/api/dcim/sites/",
-                       headers=headers, timeout=10).json()["count"]
-    assert pre > 0, "test stack not seeded, run `make stack-seed` first"
-
-    rc = run_reset_cli(_args())
-    assert rc == 0
-
-    post = requests.get(f"{DEST_URL}/api/dcim/sites/",
-                        headers=headers, timeout=10).json()["count"]
-    assert post == 0
-```
-
-#### Acceptance criteria
-
-1. `nbsnap reset-destination --url $NB_SOURCE_URL ...` returns
-   exit 4 with the source-guard message, never touches the
-   wire.
-2. `nbsnap reset-destination --url $NB_DESTINATION_URL --token
-   $NB_DESTINATION_TOKEN` (no `--apply`) prints a per-
-   content-type "would delete N records" table and returns
-   exit 0, zero DELETE calls.
-3. `nbsnap reset-destination --apply` without
-   `--i-know-what-im-doing` returns exit 1 with a clear
-   message, zero DELETE calls.
-4. `nbsnap reset-destination --apply --i-know-what-im-doing`
-   walks reverse-topological order, DELETEs every in-scope
-   record, and exits 0 if no 409s land.
-5. After running against a seeded netbox-docker dest stack,
-   `GET /api/dcim/sites/` returns `count: 0` and the same for
-   every other in-scope endpoint.
-6. `--keep "my-tag"` survives the wipe, end-to-end verified.
-7. An out-of-scope FK pointing into the in-scope record set
-   produces a 409 on the in-scope DELETE; the failure lands in
-   the audit JSONL, and the run continues (`--on-error
-   continue`) or stops (`--on-error stop`) as configured.
-
-**Estimated Effort:** 2-3h
+**Estimated Effort:** 1-2h
 
 ---
 
