@@ -98,11 +98,61 @@ def extract(
         yield ExtractedRow(content_type=content_type, natural_key=nk, body=body), None
 
 
+# NetBox 4.x serialises every enum field with a `{value, label}`
+# wrapper on the GET response, but the matching POST/PATCH endpoint
+# accepts only the bare value string. This set is the exact key
+# shape we collapse; checking for equality (not subset) guards
+# against accidentally collapsing a payload dict that happens to
+# carry a `value` field alongside other keys.
+_ENUM_DICT_KEYS = frozenset({"value", "label"})
+
+
+def _collapse_enum_dict(value: Any) -> Any:
+    """Return the `value` slot when `value` is a NetBox enum-dict.
+
+    NetBox returns choice fields like `status` as
+    `{"value": "active", "label": "Active"}` when you read them
+    via GET. The same field on POST/PATCH must be the bare string
+    `"active"`. Without this collapse the import side gets
+
+        HTTP 400 {"status": ["Value must be passed directly..."]}
+
+    on every record that carries a choice field, which in
+    practice means every Site, Device, IPAddress, Prefix, etc.
+
+    We only collapse when the dict has EXACTLY the two keys we
+    expect. Any extra key suggests a real payload dict rather
+    than the enum wrapper, so we leave it alone.
+    """
+
+    if isinstance(value, Mapping) and frozenset(value.keys()) == _ENUM_DICT_KEYS:
+        inner = value["value"]
+        # NetBox's enum values are strings in every observed
+        # case, but we allow int / bool / None for safety so a
+        # future choice type does not silently get mangled. The
+        # `X | Y` union syntax requires Python 3.10+ and the
+        # project floor is 3.11 (see pyproject.toml).
+        if isinstance(inner, str | int | bool) or inner is None:
+            return inner
+    return value
+
+
 def _apply_allowlist(
     record: Mapping[str, Any], allowlist: frozenset[str]
 ) -> dict[str, Any]:
-    """Keep only the fields the destination will accept."""
-    return {k: v for k, v in record.items() if k in allowlist}
+    """Keep only the fields the destination will accept.
+
+    Two transforms happen at this boundary:
+
+    1. Field allowlist filter: drop fields NetBox does not
+       accept on POST/PATCH (e.g. `id`, `url`, `display`,
+       `created`, `last_updated`). The allowlist comes from
+       the OpenAPI request-body schema.
+    2. Enum-dict collapse: NetBox sends choice values as
+       `{value, label}` dicts on GET but requires the bare
+       value on write, see `_collapse_enum_dict`.
+    """
+    return {k: _collapse_enum_dict(v) for k, v in record.items() if k in allowlist}
 
 
 def _rewrite_fks(
