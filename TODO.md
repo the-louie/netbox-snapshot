@@ -3001,62 +3001,6 @@ Confirm every `docs/implementation/*.md` file is in the index.
 
 **Estimated Effort:** 1-2h
 
-### [FEAT-37a] `nbsnap reset-destination` module skeleton and CLI dispatch
-
-**Priority:** HIGH (set 2026-06-15). The whole FEAT-37 series
-should land before FEAT-36 implementation starts; the
-look-ahead and Phase-2 work needs a clean destination to test
-against, and dropping postgres between every test run is
-heavyweight. FEAT-37a is the prerequisite that the four
-subsequent sub-tickets stack on.
-
-**Context:** the parent FEAT-37 ticket is decomposed into five
-atomic sub-tickets. This first one creates the module file,
-wires argparse, plugs the new sub-command into `cli.py`, and
-prints a dry-run summary table. NO writes happen here, no
-deletion logic yet. The safety layers (FEAT-37b), enumeration
-(FEAT-37c), bulk delete (FEAT-37d), and audit (FEAT-37e)
-follow.
-
-**Requirements:**
-
-- Create `src/nbsnap/reset_cli.py` with the module docstring
-  and the constants `EXIT_OK = 0`, `EXIT_NEEDS_APPLY_FLAGS = 1`,
-  `EXIT_DELETE_FAILURES = 2`, `EXIT_BLOCKED_BY_SOURCE_GUARD = 4`,
-  `BATCH = 100`.
-- Define `add_reset_args(parser)` with these flags: `--url`,
-  `--token`, `--no-verify-tls`, `--content-types`, `--keep`
-  (repeatable), `--apply`, `--i-know-what-im-doing`,
-  `--on-error {stop,continue}`, `--audit-out`.
-- Define `run_reset_cli(args)` that returns `EXIT_OK` and
-  prints "# nbsnap reset-destination (dry-run)" plus an empty
-  per-content-type summary. Real behaviour comes in later
-  sub-tickets.
-- In `src/nbsnap/cli.py`, add `"reset-destination": "FEAT-37"`
-  to `TICKETS` and a new dispatch branch:
-
-      elif name == "reset-destination":
-          from nbsnap.reset_cli import add_reset_args, run_reset_cli
-          add_reset_args(sub)
-          sub.set_defaults(func=run_reset_cli)
-
-- Update the stub-sub-command sweep in
-  `tests/unit/test_cli.py` to exclude `reset-destination`
-  from `_REMAINING_STUBS` (same list that already excludes
-  the other implemented sub-commands).
-
-**Testing:**
-
-- Unit test in `tests/unit/test_reset_cli_skeleton.py`.
-- Confirm `nbsnap reset-destination --help` lists every new
-  flag, achieved by parsing via `_build_parser` from `cli.py`
-  and reading the `--help` output (capture via `capsys`).
-- Confirm `run_reset_cli(args)` returns `EXIT_OK` when called
-  with dry-run defaults and a stubbed `NetboxHTTP`.
-- Run `pytest tests/unit -q`, confirm no regressions.
-
-**Estimated Effort:** 1-2h
-
 ### [FEAT-37b] Triple safety check for reset-destination
 
 **Context:** the destructive nature of the new sub-command
