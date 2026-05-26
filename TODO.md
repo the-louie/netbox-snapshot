@@ -380,54 +380,6 @@ clear assertion message.
 
 **Estimated Effort:** 1-2h
 
-### [FEAT-36b1] Look-ahead module skeleton with DeferredFK dataclass
-
-**Context:** the parent ticket FEAT-36b is decomposed into five
-atomic sub-tickets. This first one lands the module file and
-the data shape later sub-tickets reuse. No NetBox API calls
-happen here, just the dataclass and the import-side scaffolding.
-
-The downstream sub-tickets (FEAT-36b2 through FEAT-36b5)
-gradually add the destination-tier lookup, the snapshot-tier
-lookup, the cycle detection, and the driver wiring. Keeping
-the data shape stable up front lets those tickets land in any
-order.
-
-**Requirements:**
-
-- Create `src/nbsnap/import_/lookahead.py` with a module
-  docstring explaining the two-tier resolution model
-  (destination NKIndex first, snapshot SnapshotIndex second).
-- Define `MAX_DEPTH = 200` as a module-level constant so a
-  malformed snapshot cannot cause unbounded recursion in
-  later sub-tickets.
-- Define the frozen dataclass:
-
-      @dataclass(frozen=True)
-      class DeferredFK:
-          child_content_type: str
-          child_nk: tuple
-          field_name: str
-          target_content_type: str
-          target_nk: tuple
-
-- Add a module-level `logger = logging.getLogger(__name__)`.
-- Export `DeferredFK` and `MAX_DEPTH` via `__all__` so the
-  driver can `from nbsnap.import_.lookahead import DeferredFK`.
-
-**Testing:**
-
-- Unit test in `tests/unit/test_import_lookahead_skeleton.py`.
-- Verify `DeferredFK` is frozen by attempting to set an
-  attribute and catching `dataclasses.FrozenInstanceError`.
-- Verify two `DeferredFK` instances with identical fields
-  hash to the same value and compare equal (needed for the
-  Phase-2 dedupe in a later ticket).
-- Verify `MAX_DEPTH == 200` so a future bump shows up as a
-  test diff.
-
-**Estimated Effort:** 1h
-
 ### [FEAT-36b2] Destination-tier resolve_or_create helper
 
 **Context:** layer 1 of the two-tier resolver. Looks up the
