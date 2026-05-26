@@ -31,9 +31,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
+from nbsnap.export.driver import DEFAULT_SCOPE
 from nbsnap.http.client import NetboxHTTP
+from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
 
 # Documented exit codes. The numbers stay stable across follow-up
 # tickets so a CI script can `if [ "$?" -eq 4 ]` reliably.
@@ -174,20 +177,81 @@ def run_reset_cli(args: argparse.Namespace) -> int:
         )
         return EXIT_NEEDS_APPLY_FLAGS
 
-    # Gate 3: dry-run is the default. FEAT-37c onwards will
-    # replace this branch with real enumeration; for now we
-    # report the skeleton state.
-    if not (args.apply and args.confirmed):
-        sys.stderr.write(
-            "# nbsnap reset-destination (dry-run)\n"
-            "  enumeration lands in FEAT-37c; bulk DELETE in FEAT-37d\n"
-        )
-        return EXIT_OK
+    # Resolve scope and the --keep exclusion set.
+    scope = _resolve_scope(args.content_types)
+    keep_names = set(args.keep or [])
 
-    # All gates pass: the real deletion path runs here once
-    # FEAT-37c..e land. For now we emit a placeholder.
+    # Enumerate every in-scope content type's record ids.
+    # _enumerate_ids consults --keep so kept rows never enter
+    # the delete pool. FEAT-37d will iterate the per-CT id
+    # list with bulk DELETE; FEAT-37e will accumulate counts
+    # for the summary.
     sys.stderr.write(
-        "# nbsnap reset-destination (apply)\n"
-        "  enumeration lands in FEAT-37c; bulk DELETE in FEAT-37d\n"
+        "# nbsnap reset-destination "
+        + ("(apply)" if args.apply and args.confirmed else "(dry-run)")
+        + "\n"
     )
+    for ct in sorted(scope):
+        endpoint = CONTENT_TYPE_ENDPOINTS.get(ct)
+        if endpoint is None:
+            # Out-of-table content type; skip silently. This
+            # keeps the command robust against plugin types
+            # the operator widened the scope to include but we
+            # do not know how to enumerate.
+            continue
+        ids = list(_enumerate_ids(http, endpoint, keep_names))
+        verb = "deleting" if args.apply and args.confirmed else "would delete"
+        sys.stderr.write(f"  {ct}: {verb} {len(ids)} records\n")
+        # FEAT-37d will iterate `ids` here with bulk DELETE.
+
     return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_scope(content_types_arg: str | None) -> set[str]:
+    """Return the set of content types to clear.
+
+    When `--content-types` is unset, fall back to the same
+    DEFAULT_SCOPE the export driver uses (the renderer-minimum
+    set). When set, parse a comma-separated list and trim
+    whitespace. Empty entries are dropped silently so the
+    operator can copy-paste a multi-line CSV without surprises.
+    """
+
+    if not content_types_arg:
+        return set(DEFAULT_SCOPE)
+    return {token.strip() for token in content_types_arg.split(",") if token.strip()}
+
+
+def _enumerate_ids(
+    http: NetboxHTTP,
+    endpoint: str,
+    keep_names: set[str],
+) -> Iterator[int]:
+    """Yield every id NetBox lists for `endpoint`, minus --keep matches.
+
+    Paginated via `NetboxHTTP.get_all`, which follows the `next`
+    link until exhausted. `--keep` matches against both `name`
+    and `slug` because some NetBox content types only have one
+    or the other in their list response.
+    """
+
+    for row in http.get_all(endpoint):
+        rid = row.get("id")
+        if not isinstance(rid, int):
+            continue
+        # NetBox surfaces `name` on most content types and
+        # `slug` on the ones that have a slug (Site, DeviceRole,
+        # Manufacturer, etc.). Match against both so an operator
+        # can `--keep hall-d` regardless of which field carries
+        # the value.
+        name = row.get("name") or row.get("slug") or ""
+        if name in keep_names:
+            continue
+        yield rid
+
+
