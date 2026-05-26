@@ -110,10 +110,15 @@ def test_run_reset_cli_returns_ok_on_dry_run() -> None:
     """Skeleton mode returns EXIT_OK and does not raise.
 
     NetboxHTTP.from_env is stubbed so we do not require any
-    network or real env vars during the unit test.
+    network or real env vars during the unit test. We set
+    `is_source` to return False because a bare MagicMock would
+    return a truthy MagicMock, which trips the source-URL guard
+    added in FEAT-37b.
     """
 
-    with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=MagicMock()):
+    fake_client = MagicMock()
+    fake_client.is_source.return_value = False
+    with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=fake_client):
         rc = run_reset_cli(_args(apply=False, confirmed=False))
     assert rc == EXIT_OK
 

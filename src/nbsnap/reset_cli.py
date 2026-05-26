@@ -113,30 +113,81 @@ def add_reset_args(parser: argparse.ArgumentParser) -> None:
 
 
 def run_reset_cli(args: argparse.Namespace) -> int:
-    """CLI entry point.
+    """CLI entry point with the three safety gates layered in.
 
-    Skeleton implementation for FEAT-37a: builds the NetboxHTTP
-    client and reports zero work in dry-run shape. The real
-    safety, enumeration, and delete logic land in FEAT-37b
-    through FEAT-37e.
+    Each gate exits with a distinct code so an operator script
+    can distinguish "blocked by source guard" from "missing
+    confirmation flag" from "real failure during deletion".
+
+    Gates fire in order:
+
+    1. Source-URL guard (`is_source()`), exit 4. Refuses to
+       run when the destination URL matches `NB_SOURCE_URL`,
+       which would mean the operator pointed the command at
+       production by mistake.
+    2. Apply-without-confirmation, exit 1. `--apply` alone is
+       not enough; the operator must ALSO pass
+       `--i-know-what-im-doing`. No interactive prompt so the
+       command stays scriptable, but the two flags together
+       make accidental invocation impossible.
+    3. Dry-run by default. Without `--apply`, the command
+       prints a skeleton notice and returns 0.
+
+    Enumeration and delete logic come in FEAT-37c through
+    FEAT-37e in subsequent commits.
     """
 
-    # Construct the client via from_env so the role-specific env
-    # vars get picked up the same way `nbsnap import` picks them
-    # up. The constructor itself attaches the source-URL guard.
-    NetboxHTTP.from_env(
+    # Build the client first. from_env() reads NB_DESTINATION_*
+    # by default; the role is locked to "destination" so the
+    # source guard fires automatically when --url is pointed at
+    # the source. is_source() below is the explicit double-check
+    # at the CLI boundary.
+    http = NetboxHTTP.from_env(
         "destination",
         url=args.url,
         token=args.token,
         verify_tls=not args.no_verify_tls,
     )
 
-    # Dry-run shape that FEAT-37b through FEAT-37e will fill in.
+    # Gate 1: source-URL guard. NetboxHTTP.is_source() returns
+    # True when base_url matches NB_SOURCE_URL on a host:port
+    # basis. Refuse before any GET so we never touch the wire
+    # against production.
+    if http.is_source():
+        sys.stderr.write(
+            "nbsnap reset-destination: refusing, destination URL "
+            f"matches NB_SOURCE_URL ({http.base_url}). The source "
+            "NetBox is read-only by policy (see CLAUDE.md).\n"
+        )
+        return EXIT_BLOCKED_BY_SOURCE_GUARD
+
+    # Gate 2: --apply requires --i-know-what-im-doing. The two-
+    # flag requirement makes a stray `--apply` in CI harmless.
+    if args.apply and not args.confirmed:
+        sys.stderr.write(
+            "nbsnap reset-destination: --apply also requires "
+            "--i-know-what-im-doing.\n"
+            f"  destination: {http.base_url}\n"
+            "  this command will issue DELETE requests against "
+            "the in-scope endpoints.\n"
+            "Re-run with both flags to proceed.\n"
+        )
+        return EXIT_NEEDS_APPLY_FLAGS
+
+    # Gate 3: dry-run is the default. FEAT-37c onwards will
+    # replace this branch with real enumeration; for now we
+    # report the skeleton state.
+    if not (args.apply and args.confirmed):
+        sys.stderr.write(
+            "# nbsnap reset-destination (dry-run)\n"
+            "  enumeration lands in FEAT-37c; bulk DELETE in FEAT-37d\n"
+        )
+        return EXIT_OK
+
+    # All gates pass: the real deletion path runs here once
+    # FEAT-37c..e land. For now we emit a placeholder.
     sys.stderr.write(
-        "# nbsnap reset-destination (dry-run, FEAT-37a skeleton)\n"
-    )
-    sys.stderr.write(
-        "  no enumeration or delete logic yet; FEAT-37c through "
-        "FEAT-37e land those in subsequent commits\n"
+        "# nbsnap reset-destination (apply)\n"
+        "  enumeration lands in FEAT-37c; bulk DELETE in FEAT-37d\n"
     )
     return EXIT_OK
