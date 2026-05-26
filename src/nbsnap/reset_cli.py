@@ -35,7 +35,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from nbsnap.export.driver import DEFAULT_SCOPE
-from nbsnap.http.client import NetboxHTTP
+from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
 from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
 
 # Documented exit codes. The numbers stay stable across follow-up
@@ -181,17 +181,21 @@ def run_reset_cli(args: argparse.Namespace) -> int:
     scope = _resolve_scope(args.content_types)
     keep_names = set(args.keep or [])
 
-    # Enumerate every in-scope content type's record ids.
-    # _enumerate_ids consults --keep so kept rows never enter
-    # the delete pool. FEAT-37d will iterate the per-CT id
-    # list with bulk DELETE; FEAT-37e will accumulate counts
-    # for the summary.
+    # Determine the iteration order. Reverse topological order
+    # means children die before parents, so Django's PROTECT FKs
+    # do not 409 because of in-scope dependents. For dry-run we
+    # could iterate alphabetically (the order does not matter
+    # without real DELETE calls), but using the same order in
+    # both modes keeps the operator-visible output consistent.
+    delete_order = _reverse_topological_order(http, scope)
+
     sys.stderr.write(
         "# nbsnap reset-destination "
         + ("(apply)" if args.apply and args.confirmed else "(dry-run)")
         + "\n"
     )
-    for ct in sorted(scope):
+    failures: list[tuple[str, int, str]] = []
+    for ct in delete_order:
         endpoint = CONTENT_TYPE_ENDPOINTS.get(ct)
         if endpoint is None:
             # Out-of-table content type; skip silently. This
@@ -202,8 +206,20 @@ def run_reset_cli(args: argparse.Namespace) -> int:
         ids = list(_enumerate_ids(http, endpoint, keep_names))
         verb = "deleting" if args.apply and args.confirmed else "would delete"
         sys.stderr.write(f"  {ct}: {verb} {len(ids)} records\n")
-        # FEAT-37d will iterate `ids` here with bulk DELETE.
+        if not (args.apply and args.confirmed):
+            continue
+        ct_failures = _delete_ids(http, endpoint, ids)
+        for rid, msg in ct_failures:
+            failures.append((ct, rid, msg))
+            if args.on_error == "stop":
+                sys.stderr.write(
+                    f"  STOP, first failure: {ct} id={rid} {msg[:160]}\n"
+                )
+                return EXIT_DELETE_FAILURES
 
+    if failures:
+        sys.stderr.write(f"  {len(failures)} per-record failures\n")
+        return EXIT_DELETE_FAILURES
     return EXIT_OK
 
 
@@ -225,6 +241,104 @@ def _resolve_scope(content_types_arg: str | None) -> set[str]:
     if not content_types_arg:
         return set(DEFAULT_SCOPE)
     return {token.strip() for token in content_types_arg.split(",") if token.strip()}
+
+
+def _reverse_topological_order(http: NetboxHTTP, scope: set[str]) -> list[str]:
+    """Compute the delete order: children before parents.
+
+    Reuses the planner that the import side uses, then reverses
+    the result. Children land last in the import topological
+    order; if we run that backwards, children land first in the
+    delete order, which is exactly what Django's PROTECT FKs
+    require to avoid 409 Conflict.
+
+    Falls back to alphabetical order when the planner fails for
+    any reason (network blip, malformed schema). The command
+    will then still attempt deletions but may produce some
+    in-scope 409s that the operator can sweep up on a second
+    invocation.
+    """
+
+    # Lazy imports: these modules are heavy and only loaded
+    # when the reset command actually runs.
+    from nbsnap.graph import from_openapi
+    from nbsnap.graph import plan as build_plan
+    from nbsnap.schema.openapi import OpenAPI
+
+    try:
+        openapi = OpenAPI.fetch(http)
+        graph = from_openapi(openapi, scope=scope)
+        plan_obj = build_plan(graph)
+    except Exception:  # noqa: BLE001 - fallback on any failure
+        return sorted(scope)
+
+    # Reverse the planner output, keep only scoped content types.
+    return [ct for ct in reversed(plan_obj.order) if ct in scope]
+
+
+def _delete_ids(
+    http: NetboxHTTP, endpoint: str, ids: list[int]
+) -> list[tuple[int, str]]:
+    """Delete every id, return the per-id failure list.
+
+    Strategy: try the bulk endpoint first. NetBox 4.x accepts
+    a JSON array body `[{"id": 1}, {"id": 2}]` on the list
+    endpoint and DELETEs every row in one round trip. When the
+    bulk call raises (typical 409 case is "one row has a
+    dependent outside the scope"), fall back to per-id DELETE
+    against each row so the rest of the batch still completes.
+
+    Returns a list of `(id, message)` pairs for rows that
+    failed even after the per-id fallback. An empty list means
+    everything deleted cleanly.
+    """
+
+    failures: list[tuple[int, str]] = []
+    for batch in _chunks(ids, BATCH):
+        if not batch:
+            continue
+        try:
+            _bulk_delete(http, endpoint, batch)
+            continue  # batch succeeded
+        except NetboxHTTPError as exc:
+            # On a 4xx the fault is per-row (a dependent FK, a
+            # protected record, etc.); fall back to per-id so the
+            # rest of the batch still has a chance. On a 5xx the
+            # destination NetBox is unhappy and per-id retries
+            # would dogpile the same server error; surface the
+            # whole batch as failed and move on.
+            if 500 <= exc.status < 600:
+                for rid in batch:
+                    failures.append((rid, f"bulk {exc.status}: {exc.body[:160]}"))
+                continue
+            for rid in batch:
+                try:
+                    http._request("DELETE", f"{endpoint}{rid}/")
+                except NetboxHTTPError as one_exc:
+                    failures.append((rid, str(one_exc)))
+    return failures
+
+
+def _bulk_delete(http: NetboxHTTP, endpoint: str, ids: list[int]) -> None:
+    """Issue one NetBox bulk DELETE call.
+
+    NetBox 4.x accepts an array body on the list endpoint and
+    deletes every named row. On success NetBox returns 204
+    No Content; on failure it returns 4xx with a body
+    describing which row caused the rejection. We surface that
+    via the existing NetboxHTTPError so the caller can decide
+    whether to fall back.
+    """
+
+    body = [{"id": rid} for rid in ids]
+    http._request("DELETE", endpoint, json=body)
+
+
+def _chunks(items: list[int], size: int) -> Iterator[list[int]]:
+    """Yield successive `size`-length slices of `items`."""
+
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
 
 
 def _enumerate_ids(
