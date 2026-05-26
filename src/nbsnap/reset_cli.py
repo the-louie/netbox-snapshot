@@ -30,6 +30,7 @@ returns OK without doing anything.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -195,6 +196,7 @@ def run_reset_cli(args: argparse.Namespace) -> int:
         + "\n"
     )
     failures: list[tuple[str, int, str]] = []
+    audit_lines: list[str] = []
     for ct in delete_order:
         endpoint = CONTENT_TYPE_ENDPOINTS.get(ct)
         if endpoint is None:
@@ -208,15 +210,18 @@ def run_reset_cli(args: argparse.Namespace) -> int:
         sys.stderr.write(f"  {ct}: {verb} {len(ids)} records\n")
         if not (args.apply and args.confirmed):
             continue
-        ct_failures = _delete_ids(http, endpoint, ids)
+        ct_failures, ct_audit = _delete_ids_with_audit(http, endpoint, ids, ct)
+        audit_lines.extend(ct_audit)
         for rid, msg in ct_failures:
             failures.append((ct, rid, msg))
             if args.on_error == "stop":
                 sys.stderr.write(
                     f"  STOP, first failure: {ct} id={rid} {msg[:160]}\n"
                 )
+                _flush_audit(args.audit_out, audit_lines)
                 return EXIT_DELETE_FAILURES
 
+    _flush_audit(args.audit_out, audit_lines)
     if failures:
         sys.stderr.write(f"  {len(failures)} per-record failures\n")
         return EXIT_DELETE_FAILURES
@@ -274,6 +279,94 @@ def _reverse_topological_order(http: NetboxHTTP, scope: set[str]) -> list[str]:
 
     # Reverse the planner output, keep only scoped content types.
     return [ct for ct in reversed(plan_obj.order) if ct in scope]
+
+
+def _delete_ids_with_audit(
+    http: NetboxHTTP, endpoint: str, ids: list[int], content_type: str
+) -> tuple[list[tuple[int, str]], list[str]]:
+    """Delete every id, return `(failures, audit_lines)`.
+
+    The plain `_delete_ids` is the simpler helper that returns
+    only failures; this variant additionally accumulates one
+    JSON line per id with the outcome:
+
+      {"content_type": ct, "id": rid, "outcome": "deleted"}
+      {"content_type": ct, "id": rid, "outcome": "deleted-fallback"}
+      {"content_type": ct, "id": rid, "outcome": "failed", "message": "..."}
+
+    `deleted` for the bulk-success path, `deleted-fallback` for
+    the per-id rescue path, `failed` for rows that did not
+    delete cleanly. The line shape stays stable so downstream
+    tooling can parse audit.jsonl reliably.
+
+    Note: this helper does NOT dedupe. Calling it twice for the
+    same content type with overlapping ids would write the same
+    rows to the audit twice. Each call site in `run_reset_cli`
+    processes each content type exactly once, so dedupe is not
+    needed in practice.
+    """
+
+    failures: list[tuple[int, str]] = []
+    audit: list[str] = []
+    for batch in _chunks(ids, BATCH):
+        if not batch:
+            continue
+        try:
+            _bulk_delete(http, endpoint, batch)
+            for rid in batch:
+                audit.append(json.dumps(
+                    {"content_type": content_type, "id": rid, "outcome": "deleted"},
+                    sort_keys=True,
+                ))
+            continue
+        except NetboxHTTPError as exc:
+            if 500 <= exc.status < 600:
+                msg = f"bulk {exc.status}: {exc.body[:160]}"
+                for rid in batch:
+                    failures.append((rid, msg))
+                    audit.append(json.dumps({
+                        "content_type": content_type, "id": rid,
+                        "outcome": "failed", "message": msg,
+                    }, sort_keys=True))
+                continue
+            # 4xx: per-id fallback.
+            for rid in batch:
+                try:
+                    http._request("DELETE", f"{endpoint}{rid}/")
+                except NetboxHTTPError as one_exc:
+                    failures.append((rid, str(one_exc)))
+                    audit.append(json.dumps({
+                        "content_type": content_type, "id": rid,
+                        "outcome": "failed", "message": str(one_exc)[:200],
+                    }, sort_keys=True))
+                else:
+                    audit.append(json.dumps({
+                        "content_type": content_type, "id": rid,
+                        "outcome": "deleted-fallback",
+                    }, sort_keys=True))
+    return failures, audit
+
+
+def _flush_audit(path: Path | None, lines: list[str]) -> None:
+    """Write `lines` to `path` if `path` is set, else no-op.
+
+    Each line is already a self-contained JSON object, so the
+    write is a simple newline-joined dump. The parent directory
+    is created so `--audit-out ~/audit/2026-06-15.jsonl` works
+    without a manual mkdir.
+
+    Memory note: the audit list is held in RAM across the whole
+    run and flushed in one write at the end (or at the
+    `--on-error stop` exit). For a 5,000-row run this is around
+    500 KB, well within operator-host budgets. A streaming
+    rewrite is the right move only if we ever need to clear a
+    NetBox with hundreds of thousands of records.
+    """
+
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
 def _delete_ids(
