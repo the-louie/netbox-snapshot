@@ -13,7 +13,6 @@ The driver:
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -145,13 +144,14 @@ def _content_type_order(manifest: Manifest, snapshot_dir: Path) -> list[str]:
 
 
 def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        if not raw.strip():
-            continue
-        try:
-            yield json.loads(raw)
-        except json.JSONDecodeError:
-            continue
+    """Re-export of the shared JSONL streamer in snapshot_index.
+
+    Keeps the existing call sites in `run_import` happy while
+    routing the actual logic through the shared helper.
+    """
+    from nbsnap.import_.snapshot_index import iter_jsonl
+
+    yield from iter_jsonl(path)
 
 
 def _resolve_body(
