@@ -36,6 +36,7 @@ TICKETS: dict[str, str] = {
     "verify-natkeys": "FEAT-10b",
     "pack": "FEAT-34",
     "unpack": "FEAT-35",
+    "reset-destination": "FEAT-37",
 }
 
 
@@ -140,6 +141,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
             add_unpack_args(sub)
             sub.set_defaults(func=run_unpack)
+        elif name == "reset-destination":
+            from nbsnap.reset_cli import add_reset_args, run_reset_cli
+
+            add_reset_args(sub)
+            sub.set_defaults(func=run_reset_cli)
         else:
             sub.set_defaults(func=_stub(name))
 

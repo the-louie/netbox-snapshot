@@ -45,6 +45,7 @@ _REMAINING_STUBS = sorted(
         "verify",
         "pack",
         "unpack",
+        "reset-destination",
     }
 )
 
