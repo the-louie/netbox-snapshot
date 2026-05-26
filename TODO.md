@@ -3001,49 +3001,6 @@ Confirm every `docs/implementation/*.md` file is in the index.
 
 **Estimated Effort:** 1-2h
 
-### [FEAT-37b] Triple safety check for reset-destination
-
-**Context:** the destructive nature of the new sub-command
-demands three independent safety gates. Source-URL guard
-refuses to touch `NB_SOURCE_URL`. `--apply` must be passed
-explicitly to switch off dry-run. `--i-know-what-im-doing`
-must be passed alongside `--apply` so a stray "--apply" in CI
-does not wipe a real destination.
-
-**Requirements:**
-
-- In `run_reset_cli`, immediately after constructing
-  `NetboxHTTP.from_env("destination", ...)`, call
-  `http.is_source()` and exit with
-  `EXIT_BLOCKED_BY_SOURCE_GUARD` (4) if True. Error message:
-  "nbsnap reset-destination: refusing, destination URL
-  matches NB_SOURCE_URL ({base_url}). The source NetBox is
-  read-only by policy (see CLAUDE.md)."
-- Then, if `args.apply` is True but `args.confirmed` is
-  False, exit with `EXIT_NEEDS_APPLY_FLAGS` (1) and print:
-  "nbsnap reset-destination: --apply also requires
-  --i-know-what-im-doing." Plus a two-line block naming the
-  URL and the action.
-- Both checks happen BEFORE any GET or DELETE. Do not even
-  fetch the OpenAPI schema until both gates pass.
-
-**Testing:**
-
-- Unit test in `tests/unit/test_reset_cli_safety.py`.
-- Case 1, source-URL guard: monkeypatch
-  `NB_SOURCE_URL=https://prod.example/`, call
-  `run_reset_cli(_args(url="https://prod.example/"))`,
-  assert return code 4 and the stderr message contains
-  "matches NB_SOURCE_URL".
-- Case 2, apply without confirmation: stub `NetboxHTTP.from_env`
-  to return a non-source mock, pass `apply=True,
-  confirmed=False`, assert return code 1 and the stderr
-  message contains "also requires --i-know-what-im-doing".
-- Case 3, dry-run is the default: `apply=False`, assert
-  return code 0 and no DELETE calls were issued.
-
-**Estimated Effort:** 1h
-
 ### [FEAT-37c] Enumerate destination IDs with --keep filter
 
 **Context:** before deletion the command needs to know which
