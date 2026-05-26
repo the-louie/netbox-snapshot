@@ -3001,59 +3001,6 @@ Confirm every `docs/implementation/*.md` file is in the index.
 
 **Estimated Effort:** 1-2h
 
-### [FEAT-37e] Audit JSONL writer and integration test
-
-**Context:** for forensics on a destructive operation, the
-command writes a JSONL audit of every record it touched, one
-JSON object per deleted (or failed) id. Plus an integration
-test against the netbox-docker dest stack that proves the
-end-to-end flow.
-
-**Requirements:**
-
-- In `src/nbsnap/reset_cli.py`, add `_flush_audit(args,
-  lines: list[str])`:
-
-      if args.audit_out is None:
-          return
-      args.audit_out.parent.mkdir(parents=True, exist_ok=True)
-      args.audit_out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-- Append a JSON line to the in-memory `audit_lines` list for
-  every per-id outcome:
-  `{"content_type": ct, "id": rid, "outcome": "deleted"}`
-  on bulk success,
-  `{"content_type": ct, "id": rid, "outcome": "deleted-fallback"}`
-  after the per-id fallback succeeds,
-  `{"content_type": ct, "id": rid, "outcome": "failed",
-    "message": <truncated>}` on failure.
-- Call `_flush_audit(args, audit_lines)` once at the end of
-  `run_reset_cli` (and on the early-exit failure path so the
-  partial audit lands too).
-
-**Testing:**
-
-- Unit test in `tests/unit/test_reset_cli_audit.py`.
-- Stub one content type with two ids, both delete cleanly.
-  Pass `audit_out=tmp_path / "audit.jsonl"`. Assert the file
-  contains two JSON lines with `outcome: "deleted"`.
-- Stub a per-id failure, assert the JSON line carries
-  `outcome: "failed"` and the message is truncated to 200
-  chars.
-
-- Integration test in
-  `tests/integration/test_reset_destination.py`,
-  decorated with `@pytest.mark.usefixtures("require_stack")`.
-- Run `make stack-seed` ahead of the test (CI hook).
-- Confirm `GET /api/dcim/sites/` returns `count > 0` before
-  the reset call (sanity check the seed ran).
-- Call `run_reset_cli` with apply=True, confirmed=True,
-  url and token pointing at localhost:8081.
-- Confirm `GET /api/dcim/sites/` returns `count == 0` after.
-- Confirm the audit JSONL file exists and lists at least
-  the seeded site id.
-
-**Estimated Effort:** 1-2h
 
 ---
 
