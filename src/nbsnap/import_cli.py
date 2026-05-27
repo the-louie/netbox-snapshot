@@ -34,7 +34,7 @@ import requests
 
 from nbsnap.export.manifest import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
-from nbsnap.import_.driver import run_import
+from nbsnap.import_.driver import ImportSummary, run_import
 from nbsnap.import_.upsert import UpsertOutcome
 from nbsnap.schema.openapi import SCHEMA_PATH
 from nbsnap.schema.status import VersionSkew
@@ -171,11 +171,58 @@ def run_import_cli(args: argparse.Namespace) -> int:
     audit_path = args.audit_out or (in_dir / "audit.jsonl")
     summary.auditor.write_jsonl(audit_path)
     sys.stderr.write(f"  audit log: {audit_path}\n")
-    if summary.failures:
-        sys.stderr.write(f"  first failure: {summary.failures[0].message}\n")
-        return EXIT_ROW_FAILURES
+    if summary.phase2 is not None:
+        sys.stderr.write(
+            f"  phase2: patched={summary.phase2.counts.get('patched', 0)} "
+            f"skipped={summary.phase2.counts.get('skipped', 0)} "
+            f"failed={summary.phase2.counts.get('failed', 0)}\n"
+        )
+    return _compute_exit_code(summary, max_skew)
+
+
+def _compute_exit_code(summary: ImportSummary, max_skew: VersionSkew) -> int:
+    """Map a fully-categorised ImportSummary to a CLI exit code.
+
+    FEAT-36f sharpens the contract: a single `nbsnap import`
+    invocation is expected to complete the destination, so the
+    exit code reflects only **real failures**, not transient
+    ordering noise.
+
+    `EXIT_ROW_FAILURES` (2) fires when any of:
+
+    * Phase-1 had upsert failures.
+    * Phase-2 had PATCH failures.
+    * The audit log carries `MISSING_FROM_SOURCE` drops, the
+      source NetBox has a stale reference.
+
+    `OUT_OF_SCOPE` and `DEFERRED_TO_PHASE2` drops do NOT
+    contribute, they are expected behaviour of the network-only
+    scope and the cycle-breaker respectively.
+
+    `EXIT_PREFLIGHT_BLOCKED` (1) fires when preflight refused
+    the run, takes precedence over row-failure exit codes
+    because the import never actually ran in that case.
+    """
     if summary.preflight.is_blocking(max_skew):
         return EXIT_PREFLIGHT_BLOCKED
+
+    from nbsnap.import_.audit import DropCategory
+
+    phase2_failures = (
+        summary.phase2.counts.get("failed", 0)
+        if summary.phase2 is not None
+        else 0
+    )
+    missing_from_source = sum(
+        1 for ev in summary.auditor.events
+        if ev.category is DropCategory.MISSING_FROM_SOURCE
+    )
+    if summary.failures or phase2_failures or missing_from_source:
+        if summary.failures:
+            sys.stderr.write(
+                f"  first failure: {summary.failures[0].message}\n"
+            )
+        return EXIT_ROW_FAILURES
     return EXIT_OK
 
 
