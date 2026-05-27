@@ -380,51 +380,6 @@ clear assertion message.
 
 **Estimated Effort:** 1-2h
 
-### [FEAT-36b5] Wire look-ahead into _resolve_body in the import driver
-
-**Context:** consumes FEAT-36b1 through FEAT-36b4 and brings
-demand-driven resolution into the actual import path. The
-driver passes the `snapshot_index`, `processing_stack`, and
-`deferred_queue` through `_resolve_body` so every simple-FK
-miss has a chance to recover via look-ahead.
-
-**Requirements:**
-
-- In `src/nbsnap/import_/driver.py`:
-  - Build `SnapshotIndex.from_snapshot(snapshot_dir)` at the
-    top of `run_import`.
-  - Build `deferred_queue: list[DeferredFK] = []` and pass
-    it through `_resolve_body`.
-  - Initialise `processing_stack: set[tuple[str, tuple]] = set()`
-    per-row inside the Phase-1 loop.
-- In `_resolve_body`, replace the existing simple-FK
-  KeyError-drop branch with a call to `resolve_or_create`.
-  When the call returns `None` AND the queue grew, the field
-  was deferred to Phase-2 (do not log a `_warn_dropped`);
-  when it returns `None` without queue growth, the target is
-  out-of-scope (call the existing `_warn_dropped`).
-- The `current_nk` and `field_name` that get baked into the
-  `DeferredFK` come from the caller; have `resolve_or_create`
-  return the queue-length delta so the caller can patch the
-  most recent entry with the missing fields.
-
-**Testing:**
-
-- Unit test in `tests/unit/test_import_driver_lookahead.py`.
-- Build a minimal `OpenAPI` schema with a Device whose `site`
-  is an FK to Site, a `SnapshotIndex` containing a Site row,
-  and an empty `NKIndex`.
-- Call `_resolve_body("dcim.device", {"name": "d39a", "site":
-  ["hall-d"]}, ...)`.
-- Assert the resolved body has `site` set to the destination
-  id of the newly-created Site (proves the look-ahead created
-  the parent on demand).
-- Run the full unit suite (`pytest tests/unit -q`) and confirm
-  no regressions against the existing 158 tests.
-
-**Estimated Effort:** 1-2h
-
-
 ### [REFINED] [FEAT-36c] Wire Phase-2 deferred-FK writer into the import driver
 
 #### Architectural specification
