@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 from nbsnap.export.manifest import MANIFEST_FILENAME, Manifest
 from nbsnap.export.writer import CONTENT_TYPE_FILES
 from nbsnap.http.client import NetboxHTTP
+from nbsnap.import_.audit import Auditor, DropCategory, DropEvent
 from nbsnap.import_.fk_resolve import (
     normalise_nk,
     resolve_polymorphic,
@@ -54,6 +55,10 @@ class ImportSummary:
     # Phase-2 outcomes per cycle-closing PATCH. None when Phase-2
     # did not run (empty queue or preflight blocked).
     phase2: _Phase2Summary | None = None
+    # Categorised FK-drop / defer audit (FEAT-36e). Populated
+    # during Phase-1 by the resolver via `Auditor.record`. The
+    # CLI surfaces this to stderr and to `audit.jsonl`.
+    auditor: Auditor = field(default_factory=Auditor)
 
 
 def run_import(
@@ -87,6 +92,8 @@ def run_import(
     deferred_queue: list[DeferredFK] = []
     processing_stack: set[tuple[str, tuple[Any, ...]]] = set()
 
+    auditor = summary.auditor
+
     # Phase-1: per content type, in the order recorded in the
     # manifest. We do not re-plan here; the snapshot is the
     # contract and the manifest is the order.
@@ -109,6 +116,7 @@ def run_import(
                 processing_stack=processing_stack,
                 deferred_queue=deferred_queue,
                 current_nk=nk,
+                auditor=auditor,
             )
             result = upsert(
                 http,
@@ -211,6 +219,7 @@ def _resolve_body(
     processing_stack: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_queue: list[Any] | None = None,
     current_nk: tuple[Any, ...] = (),
+    auditor: Auditor | None = None,
 ) -> dict[str, Any]:
     """Resolve every FK NK in `body` back to a destination id.
 
@@ -263,7 +272,9 @@ def _resolve_body(
                 value, spec.fk_target, index, http=http, registry=registry
             )
         except (KeyError, ValueError) as exc:
-            # Try the look-ahead path if the caller wired one in.
+            queue_size_before = (
+                len(deferred_queue) if deferred_queue is not None else 0
+            )
             recovered = _try_lookahead(
                 value=value,
                 target_ct=spec.fk_target,
@@ -279,10 +290,72 @@ def _resolve_body(
             )
             if recovered is not None:
                 resolved[field_name] = recovered
-            else:
-                _warn_dropped(content_type, field_name, spec.fk_target, exc)
+                continue
+            _record_drop(
+                auditor=auditor,
+                snapshot_index=snapshot_index,
+                deferred_queue=deferred_queue,
+                queue_size_before=queue_size_before,
+                value=value,
+                child_ct=content_type,
+                child_nk=current_nk,
+                field_name=field_name,
+                target_ct=spec.fk_target,
+            )
+            _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
     return resolved
+
+
+def _record_drop(
+    *,
+    auditor: Auditor | None,
+    snapshot_index: _SnapshotIndexType | None,
+    deferred_queue: list[Any] | None,
+    queue_size_before: int,
+    value: Any,
+    child_ct: str,
+    child_nk: tuple[Any, ...],
+    field_name: str,
+    target_ct: str,
+) -> None:
+    """Classify an FK that the resolver could not place, record it.
+
+    Three categories the operator distinguishes:
+
+    * `DEFERRED_TO_PHASE2` when the look-ahead pushed onto the
+      deferred queue, the cycle-breaker is doing its job.
+    * `OUT_OF_SCOPE` when the snapshot does not carry the target
+      content type at all, the CLAUDE.md "network model only"
+      scope excludes it.
+    * `MISSING_FROM_SOURCE` when the snapshot covers the target
+      content type but is missing this specific NK, real data
+      gap on the source.
+    """
+
+    if auditor is None:
+        return
+
+    target_nk = normalise_nk(value)
+
+    deferred_grew = (
+        deferred_queue is not None and len(deferred_queue) > queue_size_before
+    )
+    if deferred_grew:
+        category = DropCategory.DEFERRED_TO_PHASE2
+    elif snapshot_index is not None and not snapshot_index.has_content_type(target_ct):
+        category = DropCategory.OUT_OF_SCOPE
+    else:
+        category = DropCategory.MISSING_FROM_SOURCE
+
+    auditor.record(DropEvent(
+        category=category,
+        child_content_type=child_ct,
+        child_nk=child_nk,
+        field_name=field_name,
+        target_content_type=target_ct,
+        target_nk=target_nk,
+    ))
 
 
 def _try_lookahead(

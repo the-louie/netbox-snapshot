@@ -121,6 +121,17 @@ class SnapshotIndex:
 
         return self._by_key.get((content_type, _to_tuple(natural_key)))
 
+    def has_content_type(self, content_type: str) -> bool:
+        """True if the snapshot carries at least one row for this CT.
+
+        Used by the FEAT-36e audit classifier to distinguish
+        "the snapshot does not cover this content type at all"
+        (out-of-scope) from "the snapshot covers the CT but is
+        missing this specific NK" (missing-from-source).
+        """
+
+        return any(ct == content_type for ct, _ in self._by_key)
+
     def has(self, content_type: str, natural_key: NaturalKey) -> bool:
         """Constant-time membership check.
 

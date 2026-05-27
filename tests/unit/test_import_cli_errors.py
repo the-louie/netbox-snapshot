@@ -75,6 +75,7 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "in_dir": snap,
         "max_version_skew": "minor",
         "on_error": "continue",
+        "audit_out": None,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

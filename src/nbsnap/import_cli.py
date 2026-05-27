@@ -67,6 +67,13 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         default="stop",
         help="behaviour when a single row fails to upsert",
     )
+    parser.add_argument(
+        "--audit-out",
+        type=Path,
+        default=None,
+        help="write the per-drop audit JSONL to this path "
+             "(default: <snapshot_dir>/audit.jsonl)",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -160,6 +167,10 @@ def run_import_cli(args: argparse.Namespace) -> int:
         UpsertOutcome.FAILED,
     ):
         sys.stderr.write(f"  {outcome.value}: {summary.counts.get(outcome, 0)}\n")
+    sys.stderr.write(summary.auditor.render_summary())
+    audit_path = args.audit_out or (in_dir / "audit.jsonl")
+    summary.auditor.write_jsonl(audit_path)
+    sys.stderr.write(f"  audit log: {audit_path}\n")
     if summary.failures:
         sys.stderr.write(f"  first failure: {summary.failures[0].message}\n")
         return EXIT_ROW_FAILURES
