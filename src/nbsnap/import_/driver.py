@@ -46,12 +46,13 @@ class ImportSummary:
     counts: Counter[UpsertOutcome] = field(default_factory=Counter)
     failures: list[UpsertResult] = field(default_factory=list)
     # The deferred-FK queue produced by the FEAT-36b look-ahead
-    # resolver during Phase-1. FEAT-36c walks this queue and
-    # PATCHes each cycle-closing FK after Phase-1 finishes. Kept
-    # as a forward-compatible list of `DeferredFK` objects so
-    # the Phase-2 writer can be added without changing this
-    # surface.
+    # resolver during Phase-1, consumed by the FEAT-23 Phase-2
+    # writer below. Kept on the summary for tests and for the
+    # CLI's audit output.
     deferred_queue: list[Any] = field(default_factory=list)
+    # Phase-2 outcomes per cycle-closing PATCH. None when Phase-2
+    # did not run (empty queue or preflight blocked).
+    phase2: Any = None
 
 
 def run_import(
@@ -123,19 +124,29 @@ def run_import(
                     return summary
 
     # Surface the deferred queue from Phase-1 on the summary
-    # so FEAT-36c / FEAT-23 can consume it.
+    # so the CLI audit and integration tests can see it.
     summary.deferred_queue = deferred_queue
 
-    # Phase-2: deferred edges. The manifest's deferred_edges field
-    # tells us which (child, parent, field) tuples to PATCH after
-    # both endpoints exist.
-    for edge in manifest.deferred_edges:
-        # For v1, the Phase-2 writer is a stub: a real
-        # implementation would re-walk the snapshot rows for the
-        # child content type, resolve the field's NK, and PATCH the
-        # destination record. The structure is set so the field can
-        # be filled in by FEAT-23 follow-up.
-        _ = edge
+    # Phase-2 (FEAT-23): walk the deferred queue produced by the
+    # look-ahead resolver and PATCH each cycle-closing FK. Each
+    # entry carries the (child, parent, field) triple needed for a
+    # one-field PATCH against the destination. If Phase-1 returned
+    # a clean run with no deferrals, this is a no-op.
+    if deferred_queue:
+        from nbsnap.import_.phase2 import run_phase2
+
+        summary.phase2 = run_phase2(
+            http,
+            deferred_queue,
+            dest_index=index,
+            registry=registry,
+        )
+        # Phase-2 failures honour the same on_error semantics as
+        # Phase-1: under "stop" any failed PATCH aborts; under
+        # "continue" they accumulate and the caller sees them via
+        # `summary.phase2.failures`.
+        if on_error == "stop" and not summary.phase2.is_clean():
+            return summary
 
     return summary
 
