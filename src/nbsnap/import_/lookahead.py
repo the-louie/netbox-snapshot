@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 # NaturalKey is the shared tuple-of-tuples alias used by every
 # NK consumer. It lives in snapshot_index because the loader is
@@ -35,7 +36,18 @@ from dataclasses import dataclass
 # canonical home.
 from nbsnap.import_.snapshot_index import NaturalKey
 
-__all__ = ["DeferredFK", "MAX_DEPTH"]
+if TYPE_CHECKING:
+    # TYPE_CHECKING-only imports break the runtime cycle:
+    # lookahead is consumed by driver.py, driver consumes
+    # upsert.py, and upsert needs NetboxHTTP / NKRegistry too.
+    # At runtime we resolve the real classes lazily inside
+    # resolve_or_create.
+    from nbsnap.http.client import NetboxHTTP
+    from nbsnap.import_.nk_index import NKIndex
+    from nbsnap.import_.snapshot_index import SnapshotIndex
+    from nbsnap.natkey.model import NKRegistry
+
+__all__ = ["DeferredFK", "MAX_DEPTH", "resolve_or_create"]
 
 logger = logging.getLogger(__name__)
 
@@ -79,3 +91,108 @@ class DeferredFK:
     field_name: str
     target_content_type: str
     target_nk: NaturalKey
+
+
+def resolve_or_create(
+    http: NetboxHTTP,
+    snapshot_index: SnapshotIndex,
+    dest_index: NKIndex,
+    registry: NKRegistry,
+    *,
+    content_type: str,
+    natural_key: NaturalKey,
+    processing_stack: set[tuple[str, NaturalKey]],
+    deferred_queue: list[DeferredFK],  # noqa: ARG001 - reserved for FEAT-36b5
+    depth: int = 0,
+) -> int | None:
+    """Resolve a target NK to a destination id, creating it on demand.
+
+    The function is the heart of the two-tier resolver. Five
+    strategy steps in order:
+
+    1. **Depth cap.** A recursion depth above MAX_DEPTH means
+       the snapshot has runaway cycles or the call site is
+       misusing the helper. Return None and log a warning so
+       the import does not lock up.
+    2. **Cycle detection (FEAT-36b4).** If the key is already
+       on `processing_stack`, the target is being created by
+       an outer recursion frame; we cannot recurse into it
+       again. Caller is expected to append a DeferredFK to
+       the queue with its own child fields filled in; we
+       return None so the outer FK lands as null on Phase-1.
+    3. **Destination tier (FEAT-36b2).** Ask the destination
+       NKIndex; on a hit, return the id immediately. No
+       network, no snapshot lookup, no recursion.
+    4. **Snapshot tier (FEAT-36b3).** Ask the SnapshotIndex.
+       On a miss, return None and let the caller drop the FK
+       via the existing out-of-scope path.
+    5. **Recursive upsert (FEAT-36b3).** Add the key to the
+       processing stack, call `upsert()` with the snapshot
+       body, remove the key. The upsert populates the
+       destination NKIndex with the new id automatically.
+
+    Arguments are typed as `object` for the http/index/registry
+    triple because typed imports would cycle through driver.py;
+    the runtime contract is documented in each step's logic.
+    """
+
+    # Runtime import of upsert so the module graph stays
+    # acyclic: lookahead is consumed by driver.py, driver
+    # consumes upsert.py; importing upsert at module top would
+    # close the loop.
+    from nbsnap.import_.upsert import UpsertOutcome, upsert
+
+    key = (content_type, natural_key)
+
+    # Step 1, depth cap.
+    if depth >= MAX_DEPTH:
+        logger.warning(
+            "look-ahead depth %d hit at %s NK=%r; dropping",
+            MAX_DEPTH, content_type, natural_key,
+        )
+        return None
+
+    # Step 2, cycle detection. The caller pushes the queue
+    # entry because only the caller knows the (child_ct,
+    # child_nk, field_name) it was processing when the cycle
+    # surfaced.
+    if key in processing_stack:
+        logger.debug("cycle at %s NK=%r, deferring to Phase-2",
+                     content_type, natural_key)
+        return None
+
+    # Step 3, destination tier. Build the per-CT index lazily
+    # (idempotent after the first call).
+    dest_index.ensure_built(http, registry, content_type)
+    existing = dest_index.lookup(content_type, natural_key)
+    if existing is not None:
+        return existing
+
+    # Step 4, snapshot tier.
+    snapshot_body = snapshot_index.lookup(content_type, natural_key)
+    if snapshot_body is None:
+        return None  # out-of-scope or genuinely missing target
+
+    # Step 5, recursive upsert. Push the key, call upsert,
+    # pop the key in a finally so an inner raise does not
+    # leave the stack corrupted.
+    processing_stack.add(key)
+    try:
+        result = upsert(
+            http,
+            content_type=content_type,
+            natural_key=natural_key,
+            body=dict(snapshot_body),
+            index=dest_index,
+            registry=registry,
+        )
+    finally:
+        processing_stack.discard(key)
+
+    if result.outcome is UpsertOutcome.FAILED:
+        logger.warning(
+            "look-ahead upsert failed for %s NK=%r: %s",
+            content_type, natural_key, result.message,
+        )
+        return None
+    return result.destination_id
