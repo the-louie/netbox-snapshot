@@ -37,15 +37,57 @@ class NKIndex:
     _by_key: dict[tuple[str, NaturalKey], int] = field(default_factory=dict)
     _built_cts: set[str] = field(default_factory=set)
 
-    def ensure_built(self, http: NetboxHTTP, registry: NKRegistry, content_type: str) -> None:
-        """Make sure the index for `content_type` is populated."""
+    def ensure_built(
+        self,
+        http: NetboxHTTP,
+        registry: NKRegistry,
+        content_type: str,
+        *,
+        _building: set[str] | None = None,
+    ) -> None:
+        """Populate the index for `content_type`, recursively
+        building every content type its NKSpec references.
+
+        Composite NKs reference other content types through
+        `NKField.parent_content_type`. A lookup against a deep NK
+        (e.g. `ipam.ipaddress` whose `assigned_object_id` is an
+        `dcim.interface` NK that itself depends on `dcim.device`)
+        only succeeds when every parent index is present.
+
+        `_building` is the active recursion stack; a content
+        type already on the stack is skipped, which is how we
+        tolerate self-referencing NKSpecs like
+        `dcim.devicerole.parent -> dcim.devicerole`.
+        """
 
         if content_type in self._built_cts:
             return
+        if _building is None:
+            _building = set()
+        if content_type in _building:
+            # Cycle, skip. The partial NK we can compute without
+            # the deeper level is the best we can do; the
+            # alternative is to recurse forever.
+            return
+        _building.add(content_type)
+
+        # Walk the NKSpec's parent dependencies first so the
+        # nested resolve() calls below find every level they need.
+        if registry.has(content_type):
+            spec = registry.get(content_type)
+            for field_spec in spec.fields:
+                if field_spec.parent_content_type is not None:
+                    self.ensure_built(
+                        http, registry, field_spec.parent_content_type,
+                        _building=_building,
+                    )
+
         endpoint = CONTENT_TYPE_ENDPOINTS.get(content_type)
         if endpoint is None:
             self._built_cts.add(content_type)
+            _building.discard(content_type)
             return
+
         # `brief=true` keeps the response small. NetBox strips most
         # nested representations from briefs, so the lookup table
         # uses bare ids and slug/name.
@@ -58,7 +100,9 @@ class NKIndex:
             rid = row.get("id")
             if isinstance(rid, int):
                 self._by_key[(content_type, nk)] = rid
+
         self._built_cts.add(content_type)
+        _building.discard(content_type)
 
     def lookup(self, content_type: str, nk: NaturalKey) -> int | None:
         return self._by_key.get((content_type, nk))
