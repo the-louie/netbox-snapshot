@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from nbsnap.import_.phase2 import Phase2Summary as _Phase2Summary
     from nbsnap.import_.snapshot_index import SnapshotIndex as _SnapshotIndexType
 
 from nbsnap.export.manifest import MANIFEST_FILENAME, Manifest
@@ -52,7 +53,7 @@ class ImportSummary:
     deferred_queue: list[Any] = field(default_factory=list)
     # Phase-2 outcomes per cycle-closing PATCH. None when Phase-2
     # did not run (empty queue or preflight blocked).
-    phase2: Any = None
+    phase2: _Phase2Summary | None = None
 
 
 def run_import(
