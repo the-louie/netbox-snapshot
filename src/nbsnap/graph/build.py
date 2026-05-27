@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from nbsnap.graph.model import Edge, Graph, Node
+from nbsnap.graph.polymorphic import add_hint_edges
 
 if TYPE_CHECKING:
     from nbsnap.schema.openapi import OpenAPI
@@ -69,5 +70,11 @@ def from_openapi(openapi: OpenAPI, scope: set[str]) -> Graph:
                     is_m2m=spec.is_m2m,
                 )
             )
+
+    # FEAT-36d: layer curated polymorphic hints on top of the
+    # static FK edges. These cover generic FKs (Cable
+    # terminations, IPAddress.assigned_object, etc.) whose
+    # targets are not visible in the JSON Schema.
+    add_hint_edges(graph, scope)
 
     return graph

@@ -134,5 +134,115 @@ def add_polymorphic_edges(
         )
 
 
-def _silence_unused() -> None:  # pragma: no cover, satisfies ruff ARG
-    _ = Any
+# Hand-curated polymorphic target hints. Each entry records the
+# accepted target content types for one polymorphic field on one
+# owner. The graph builder uses these to add synthetic ordering
+# edges so the planner emits target content types BEFORE the
+# owners that reference them, even though the static schema scan
+# cannot see those references.
+#
+# The OPTIONS-based discovery above remains the runtime source of
+# truth for `polymorphic_targets`; this table is the cheap upfront
+# plan-time hint that keeps the look-ahead resolver from firing in
+# the common case.
+#
+# Each entry carries `verified_against` so a NetBox version bump
+# that restructures these fields can be caught by re-running the
+# hint check against the new schema.
+POLYMORPHIC_HINTS: list[dict[str, Any]] = [
+    {
+        "owner_ct": "dcim.cable",
+        "field": "a_terminations",
+        "targets": [
+            "dcim.interface", "dcim.frontport", "dcim.rearport",
+            "dcim.consoleport", "dcim.consoleserverport",
+            "dcim.powerport", "dcim.poweroutlet",
+            "circuits.circuittermination",
+        ],
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "owner_ct": "dcim.cable",
+        "field": "b_terminations",
+        "targets": [
+            "dcim.interface", "dcim.frontport", "dcim.rearport",
+            "dcim.consoleport", "dcim.consoleserverport",
+            "dcim.powerport", "dcim.poweroutlet",
+            "circuits.circuittermination",
+        ],
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "owner_ct": "ipam.ipaddress",
+        "field": "assigned_object",
+        "targets": [
+            "dcim.interface", "virtualization.vminterface",
+            "ipam.fhrpgroup",
+        ],
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "owner_ct": "ipam.service",
+        "field": "parent",
+        "targets": [
+            "dcim.device", "virtualization.virtualmachine",
+            "ipam.fhrpgroup",
+        ],
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "owner_ct": "wireless.wirelesslink",
+        "field": "interface_a",
+        "targets": ["dcim.interface"],
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "owner_ct": "wireless.wirelesslink",
+        "field": "interface_b",
+        "targets": ["dcim.interface"],
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "owner_ct": "dcim.virtualchassis",
+        "field": "master",
+        "targets": ["dcim.device"],
+        "verified_against": "netbox 4.6.2",
+    },
+]
+
+
+def add_hint_edges(graph: Graph, scope: set[str]) -> None:
+    """Add synthetic FK edges from the polymorphic hint table.
+
+    For every `(owner, field, target)` triple where both
+    endpoints are in scope, add an edge child=owner ->
+    parent=target. The edge is marked nullable + m2m so the
+    cycle-breaking pass can still defer it if a true cycle
+    exists. The label is suffixed with `__hint` so the
+    deferred-edge picker can recognise these synthetic edges
+    and prefer deferring them over real schema edges.
+
+    Call once per `Graph` build; `Graph.add_edge` appends, it
+    does not deduplicate, so repeated calls on the same graph
+    would multiply the synthetic edges.
+    """
+
+    for hint in POLYMORPHIC_HINTS:
+        owner = hint["owner_ct"]
+        if owner not in scope:
+            continue
+        for target in hint["targets"]:
+            if target not in scope:
+                continue
+            graph.add_node(Node(target))  # idempotent
+            graph.add_edge(
+                Edge(
+                    child=owner,
+                    parent=target,
+                    field=f"{hint['field']}__hint",
+                    nullable=True,
+                    required=False,
+                    is_m2m=True,
+                    polymorphic_targets=tuple(hint["targets"]),
+                )
+            )
