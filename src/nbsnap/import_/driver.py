@@ -67,15 +67,24 @@ def run_import(
     *,
     max_skew: VersionSkew = VersionSkew.MINOR,
     on_error: str = "stop",
+    allow_enum_dict_bypass: bool = False,
 ) -> ImportSummary:
-    """Apply the snapshot at `snapshot_dir` to the destination NetBox."""
+    """Apply the snapshot at `snapshot_dir` to the destination NetBox.
+
+    `allow_enum_dict_bypass` lets a legacy snapshot through even
+    when the FEAT-36h scan flags it. The import-side coerce
+    still recovers most fields but the round-trip guarantee is
+    gone, so use only when re-export is not yet possible.
+    """
 
     snapshot_dir = Path(snapshot_dir)
     manifest = Manifest.load(snapshot_dir / MANIFEST_FILENAME)
-    preflight = run_preflight(http, manifest)
+    preflight = run_preflight(http, manifest, snapshot_dir=snapshot_dir)
     summary = ImportSummary(preflight=preflight)
 
-    if preflight.is_blocking(max_skew):
+    if preflight.is_blocking(
+        max_skew, allow_enum_dict_bypass=allow_enum_dict_bypass
+    ):
         return summary
 
     registry = default_registry()

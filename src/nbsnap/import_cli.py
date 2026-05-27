@@ -74,6 +74,14 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         help="write the per-drop audit JSONL to this path "
              "(default: <snapshot_dir>/audit.jsonl)",
     )
+    parser.add_argument(
+        "--allow-enum-dict-bypass",
+        action="store_true",
+        help="(power user) proceed even if the snapshot carries "
+             "the legacy {value, label} enum shape on a field. The "
+             "import-side coerce should still recover, but the "
+             "snapshot will not round-trip cleanly.",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -113,7 +121,12 @@ def run_import_cli(args: argparse.Namespace) -> int:
     # Run, catching the high-likelihood failure modes per category
     # ------------------------------------------------------------------
     try:
-        summary = run_import(http, in_dir, max_skew=max_skew, on_error=args.on_error)
+        summary = run_import(
+            http, in_dir,
+            max_skew=max_skew,
+            on_error=args.on_error,
+            allow_enum_dict_bypass=args.allow_enum_dict_bypass,
+        )
     except requests.exceptions.SSLError as exc:
         sys.stderr.write(
             "nbsnap import: TLS verification failed against the destination "
@@ -160,6 +173,17 @@ def run_import_cli(args: argparse.Namespace) -> int:
             "  missing content types: "
             f"{sorted(summary.preflight.missing_content_types)}\n"
         )
+    if summary.preflight.snapshot_format_issues:
+        sys.stderr.write(
+            "nbsnap import: snapshot format issues detected:\n"
+        )
+        for issue in summary.preflight.snapshot_format_issues[:10]:
+            sys.stderr.write(f"  {issue}\n")
+        sys.stderr.write(
+            "Re-export the snapshot with a current nbsnap, "
+            "or pass --allow-enum-dict-bypass to proceed via "
+            "the import-side coerce.\n"
+        )
     for outcome in (
         UpsertOutcome.CREATED,
         UpsertOutcome.UPDATED,
@@ -177,10 +201,18 @@ def run_import_cli(args: argparse.Namespace) -> int:
             f"skipped={summary.phase2.counts.get('skipped', 0)} "
             f"failed={summary.phase2.counts.get('failed', 0)}\n"
         )
-    return _compute_exit_code(summary, max_skew)
+    return _compute_exit_code(
+        summary, max_skew,
+        allow_enum_dict_bypass=args.allow_enum_dict_bypass,
+    )
 
 
-def _compute_exit_code(summary: ImportSummary, max_skew: VersionSkew) -> int:
+def _compute_exit_code(
+    summary: ImportSummary,
+    max_skew: VersionSkew,
+    *,
+    allow_enum_dict_bypass: bool = False,
+) -> int:
     """Map a fully-categorised ImportSummary to a CLI exit code.
 
     FEAT-36f sharpens the contract: a single `nbsnap import`
@@ -203,7 +235,9 @@ def _compute_exit_code(summary: ImportSummary, max_skew: VersionSkew) -> int:
     the run, takes precedence over row-failure exit codes
     because the import never actually ran in that case.
     """
-    if summary.preflight.is_blocking(max_skew):
+    if summary.preflight.is_blocking(
+        max_skew, allow_enum_dict_bypass=allow_enum_dict_bypass
+    ):
         return EXIT_PREFLIGHT_BLOCKED
 
     from nbsnap.import_.audit import DropCategory
