@@ -17,7 +17,10 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nbsnap.import_.snapshot_index import SnapshotIndex as _SnapshotIndexType
 
 from nbsnap.export.manifest import MANIFEST_FILENAME, Manifest
 from nbsnap.export.writer import CONTENT_TYPE_FILES
@@ -42,6 +45,13 @@ class ImportSummary:
     preflight: PreflightReport
     counts: Counter[UpsertOutcome] = field(default_factory=Counter)
     failures: list[UpsertResult] = field(default_factory=list)
+    # The deferred-FK queue produced by the FEAT-36b look-ahead
+    # resolver during Phase-1. FEAT-36c walks this queue and
+    # PATCHes each cycle-closing FK after Phase-1 finishes. Kept
+    # as a forward-compatible list of `DeferredFK` objects so
+    # the Phase-2 writer can be added without changing this
+    # surface.
+    deferred_queue: list[Any] = field(default_factory=list)
 
 
 def run_import(
@@ -65,6 +75,16 @@ def run_import(
     index = NKIndex()
     openapi = OpenAPI.load(snapshot_dir / SCHEMA_PATH)
 
+    # Look-ahead state for FEAT-36b. Built once and threaded
+    # through every _resolve_body call so the demand-driven
+    # resolver can pull in missing parents and detect cycles.
+    from nbsnap.import_.lookahead import DeferredFK
+    from nbsnap.import_.snapshot_index import SnapshotIndex
+
+    snapshot_index = SnapshotIndex.from_snapshot(snapshot_dir)
+    deferred_queue: list[DeferredFK] = []
+    processing_stack: set[tuple[str, tuple[Any, ...]]] = set()
+
     # Phase-1: per content type, in the order recorded in the
     # manifest. We do not re-plan here; the snapshot is the
     # contract and the manifest is the order.
@@ -75,10 +95,19 @@ def run_import(
         if not file_path.exists():
             continue
         for snapshot_row in _iter_jsonl(file_path):
-            body = _resolve_body(
-                ct, snapshot_row.get("body") or {}, openapi, index, http, registry
-            )
             nk = normalise_nk(snapshot_row.get("natural_key"))
+            body = _resolve_body(
+                ct,
+                snapshot_row.get("body") or {},
+                openapi,
+                index,
+                http,
+                registry,
+                snapshot_index=snapshot_index,
+                processing_stack=processing_stack,
+                deferred_queue=deferred_queue,
+                current_nk=nk,
+            )
             result = upsert(
                 http,
                 content_type=ct,
@@ -92,6 +121,10 @@ def run_import(
                 summary.failures.append(result)
                 if on_error == "stop":
                     return summary
+
+    # Surface the deferred queue from Phase-1 on the summary
+    # so FEAT-36c / FEAT-23 can consume it.
+    summary.deferred_queue = deferred_queue
 
     # Phase-2: deferred edges. The manifest's deferred_edges field
     # tells us which (child, parent, field) tuples to PATCH after
@@ -161,16 +194,22 @@ def _resolve_body(
     index: NKIndex,
     http: NetboxHTTP,
     registry: Any,
+    *,
+    snapshot_index: _SnapshotIndexType | None = None,
+    processing_stack: set[tuple[str, tuple[Any, ...]]] | None = None,
+    deferred_queue: list[Any] | None = None,
+    current_nk: tuple[Any, ...] = (),
 ) -> dict[str, Any]:
     """Resolve every FK NK in `body` back to a destination id.
 
     Three graceful-degrade rules apply per field, so one missing
     reference never aborts the whole import:
 
-    * Simple FK: KeyError on the target lookup -> drop the field
-      from the body. The destination row is created without that
-      FK; Phase-2 (FEAT-23) can backfill if the target appears
-      later in the same run.
+    * Simple FK: try `resolve_simple_fk` against the destination
+      first; on a miss, fall back to the look-ahead resolver
+      (FEAT-36b) which consults the SnapshotIndex and creates
+      the target on demand. If both miss, drop the field with
+      a warning.
     * M2M: each item is resolved independently. Items that 404
       against the destination NK index are dropped from the list;
       surviving items are kept.
@@ -179,6 +218,13 @@ def _resolve_body(
     Each soft drop emits a once-per-(content_type, field, target)
     log line so the operator can audit which FKs the import did
     not carry through.
+
+    The four look-ahead keyword arguments (`snapshot_index`,
+    `processing_stack`, `deferred_queue`, `current_nk`) are
+    optional so existing callers (and the existing tests) that
+    do not pass them keep working with the destination-only
+    behaviour. When all four are present, the look-ahead path
+    is wired into the simple-FK branch.
     """
 
     resolved: dict[str, Any] = {}
@@ -205,9 +251,95 @@ def _resolve_body(
                 value, spec.fk_target, index, http=http, registry=registry
             )
         except (KeyError, ValueError) as exc:
-            _warn_dropped(content_type, field_name, spec.fk_target, exc)
+            # Try the look-ahead path if the caller wired one in.
+            recovered = _try_lookahead(
+                value=value,
+                target_ct=spec.fk_target,
+                http=http,
+                index=index,
+                registry=registry,
+                snapshot_index=snapshot_index,
+                processing_stack=processing_stack,
+                deferred_queue=deferred_queue,
+                child_ct=content_type,
+                child_nk=current_nk,
+                field_name=field_name,
+            )
+            if recovered is not None:
+                resolved[field_name] = recovered
+            else:
+                _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
     return resolved
+
+
+def _try_lookahead(
+    *,
+    value: Any,
+    target_ct: str,
+    http: NetboxHTTP,
+    index: NKIndex,
+    registry: Any,
+    snapshot_index: _SnapshotIndexType | None,
+    processing_stack: set[tuple[str, tuple[Any, ...]]] | None,
+    deferred_queue: list[Any] | None,
+    child_ct: str,
+    child_nk: tuple[Any, ...],
+    field_name: str,
+) -> int | None:
+    """Attempt the FEAT-36b look-ahead path.
+
+    When the look-ahead arguments are missing the helper returns
+    None so the caller falls through to the original warn-and-
+    drop behaviour. Keeps backwards compatibility with callers
+    that have not been threaded yet.
+    """
+
+    if (
+        snapshot_index is None
+        or processing_stack is None
+        or deferred_queue is None
+    ):
+        return None
+
+    # The snapshot stores NKs as lists; the resolver wants
+    # tuples. Convert here so the look-ahead module does not
+    # need to know about list-vs-tuple normalisation.
+    from nbsnap.import_.fk_resolve import normalise_nk
+    from nbsnap.import_.lookahead import DeferredFK, resolve_or_create
+
+    target_nk = normalise_nk(value)
+
+    queue_size_before = len(deferred_queue)
+    rid = resolve_or_create(
+        http,
+        snapshot_index,
+        index,
+        registry,
+        content_type=target_ct,
+        natural_key=target_nk,
+        processing_stack=processing_stack,
+        deferred_queue=deferred_queue,
+    )
+    if rid is not None:
+        return rid
+
+    # rid is None: either out of scope, or a cycle. If a cycle,
+    # the caller can use the queue-size delta to know we need
+    # to push a DeferredFK so Phase-2 picks it up. The
+    # resolve_or_create helper does not push the entry itself
+    # because only the caller knows the child fields.
+    if len(deferred_queue) == queue_size_before and (target_ct, target_nk) in processing_stack:
+        deferred_queue.append(
+            DeferredFK(
+                child_content_type=child_ct,
+                child_nk=child_nk,
+                field_name=field_name,
+                target_content_type=target_ct,
+                target_nk=target_nk,
+            )
+        )
+    return None
 
 
 def _safe_resolve_m2m(
