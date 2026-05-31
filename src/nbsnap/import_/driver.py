@@ -296,6 +296,8 @@ def _resolve_body(
                 child_ct=content_type,
                 child_nk=current_nk,
                 field_name=field_name,
+                openapi=openapi,
+                auditor=auditor,
             )
             if recovered is not None:
                 resolved[field_name] = recovered
@@ -380,6 +382,8 @@ def _try_lookahead(
     child_ct: str,
     child_nk: tuple[Any, ...],
     field_name: str,
+    openapi: OpenAPI | None = None,
+    auditor: Auditor | None = None,
 ) -> int | None:
     """Attempt the FEAT-36b look-ahead path.
 
@@ -387,6 +391,12 @@ def _try_lookahead(
     None so the caller falls through to the original warn-and-
     drop behaviour. Keeps backwards compatibility with callers
     that have not been threaded yet.
+
+    `openapi` and `auditor` flow into `resolve_or_create` so the
+    recursive upsert can route the snapshot body through
+    `_resolve_body` before posting (task #22). Without these,
+    the look-ahead would POST raw NK-shaped FKs and NetBox would
+    reject the create with HTTP 400.
     """
 
     if (
@@ -414,6 +424,8 @@ def _try_lookahead(
         natural_key=target_nk,
         processing_stack=processing_stack,
         deferred_queue=deferred_queue,
+        openapi=openapi,
+        auditor=auditor,
     )
     if rid is not None:
         return rid

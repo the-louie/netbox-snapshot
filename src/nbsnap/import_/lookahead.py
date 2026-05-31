@@ -43,9 +43,11 @@ if TYPE_CHECKING:
     # At runtime we resolve the real classes lazily inside
     # resolve_or_create.
     from nbsnap.http.client import NetboxHTTP
+    from nbsnap.import_.audit import Auditor
     from nbsnap.import_.nk_index import NKIndex
     from nbsnap.import_.snapshot_index import SnapshotIndex
     from nbsnap.natkey.model import NKRegistry
+    from nbsnap.schema.openapi import OpenAPI
 
 __all__ = ["DeferredFK", "MAX_DEPTH", "resolve_or_create"]
 
@@ -102,12 +104,14 @@ def resolve_or_create(
     content_type: str,
     natural_key: NaturalKey,
     processing_stack: set[tuple[str, NaturalKey]],
-    deferred_queue: list[DeferredFK],  # noqa: ARG001 - reserved for FEAT-36b5
+    deferred_queue: list[DeferredFK],
     depth: int = 0,
+    openapi: OpenAPI | None = None,
+    auditor: Auditor | None = None,
 ) -> int | None:
     """Resolve a target NK to a destination id, creating it on demand.
 
-    The function is the heart of the two-tier resolver. Five
+    The function is the heart of the two-tier resolver. Six
     strategy steps in order:
 
     1. **Depth cap.** A recursion depth above MAX_DEPTH means
@@ -126,14 +130,17 @@ def resolve_or_create(
     4. **Snapshot tier (FEAT-36b3).** Ask the SnapshotIndex.
        On a miss, return None and let the caller drop the FK
        via the existing out-of-scope path.
-    5. **Recursive upsert (FEAT-36b3).** Add the key to the
-       processing stack, call `upsert()` with the snapshot
-       body, remove the key. The upsert populates the
-       destination NKIndex with the new id automatically.
-
-    Arguments are typed as `object` for the http/index/registry
-    triple because typed imports would cycle through driver.py;
-    the runtime contract is documented in each step's logic.
+    5. **Body resolution (task #22).** Push the key onto
+       `processing_stack` and route the snapshot body through
+       `_resolve_body` so every FK in the body is replaced
+       with a resolved destination id. Required when `openapi`
+       is provided; without that handle the function falls
+       back to posting the raw body for backwards compatibility
+       with older callers.
+    6. **Recursive upsert (FEAT-36b3).** Call `upsert()` with
+       the resolved body and pop the processing-stack key in a
+       finally. The upsert populates the destination NKIndex
+       with the new id automatically.
     """
 
     # Runtime import of upsert so the module graph stays
@@ -173,16 +180,55 @@ def resolve_or_create(
     if snapshot_body is None:
         return None  # out-of-scope or genuinely missing target
 
-    # Step 5, recursive upsert. Push the key, call upsert,
-    # pop the key in a finally so an inner raise does not
-    # leave the stack corrupted.
+    # Step 5, recursive upsert. Push the key, then RESOLVE THE
+    # BODY before upsert and pop the key in a finally so an
+    # inner raise does not leave the stack corrupted.
+    #
+    # FEAT-36 follow-up (task #22): The naive `body=dict(snapshot_body)`
+    # call sent raw NK-shaped FKs at NetBox. NetBox refuses with
+    # HTTP 400 because, for example, `manufacturer: ["debian"]`
+    # is not a valid integer FK. We now route the snapshot body
+    # through the same `_resolve_body` the driver's main loop uses
+    # so every FK in the body is replaced with the destination's
+    # numeric id before the POST fires.
+    #
+    # `_resolve_body` lives in driver.py; importing it at module
+    # top would close the cycle (lookahead -> driver -> upsert
+    # -> lookahead). The runtime import here is the same pattern
+    # we use for `upsert` above, and the cycle protection in
+    # `processing_stack` survives the mutual recursion through
+    # `_resolve_body`'s own `_try_lookahead` callout.
     processing_stack.add(key)
     try:
+        if openapi is not None:
+            from nbsnap.import_.driver import _resolve_body
+
+            resolved_body = _resolve_body(
+                content_type,
+                dict(snapshot_body),
+                openapi,
+                dest_index,
+                http,
+                registry,
+                snapshot_index=snapshot_index,
+                processing_stack=processing_stack,
+                deferred_queue=deferred_queue,
+                current_nk=natural_key,
+                auditor=auditor,
+            )
+        else:
+            # Backwards-compat for callers that have not yet
+            # threaded the openapi handle through. The unresolved
+            # body still flows, matching pre-fix behaviour, so the
+            # existing unit tests keep passing while the driver
+            # call sites get updated.
+            resolved_body = dict(snapshot_body)
+
         result = upsert(
             http,
             content_type=content_type,
             natural_key=natural_key,
-            body=dict(snapshot_body),
+            body=resolved_body,
             index=dest_index,
             registry=registry,
         )
