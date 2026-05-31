@@ -74,7 +74,11 @@ def upsert(
         # the {value, label} GET shape) can still import. New
         # snapshots after the fix already have flat values; this
         # is a no-op for them.
-        post_body = _coerce_body_for_write(body)
+        # POST/create path: drop None values so fields NetBox
+        # refuses with "may not be blank" (e.g. dcim.cable.profile)
+        # land at the default instead of failing the whole row.
+        # See `_coerce_body_for_write` for the rationale.
+        post_body = _coerce_body_for_write(body, drop_nones=True)
         try:
             created = http.post(endpoint, post_body)
         except Exception as exc:  # noqa: BLE001 - surface anything to audit
@@ -139,20 +143,54 @@ def _matches(current: Any, desired: Any) -> bool:
     return bool(current == desired)
 
 
-def _coerce_body_for_write(body: Mapping[str, Any]) -> dict[str, Any]:
-    """Defensive enum-dict collapse at the write boundary.
+def _coerce_body_for_write(
+    body: Mapping[str, Any], *, drop_nones: bool = False
+) -> dict[str, Any]:
+    """Defensive write-side body coercion.
 
-    The canonical fix for the {value, label} write bug lives on
-    the export side (`nbsnap.export.extractor._collapse_enum_dict`),
-    but we also coerce here so an old snapshot exported before
-    that fix can still import without a re-export. Fresh
-    snapshots already have flat values, this call is a no-op for
-    them.
+    Two transforms applied, both safe to run on a body that has
+    already been resolved by `_resolve_body`:
 
-    Re-uses the export-side helper so the rule lives in one
-    place and stays in lockstep.
+    1. **Enum-dict collapse**, the canonical fix lives on the
+       export side
+       (`nbsnap.export.extractor._collapse_enum_dict`), but we
+       coerce here so a legacy snapshot exported before that fix
+       can still import via `--allow-enum-dict-bypass`. Fresh
+       snapshots are flat already, this is a no-op for them.
+
+    2. **None drop (task #26, opt-in via `drop_nones=True`)**,
+       NetBox refuses certain write-only fields with HTTP 400
+       `field may not be blank` when the body explicitly carries
+       `null`. The canonical case is `dcim.cable.profile`, which
+       is documented nullable in the schema but rejected by the
+       write validator. Dropping the key entirely tells NetBox
+       to use the field's default (which is also null for those
+       fields). The caller turns this on for POST/create paths
+       only, because a PATCH that legitimately wants to clear a
+       field needs the explicit `null` to survive.
+
+       Safety of the broad rule: for every field where NetBox
+       DOES accept an explicit `null` on create (most nullable
+       FKs and most nullable strings), the field's default is
+       also `null`, so omitting the key is semantically the
+       same as sending `null` explicitly. The rule only changes
+       observable behaviour for fields like `cable.profile`
+       where NetBox's write validator disagrees with its
+       schema. If a future NetBox version makes a default
+       non-null AND requires the field, the import will surface
+       that as a regular "required field" error which the
+       operator can act on.
+
+    Re-uses the export-side enum helper so the choice-collapse
+    rule lives in one place and stays in lockstep.
     """
 
     from nbsnap.export.extractor import _collapse_enum_dict
 
-    return {k: _collapse_enum_dict(v) for k, v in body.items()}
+    out: dict[str, Any] = {}
+    for k, v in body.items():
+        coerced = _collapse_enum_dict(v)
+        if drop_nones and coerced is None:
+            continue
+        out[k] = coerced
+    return out
