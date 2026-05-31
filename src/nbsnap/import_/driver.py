@@ -68,6 +68,7 @@ def run_import(
     max_skew: VersionSkew = VersionSkew.MINOR,
     on_error: str = "stop",
     allow_enum_dict_bypass: bool = False,
+    progress: Any = None,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
 
@@ -75,6 +76,13 @@ def run_import(
     when the FEAT-36h scan flags it. The import-side coerce
     still recovers most fields but the round-trip guarantee is
     gone, so use only when re-export is not yet possible.
+
+    `progress` (task #27): an optional `ProgressReporter` that
+    emits per-content-type and per-row stderr lines during the
+    run and flushes the audit JSONL on a periodic cadence. Pass
+    `None` (the default) to keep the driver silent during the
+    run, the CLI passes a stderr-bound reporter so operators
+    watching a long import see steady motion.
     """
 
     snapshot_dir = Path(snapshot_dir)
@@ -103,6 +111,15 @@ def run_import(
 
     auditor = summary.auditor
 
+    # Bind the auditor to the progress reporter so the
+    # periodic JSONL flush picks up newly-recorded drops in
+    # real time. The reporter is constructed in the CLI
+    # without a live auditor handle because the auditor lives
+    # on the summary; we wire them together here once both
+    # exist.
+    if progress is not None:
+        progress.bind_auditor(auditor)
+
     # Phase-1: per content type, in the order recorded in the
     # manifest. We do not re-plan here; the snapshot is the
     # contract and the manifest is the order.
@@ -112,7 +129,16 @@ def run_import(
         )
         if not file_path.exists():
             continue
-        for snapshot_row in _iter_jsonl(file_path):
+
+        # Count rows up-front so the progress reporter can pick
+        # a sensible sample stride. The file is small enough
+        # that an extra pass is cheap; even the largest fixture
+        # in the rescue-10 set is ~10 MB.
+        rows = list(_iter_jsonl(file_path))
+        if progress is not None:
+            progress.start_phase(ct, total=len(rows))
+
+        for row_index, snapshot_row in enumerate(rows, start=1):
             nk = normalise_nk(snapshot_row.get("natural_key"))
             body = _resolve_body(
                 ct,
@@ -136,10 +162,17 @@ def run_import(
                 registry=registry,
             )
             summary.counts[result.outcome] += 1
+            if progress is not None:
+                progress.tick(ct, row_index)
             if result.outcome is UpsertOutcome.FAILED:
                 summary.failures.append(result)
                 if on_error == "stop":
+                    if progress is not None:
+                        progress.close()
                     return summary
+
+        if progress is not None:
+            progress.end_phase(ct)
 
     # Surface the deferred queue from Phase-1 on the summary
     # so the CLI audit and integration tests can see it.
@@ -164,8 +197,12 @@ def run_import(
         # "continue" they accumulate and the caller sees them via
         # `summary.phase2.failures`.
         if on_error == "stop" and not summary.phase2.is_clean():
+            if progress is not None:
+                progress.close()
             return summary
 
+    if progress is not None:
+        progress.close()
     return summary
 
 
