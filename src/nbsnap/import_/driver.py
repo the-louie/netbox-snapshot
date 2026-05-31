@@ -290,6 +290,26 @@ def _resolve_body(
         owner_ct=content_type,
     )
 
+    # Task #25 pre-pass: resolve Cable termination dicts. The
+    # snapshot stores cable terminations as
+    # `[{"object_natural_key": [...nk...], "object_type":
+    # "dcim.interface"}, ...]`, NetBox expects `object_id: <int>`
+    # in each dict. Drive the conversion here so the standard
+    # field loop only sees write-ready shapes.
+    body = _resolve_termination_lists(
+        body,
+        openapi,
+        index,
+        http,
+        registry,
+        snapshot_index=snapshot_index,
+        processing_stack=processing_stack,
+        deferred_queue=deferred_queue,
+        current_nk=current_nk,
+        auditor=auditor,
+        owner_ct=content_type,
+    )
+
     resolved: dict[str, Any] = {}
     for field_name, value in body.items():
         spec = openapi.field_spec(content_type, field_name)
@@ -473,6 +493,145 @@ def _resolve_polymorphic_id_pairs(
             _warn_dropped(owner_ct, id_field, target_ct, exc)
             new_body.pop(id_field, None)
             new_body.pop(type_field, None)
+
+    return new_body
+
+
+def _resolve_termination_lists(
+    body: dict[str, Any],
+    openapi: OpenAPI,
+    index: NKIndex,
+    http: NetboxHTTP,
+    registry: Any,
+    *,
+    snapshot_index: _SnapshotIndexType | None,
+    processing_stack: set[tuple[str, tuple[Any, ...]]] | None,
+    deferred_queue: list[Any] | None,
+    current_nk: tuple[Any, ...],
+    auditor: Auditor | None,
+    owner_ct: str,
+) -> dict[str, Any]:
+    """Convert termination dicts from snapshot to NetBox shape.
+
+    The snapshot stores cable terminations like this:
+
+        "a_terminations": [
+            {"object_natural_key": [...nk_tuple...],
+             "object_type": "dcim.interface"}
+        ]
+
+    NetBox's write API expects:
+
+        "a_terminations": [
+            {"object_id": <int>,
+             "object_type": "dcim.interface"}
+        ]
+
+    The conversion needs both halves of each item, so we cannot
+    delegate to the per-field loop below. This pre-pass walks
+    every list-of-dict field, detects the
+    `object_natural_key + object_type` pattern, resolves the
+    natural key against the destination NKIndex for the named
+    content type, and rewrites the dict with `object_id`.
+
+    On a miss the whole item is dropped from the list; NetBox
+    rejects writes that mix resolved and unresolved
+    terminations. If every item in a list drops, the field
+    itself is dropped so NetBox sees a clean empty pair rather
+    than an explicit `[]` that would surface as "required field
+    is empty" on cables.
+
+    Returns a new dict, the input `body` is not mutated.
+    """
+
+    new_body = dict(body)
+    for field_name, value in body.items():
+        if not isinstance(value, list):
+            continue
+        # Spot-check: is this a list of termination dicts? We
+        # treat the field as a termination list if at least one
+        # item has `object_natural_key` + `object_type`. Other
+        # list-of-dict shapes (e.g. tags carrying brief refs)
+        # are left alone.
+        if not any(
+            isinstance(item, dict)
+            and "object_natural_key" in item
+            and "object_type" in item
+            for item in value
+        ):
+            continue
+
+        resolved_items: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            target_ct = item.get("object_type")
+            raw_nk = item.get("object_natural_key")
+            if not isinstance(target_ct, str) or raw_nk is None:
+                # Malformed item, skip rather than crash. The
+                # operator sees the missing termination via the
+                # destination's cable failure, not via a Python
+                # traceback.
+                continue
+
+            # Resolve against the destination index first.
+            try:
+                rid = resolve_simple_fk(
+                    raw_nk, target_ct, index, http=http, registry=registry
+                )
+                resolved_items.append({
+                    "object_type": target_ct, "object_id": rid,
+                })
+                continue
+            except (KeyError, ValueError) as exc:
+                queue_size_before = (
+                    len(deferred_queue) if deferred_queue is not None else 0
+                )
+                # Look-ahead path so the target interface can be
+                # created from the snapshot if it is in scope.
+                recovered = _try_lookahead(
+                    value=raw_nk,
+                    target_ct=target_ct,
+                    http=http,
+                    index=index,
+                    registry=registry,
+                    snapshot_index=snapshot_index,
+                    processing_stack=processing_stack,
+                    deferred_queue=deferred_queue,
+                    child_ct=owner_ct,
+                    child_nk=current_nk,
+                    field_name=field_name,
+                    openapi=openapi,
+                    auditor=auditor,
+                )
+                if recovered is not None:
+                    resolved_items.append({
+                        "object_type": target_ct, "object_id": recovered,
+                    })
+                    continue
+                # Total miss, record the drop and skip the item.
+                _record_drop(
+                    auditor=auditor,
+                    snapshot_index=snapshot_index,
+                    deferred_queue=deferred_queue,
+                    queue_size_before=queue_size_before,
+                    value=raw_nk,
+                    child_ct=owner_ct,
+                    child_nk=current_nk,
+                    field_name=field_name,
+                    target_ct=target_ct,
+                )
+                _warn_dropped(owner_ct, field_name, target_ct, exc)
+
+        if resolved_items:
+            new_body[field_name] = resolved_items
+        else:
+            # All items dropped, remove the field entirely. A
+            # cable POST with `a_terminations: []` is rejected
+            # by NetBox as "required field is empty"; dropping
+            # the key surfaces the cleaner "required" error
+            # which the operator can act on.
+            new_body.pop(field_name, None)
 
     return new_body
 
