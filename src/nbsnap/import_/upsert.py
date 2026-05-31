@@ -9,6 +9,17 @@ The upsert routine:
    destination already matches the snapshot body, the call is a
    noop. Otherwise issue a PATCH with only the differing fields
    so the destination's audit log shows the minimal diff.
+
+Task #28 added a `custom_fields` filter at the write boundary,
+the look-ahead path can fire for racks and devices BEFORE the
+extras.customfield main phase has imported the field
+definitions. Without filtering, NetBox refuses the POST with
+HTTP 400 `Custom field 'switch_count' does not exist for this
+object type`. The filter consults a lazily-built registry of
+which custom fields the destination knows about for each
+content type and drops the unknown keys. The main phase for
+that content type later PATCHes the values back in once the
+field definitions exist.
 """
 
 from __future__ import annotations
@@ -45,6 +56,132 @@ class UpsertResult:
     message: str = ""
 
 
+# Task #28: cache of `content_type -> set[custom_field_name]`,
+# populated lazily on first call to `_filter_custom_fields`. The
+# cache key is the http base URL so a test that exercises two
+# destinations does not see cross-contamination.
+#
+# The value is a nested dict where the OUTER dict is the per-CT
+# index and a SPECIAL key `_fetch_failed` (when present) means
+# the registry could not be loaded from the destination. In
+# that case the filter degrades to "do not filter" so an
+# unreachable customfield endpoint cannot cause silent data
+# loss on custom_fields.
+_KNOWN_CF_CACHE: dict[str, dict[str, set[str]]] = {}
+_FETCH_FAILED_SENTINEL = "_fetch_failed"
+
+
+def _load_destination_customfields(http: NetboxHTTP) -> dict[str, set[str]]:
+    """Walk every customfield row on the destination and index
+    each by every content type it applies to.
+
+    Uses `?limit=0` so NetBox returns all rows in a single page
+    (the standard NetBox convention for "no pagination").
+    `http.get_all` follows any `next` links anyway, but we
+    pass `limit=0` to avoid a needless second page on the
+    common case.
+
+    Both the legacy `object_types: ["dcim.site", ...]` and
+    the newer `object_types: [{"value": "dcim.site"}, ...]`
+    shapes are accepted defensively.
+    """
+
+    by_ct: dict[str, set[str]] = {}
+    for row in http.get_all("extras/custom-fields/?limit=0"):
+        name = row.get("name")
+        if not isinstance(name, str):
+            continue
+        for ot in row.get("object_types") or []:
+            if isinstance(ot, str):
+                by_ct.setdefault(ot, set()).add(name)
+            elif isinstance(ot, dict):
+                value = ot.get("value") or ot.get("name")
+                if isinstance(value, str):
+                    by_ct.setdefault(value, set()).add(name)
+    return by_ct
+
+
+def _known_custom_fields_for(http: NetboxHTTP, content_type: str) -> set[str] | None:
+    """Return the set of custom-field names the destination
+    exposes for `content_type`, or None if the registry could
+    not be loaded.
+
+    `None` is the "do not filter" signal, the caller treats
+    that as "leave custom_fields untouched", which is safer
+    than "drop every key" when the destination is
+    intermittently unreachable.
+
+    `set()` is "loaded successfully but no CFs for this CT".
+    The caller still drops every key in that case, which is
+    the correct behaviour, the destination genuinely has no
+    custom fields for that content type.
+    """
+
+    cache_key = getattr(http, "base_url", "default")
+    if cache_key in _KNOWN_CF_CACHE:
+        cached = _KNOWN_CF_CACHE[cache_key]
+        if _FETCH_FAILED_SENTINEL in cached:
+            return None
+        return cached.get(content_type, set())
+
+    try:
+        by_ct = _load_destination_customfields(http)
+    except Exception:  # noqa: BLE001 - degrade to do-not-filter on any error
+        # Mark the cache as failed so the filter degrades to
+        # do-not-filter rather than retrying the broken fetch
+        # on every record.
+        _KNOWN_CF_CACHE[cache_key] = {_FETCH_FAILED_SENTINEL: set()}
+        return None
+
+    _KNOWN_CF_CACHE[cache_key] = by_ct
+    return by_ct.get(content_type, set())
+
+
+def _filter_custom_fields(
+    body: dict[str, Any], http: NetboxHTTP, content_type: str
+) -> dict[str, Any]:
+    """Drop `body['custom_fields']` keys the destination does
+    not yet know about for `content_type`.
+
+    NetBox refuses any POST/PATCH containing an unknown custom
+    field. During an import the look-ahead path can fire before
+    the extras.customfield phase imports the definitions, so a
+    rack POST for example carries `switch_count` in its body
+    even though the destination has no such field yet.
+    Filtering at the write boundary lets the rest of the body
+    through. The main extras.customfield phase imports the
+    definitions later; the main dcim.rack phase then PATCHes
+    the field values back in via the standard diff path.
+
+    Records whose `custom_fields` dict empties out after the
+    filter still get the key in the body, sending `{}` is
+    legal for every NetBox version we target.
+
+    If the destination CF registry cannot be loaded
+    (`_known_custom_fields_for` returns None), the body is
+    passed through untouched. Better to surface the eventual
+    HTTP 400 from NetBox than to silently strip all CF data
+    when the registry call is broken.
+
+    Returns a NEW body dict; the input is not mutated.
+    """
+
+    cf = body.get("custom_fields")
+    if not isinstance(cf, dict) or not cf:
+        return body
+    known = _known_custom_fields_for(http, content_type)
+    if known is None:
+        # Registry load failed, do not filter, let NetBox tell
+        # the operator about any unknown fields directly.
+        return body
+    filtered = {k: v for k, v in cf.items() if k in known}
+    if filtered == cf:
+        return body
+    out = dict(body)
+    out["custom_fields"] = filtered
+    return out
+
+
 def upsert(
     http: NetboxHTTP,
     *,
@@ -78,7 +215,15 @@ def upsert(
         # refuses with "may not be blank" (e.g. dcim.cable.profile)
         # land at the default instead of failing the whole row.
         # See `_coerce_body_for_write` for the rationale.
-        post_body = _coerce_body_for_write(body, drop_nones=True)
+        #
+        # Task #28: also filter custom_fields keys against the
+        # destination's known list so a look-ahead that fires
+        # before the extras.customfield phase does not hit a
+        # cascade of "Custom field X does not exist" rejections.
+        post_body = _filter_custom_fields(
+            _coerce_body_for_write(body, drop_nones=True),
+            http, content_type,
+        )
         try:
             created = http.post(endpoint, post_body)
         except Exception as exc:  # noqa: BLE001 - surface anything to audit
@@ -112,7 +257,19 @@ def upsert(
             message="no diff",
         )
     try:
-        http.patch(f"{endpoint}{existing_id}/", _coerce_body_for_write(diff))
+        # PATCH path: also filter custom_fields against the
+        # destination's known list. A diff that contains
+        # `custom_fields: {...}` from a pre-customfield-phase
+        # POST would otherwise PATCH unknown keys back and
+        # trigger the same HTTP 400 the POST filter exists to
+        # prevent.
+        http.patch(
+            f"{endpoint}{existing_id}/",
+            _filter_custom_fields(
+                _coerce_body_for_write(diff),
+                http, content_type,
+            ),
+        )
     except Exception as exc:  # noqa: BLE001
         return UpsertResult(
             outcome=UpsertOutcome.FAILED,
