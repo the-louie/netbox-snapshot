@@ -350,6 +350,7 @@ def _resolve_body(
         auditor=auditor,
         owner_ct=content_type,
         failed_keys=failed_keys,
+        deferred_fields_by_ct=deferred_fields_by_ct,
     )
 
     # Task #25 pre-pass: resolve Cable termination dicts. The
@@ -371,6 +372,7 @@ def _resolve_body(
         auditor=auditor,
         owner_ct=content_type,
         failed_keys=failed_keys,
+        deferred_fields_by_ct=deferred_fields_by_ct,
     )
 
     resolved: dict[str, Any] = {}
@@ -415,6 +417,7 @@ def _resolve_body(
                 openapi=openapi,
                 auditor=auditor,
                 failed_keys=failed_keys,
+                deferred_fields_by_ct=deferred_fields_by_ct,
             )
             if recovered is not None:
                 resolved[field_name] = recovered
@@ -600,6 +603,7 @@ def _resolve_polymorphic_id_pairs(
     auditor: Auditor | None,
     owner_ct: str,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    deferred_fields_by_ct: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
     """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
 
@@ -689,6 +693,7 @@ def _resolve_polymorphic_id_pairs(
                 openapi=openapi,
                 auditor=auditor,
                 failed_keys=failed_keys,
+                deferred_fields_by_ct=deferred_fields_by_ct,
             )
             if recovered is not None:
                 new_body[id_field] = recovered
@@ -729,6 +734,7 @@ def _resolve_termination_lists(
     auditor: Auditor | None,
     owner_ct: str,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    deferred_fields_by_ct: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
     """Convert termination dicts from snapshot to NetBox shape.
 
@@ -823,6 +829,7 @@ def _resolve_termination_lists(
                     openapi=openapi,
                     auditor=auditor,
                     failed_keys=failed_keys,
+                    deferred_fields_by_ct=deferred_fields_by_ct,
                 )
                 if recovered is not None:
                     resolved_items.append({
@@ -932,6 +939,7 @@ def _try_lookahead(
     openapi: OpenAPI | None = None,
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    deferred_fields_by_ct: dict[str, set[str]] | None = None,
 ) -> int | None:
     """Attempt the FEAT-36b look-ahead path.
 
@@ -975,6 +983,7 @@ def _try_lookahead(
         openapi=openapi,
         auditor=auditor,
         failed_keys=failed_keys,
+        deferred_fields_by_ct=deferred_fields_by_ct,
     )
     if rid is not None:
         return rid

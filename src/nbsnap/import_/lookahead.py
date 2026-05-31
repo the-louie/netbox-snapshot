@@ -109,6 +109,7 @@ def resolve_or_create(
     openapi: OpenAPI | None = None,
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, NaturalKey]] | None = None,
+    deferred_fields_by_ct: dict[str, set[str]] | None = None,
 ) -> int | None:
     """Resolve a target NK to a destination id, creating it on demand.
 
@@ -255,6 +256,8 @@ def resolve_or_create(
                 deferred_queue=deferred_queue,
                 current_nk=natural_key,
                 auditor=auditor,
+                failed_keys=failed_keys,
+                deferred_fields_by_ct=deferred_fields_by_ct,
             )
         else:
             # Backwards-compat for callers that have not yet

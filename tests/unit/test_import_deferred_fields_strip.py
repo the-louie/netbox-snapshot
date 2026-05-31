@@ -271,6 +271,76 @@ def test_dedupe_does_not_push_duplicate_deferred_fk() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_lookahead_path_also_strips_deferred_field() -> None:
+    """Task #31 regression: the look-ahead path's recursive
+    `_resolve_body` call must receive `deferred_fields_by_ct`
+    too, otherwise look-ahead-created records ship with the
+    deferred FK still in the body and NetBox refuses with the
+    `not assigned to this device` error.
+
+    Driving `resolve_or_create` directly (the look-ahead
+    entry point) with a deferred-field index proves the
+    threading is complete from the public surface down to
+    the inner strip pass."""
+
+    from unittest.mock import MagicMock
+
+    from nbsnap.import_.lookahead import resolve_or_create
+    from nbsnap.import_.nk_index import NKIndex
+    from nbsnap.import_.snapshot_index import SnapshotIndex
+    from nbsnap.natkey.registry import default as default_registry
+
+    http = MagicMock()
+    http.get_all.return_value = iter([])
+    # Capture the POST body so we can assert primary_ip4 is
+    # stripped.
+    posted_bodies: list = []
+    def fake_post(endpoint, body):
+        posted_bodies.append((endpoint, body))
+        return {"id": 1}
+    http.post.side_effect = fake_post
+
+    # Seed the destination index so the IPAddress NK resolves
+    # to a real int. Without this the resolver would drop
+    # primary_ip4 before the strip pass even sees it, and the
+    # test would not exercise the bug we are guarding against.
+    dest = NKIndex()
+    target_nk = ("172.16.1.10/24", "dcim.interface",
+                 ((("d",), "D39A"), "Vlan600"))
+    dest.insert("ipam.ipaddress", target_nk, 77)
+    dest._built_cts.add("ipam.ipaddress")
+
+    snapshot_index = SnapshotIndex()
+    snapshot_index._by_key[("dcim.device", (("hall-d",), "d39a"))] = {
+        "name": "d39a", "slug": "d39a",
+        # The deferred field that #31 must strip.
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
+                        [[["d"], "D39A"], "Vlan600"]],
+    }
+    queue: list = []
+    rid = resolve_or_create(
+        http, snapshot_index, dest, default_registry(),
+        content_type="dcim.device",
+        natural_key=(("hall-d",), "d39a"),
+        processing_stack=set(),
+        deferred_queue=queue,
+        openapi=_device_schema(),
+        deferred_fields_by_ct={"dcim.device": {"primary_ip4"}},
+    )
+    assert rid == 1
+    # One POST fired; its body MUST NOT include primary_ip4.
+    assert len(posted_bodies) == 1
+    _endpoint, body = posted_bodies[0]
+    assert "primary_ip4" not in body, (
+        "look-ahead POST shipped primary_ip4 even though it "
+        "was marked deferred, the strip pass did not run on "
+        "the recursive _resolve_body call"
+    )
+    # And a DeferredFK landed for Phase-2 to patch.
+    assert len(queue) == 1
+    assert queue[0].field_name == "primary_ip4"
+
+
 def test_resolve_body_strips_deferred_field_and_queues_entry() -> None:
     """End-to-end check: `_resolve_body` with a populated
     `deferred_fields_by_ct` strips primary_ip4 and queues a
