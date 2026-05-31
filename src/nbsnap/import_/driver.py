@@ -108,6 +108,13 @@ def run_import(
     snapshot_index = SnapshotIndex.from_snapshot(snapshot_dir)
     deferred_queue: list[DeferredFK] = []
     processing_stack: set[tuple[str, tuple[Any, ...]]] = set()
+    # Task #29: cache of `(content_type, NK)` pairs whose
+    # look-ahead create attempt already failed. Subsequent
+    # references to the same parent short-circuit instead of
+    # hitting the network again, which on the rescue-10 import
+    # converted a multi-hour retry storm into a single attempt
+    # per failed parent.
+    failed_keys: set[tuple[str, tuple[Any, ...]]] = set()
 
     auditor = summary.auditor
 
@@ -152,6 +159,7 @@ def run_import(
                 deferred_queue=deferred_queue,
                 current_nk=nk,
                 auditor=auditor,
+                failed_keys=failed_keys,
             )
             result = upsert(
                 http,
@@ -266,6 +274,7 @@ def _resolve_body(
     deferred_queue: list[Any] | None = None,
     current_nk: tuple[Any, ...] = (),
     auditor: Auditor | None = None,
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> dict[str, Any]:
     """Resolve every FK NK in `body` back to a destination id.
 
@@ -325,6 +334,7 @@ def _resolve_body(
         current_nk=current_nk,
         auditor=auditor,
         owner_ct=content_type,
+        failed_keys=failed_keys,
     )
 
     # Task #25 pre-pass: resolve Cable termination dicts. The
@@ -345,6 +355,7 @@ def _resolve_body(
         current_nk=current_nk,
         auditor=auditor,
         owner_ct=content_type,
+        failed_keys=failed_keys,
     )
 
     resolved: dict[str, Any] = {}
@@ -388,6 +399,7 @@ def _resolve_body(
                 field_name=field_name,
                 openapi=openapi,
                 auditor=auditor,
+                failed_keys=failed_keys,
             )
             if recovered is not None:
                 resolved[field_name] = recovered
@@ -436,6 +448,7 @@ def _resolve_polymorphic_id_pairs(
     current_nk: tuple[Any, ...],
     auditor: Auditor | None,
     owner_ct: str,
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> dict[str, Any]:
     """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
 
@@ -524,6 +537,7 @@ def _resolve_polymorphic_id_pairs(
                 field_name=id_field,
                 openapi=openapi,
                 auditor=auditor,
+                failed_keys=failed_keys,
             )
             if recovered is not None:
                 new_body[id_field] = recovered
@@ -563,6 +577,7 @@ def _resolve_termination_lists(
     current_nk: tuple[Any, ...],
     auditor: Auditor | None,
     owner_ct: str,
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> dict[str, Any]:
     """Convert termination dicts from snapshot to NetBox shape.
 
@@ -656,6 +671,7 @@ def _resolve_termination_lists(
                     field_name=field_name,
                     openapi=openapi,
                     auditor=auditor,
+                    failed_keys=failed_keys,
                 )
                 if recovered is not None:
                     resolved_items.append({
@@ -764,6 +780,7 @@ def _try_lookahead(
     field_name: str,
     openapi: OpenAPI | None = None,
     auditor: Auditor | None = None,
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> int | None:
     """Attempt the FEAT-36b look-ahead path.
 
@@ -806,6 +823,7 @@ def _try_lookahead(
         deferred_queue=deferred_queue,
         openapi=openapi,
         auditor=auditor,
+        failed_keys=failed_keys,
     )
     if rid is not None:
         return rid

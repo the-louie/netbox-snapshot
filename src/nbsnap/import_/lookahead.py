@@ -108,10 +108,11 @@ def resolve_or_create(
     depth: int = 0,
     openapi: OpenAPI | None = None,
     auditor: Auditor | None = None,
+    failed_keys: set[tuple[str, NaturalKey]] | None = None,
 ) -> int | None:
     """Resolve a target NK to a destination id, creating it on demand.
 
-    The function is the heart of the two-tier resolver. Six
+    The function is the heart of the two-tier resolver. Seven
     strategy steps in order:
 
     1. **Depth cap.** A recursion depth above MAX_DEPTH means
@@ -127,6 +128,14 @@ def resolve_or_create(
     3. **Destination tier (FEAT-36b2).** Ask the destination
        NKIndex; on a hit, return the id immediately. No
        network, no snapshot lookup, no recursion.
+    3a. **Failure short-circuit (task #29).** If a previous
+       attempt to create this record failed AND step 3 did
+       not find an id on the destination, return None
+       immediately. Caching the failure makes
+       second-and-later sibling references O(1) lookups
+       instead of repeated failing HTTP round-trips.
+       Optional, callers that omit `failed_keys` keep the
+       legacy retry-every-time behaviour.
     4. **Snapshot tier (FEAT-36b3).** Ask the SnapshotIndex.
        On a miss, return None and let the caller drop the FK
        via the existing out-of-scope path.
@@ -140,7 +149,9 @@ def resolve_or_create(
     6. **Recursive upsert (FEAT-36b3).** Call `upsert()` with
        the resolved body and pop the processing-stack key in a
        finally. The upsert populates the destination NKIndex
-       with the new id automatically.
+       with the new id automatically. On FAILED outcome the key
+       is added to `failed_keys` (if provided) so subsequent
+       attempts short-circuit via step 3a above.
     """
 
     # Runtime import of upsert so the module graph stays
@@ -169,11 +180,40 @@ def resolve_or_create(
         return None
 
     # Step 3, destination tier. Build the per-CT index lazily
-    # (idempotent after the first call).
+    # (idempotent after the first call). The destination check
+    # comes BEFORE the failure short-circuit so that if another
+    # path managed to create the record after the original
+    # failure (e.g. via the main Phase-1 phase later in the
+    # plan), the subsequent reference picks up the new id
+    # instead of believing the cached-failure verdict.
     dest_index.ensure_built(http, registry, content_type)
     existing = dest_index.lookup(content_type, natural_key)
     if existing is not None:
         return existing
+
+    # Step 3a (task #29), failure short-circuit AFTER the
+    # destination lookup. If a previous attempt to create this
+    # record failed AND it is still missing from the
+    # destination, do not retry. The rescue-10 run showed the
+    # same failed Device POST being retried dozens of times,
+    # once per interface that referenced that device. Caching
+    # the failure makes second-and-later attempts O(1) lookups
+    # instead of HTTP round-trips.
+    #
+    # Audit classification note: callers that observe a None
+    # return from this branch will see the resulting drop
+    # bucketed as MISSING_FROM_SOURCE (the snapshot has the
+    # record, but it is not on the destination). That is the
+    # safest bucket because the record DOES exist in the
+    # snapshot but failed to land on the destination, which is
+    # operationally close to "the source has a stale reference",
+    # the standard MISSING_FROM_SOURCE meaning.
+    if failed_keys is not None and key in failed_keys:
+        logger.debug(
+            "look-ahead skip %s NK=%r, previous attempt failed",
+            content_type, natural_key,
+        )
+        return None
 
     # Step 4, snapshot tier.
     snapshot_body = snapshot_index.lookup(content_type, natural_key)
@@ -236,6 +276,10 @@ def resolve_or_create(
         processing_stack.discard(key)
 
     if result.outcome is UpsertOutcome.FAILED:
+        # Task #29: cache the failure so siblings that reference
+        # the same parent do not re-issue the same failing POST.
+        if failed_keys is not None:
+            failed_keys.add(key)
         logger.warning(
             "look-ahead upsert failed for %s NK=%r: %s",
             content_type, natural_key, result.message,
