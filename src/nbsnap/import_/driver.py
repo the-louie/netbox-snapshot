@@ -115,6 +115,19 @@ def run_import(
     # converted a multi-hour retry storm into a single attempt
     # per failed parent.
     failed_keys: set[tuple[str, tuple[Any, ...]]] = set()
+    # Task #30: index of `content_type -> set[field_name]` for
+    # the planner-deferred edges in the manifest. Phase-1
+    # strips these fields from every POST body so NetBox's
+    # validators do not refuse the create on a not-yet-bound
+    # FK (e.g. Device.primary_ip4 references an IPAddress
+    # whose `assigned_object` is not yet set). Phase-2 PATCHes
+    # the stripped values back in via the deferred_queue.
+    deferred_fields_by_ct: dict[str, set[str]] = {}
+    for edge in manifest.deferred_edges:
+        child_ct = edge.get("child")
+        field_name = edge.get("field")
+        if isinstance(child_ct, str) and isinstance(field_name, str):
+            deferred_fields_by_ct.setdefault(child_ct, set()).add(field_name)
 
     auditor = summary.auditor
 
@@ -160,6 +173,7 @@ def run_import(
                 current_nk=nk,
                 auditor=auditor,
                 failed_keys=failed_keys,
+                deferred_fields_by_ct=deferred_fields_by_ct,
             )
             result = upsert(
                 http,
@@ -275,6 +289,7 @@ def _resolve_body(
     current_nk: tuple[Any, ...] = (),
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    deferred_fields_by_ct: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
     """Resolve every FK NK in `body` back to a destination id.
 
@@ -432,7 +447,143 @@ def _resolve_body(
             if category is not DropCategory.OUT_OF_SCOPE:
                 _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
+
+    # Task #30 final pass: strip deferred-edge fields from the
+    # resolved body and push DeferredFK entries so Phase-2 can
+    # PATCH them in once both endpoints exist. NetBox refuses
+    # POSTs whose cycle-closing FKs reference parents that are
+    # not yet "in the right state" (e.g. Device.primary_ip4
+    # referencing an IPAddress whose `assigned_object` is not
+    # set yet). Removing those fields here lets the Phase-1
+    # POST land cleanly; Phase-2's per-edge PATCH writes the
+    # FK once the cycle endpoints are all in place.
+    resolved = _strip_deferred_fields_and_queue(
+        resolved,
+        content_type=content_type,
+        current_nk=current_nk,
+        original_body=body,
+        deferred_fields_by_ct=deferred_fields_by_ct,
+        deferred_queue=deferred_queue,
+        openapi=openapi,
+    )
     return resolved
+
+
+def _strip_deferred_fields_and_queue(
+    resolved: dict[str, Any],
+    *,
+    content_type: str,
+    current_nk: tuple[Any, ...],
+    original_body: dict[str, Any],
+    deferred_fields_by_ct: dict[str, set[str]] | None,
+    deferred_queue: list[Any] | None,
+    openapi: OpenAPI,
+) -> dict[str, Any]:
+    """Strip the planner-deferred FK fields from `resolved` and
+    push corresponding DeferredFK entries onto the queue.
+
+    The manifest's deferred_edges identifies which (child_ct,
+    field) pairs the planner marked for Phase-2. Phase-1 must
+    POST those records WITHOUT the FK set, then Phase-2 PATCHes
+    the FK in after both endpoints exist on the destination.
+
+    For each field that:
+
+    * is listed as deferred for this content type, AND
+    * has a non-None value in `resolved` (the simple-FK branch
+      already resolved it, or look-ahead created the target),
+
+    we:
+
+    1. Remove the field from `resolved` so the upsert POST
+       does not include it.
+    2. Push a `DeferredFK` onto `deferred_queue` carrying the
+       child record's NK + the field name + the target's
+       content type + the target's natural key (lifted from
+       the original snapshot body). Phase-2 looks the target
+       up against the destination NKIndex at PATCH time.
+
+    Returns a new dict if anything was stripped, otherwise the
+    input `resolved` unchanged.
+    """
+
+    if not deferred_fields_by_ct or deferred_queue is None:
+        return resolved
+    fields = deferred_fields_by_ct.get(content_type)
+    if not fields:
+        return resolved
+
+    # Lazy imports keep the module graph acyclic: this helper
+    # is part of driver.py, the DeferredFK type lives in
+    # lookahead.py which imports from driver during a runtime
+    # callout, so we touch DeferredFK only on the deferred-
+    # found path.
+    from nbsnap.import_.fk_resolve import normalise_nk
+    from nbsnap.import_.lookahead import DeferredFK
+
+    # Dedupe: a record can flow through `_resolve_body` twice,
+    # once via the look-ahead's recursive callout and once via
+    # the main Phase-1 phase. Without this guard we would push
+    # two identical DeferredFKs onto the queue, doubling
+    # Phase-2's work and (worse) PATCHing twice if the second
+    # PATCH had a different value.
+    existing_keys = {
+        (entry.child_content_type, entry.child_nk, entry.field_name)
+        for entry in deferred_queue
+    }
+
+    out = resolved
+    for field_name in fields:
+        if field_name not in out:
+            continue
+        if out[field_name] is None:
+            # Nothing to defer, the field is empty already.
+            # Drop it so the body stays consistent with the
+            # "we PATCH this later" promise.
+            if out is resolved:
+                out = dict(resolved)
+            del out[field_name]
+            continue
+
+        spec = openapi.field_spec(content_type, field_name)
+        target_ct = spec.fk_target
+        # We need a target content type and an original NK to
+        # tell Phase-2 what to look up. If either is missing we
+        # cannot defer cleanly, leave the resolved value alone
+        # and let NetBox reject if it must. Better an
+        # actionable error than silent data loss.
+        if target_ct is None:
+            continue
+        raw_value = original_body.get(field_name)
+        if raw_value is None:
+            continue
+        target_nk = normalise_nk(raw_value)
+
+        # First time we mutate, copy `resolved` so the caller's
+        # input dict is never touched.
+        if out is resolved:
+            out = dict(resolved)
+        del out[field_name]
+
+        dedupe_key = (content_type, current_nk, field_name)
+        if dedupe_key in existing_keys:
+            # Already queued by an earlier pass (e.g. the
+            # look-ahead created this record before the main
+            # phase did). Stripping the field again is fine
+            # (idempotent on a dict), but pushing the
+            # DeferredFK again would double Phase-2's work.
+            continue
+        existing_keys.add(dedupe_key)
+        deferred_queue.append(
+            DeferredFK(
+                child_content_type=content_type,
+                child_nk=current_nk,
+                field_name=field_name,
+                target_content_type=target_ct,
+                target_nk=target_nk,
+            )
+        )
+    return out
 
 
 def _resolve_polymorphic_id_pairs(
