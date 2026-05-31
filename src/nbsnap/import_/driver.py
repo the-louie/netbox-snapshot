@@ -257,6 +257,39 @@ def _resolve_body(
     is wired into the simple-FK branch.
     """
 
+    # Task #23 pre-pass: resolve paired polymorphic-id fields
+    # before the per-field loop. NetBox uses two patterns for
+    # generic FKs in WRITE bodies:
+    #
+    #   (a) the unified shape `{"object_type": "dcim.interface",
+    #       "object_id": <int>}` (handled in the loop below).
+    #   (b) the paired shape, two sibling fields side-by-side:
+    #       `assigned_object_type: "dcim.interface"` and
+    #       `assigned_object_id: <int>`. The snapshot stores the
+    #       _id field with the target's natural key, not the
+    #       int, so the resolver has to translate it before the
+    #       POST or NetBox returns HTTP 400.
+    #
+    # The pre-pass walks the body once, finds pairs, resolves
+    # the `_id` value against the destination index for the
+    # content type named in the `_type` field, and replaces the
+    # _id with the destination integer id. The standard loop
+    # below then sees an already-resolved int and passes it
+    # through untouched.
+    body = _resolve_polymorphic_id_pairs(
+        body,
+        openapi,
+        index,
+        http,
+        registry,
+        snapshot_index=snapshot_index,
+        processing_stack=processing_stack,
+        deferred_queue=deferred_queue,
+        current_nk=current_nk,
+        auditor=auditor,
+        owner_ct=content_type,
+    )
+
     resolved: dict[str, Any] = {}
     for field_name, value in body.items():
         spec = openapi.field_spec(content_type, field_name)
@@ -316,6 +349,132 @@ def _resolve_body(
             _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
     return resolved
+
+
+def _resolve_polymorphic_id_pairs(
+    body: dict[str, Any],
+    openapi: OpenAPI,  # forwarded to _try_lookahead for body-resolution recursion
+    index: NKIndex,
+    http: NetboxHTTP,
+    registry: Any,
+    *,
+    snapshot_index: _SnapshotIndexType | None,
+    processing_stack: set[tuple[str, tuple[Any, ...]]] | None,
+    deferred_queue: list[Any] | None,
+    current_nk: tuple[Any, ...],
+    auditor: Auditor | None,
+    owner_ct: str,
+) -> dict[str, Any]:
+    """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
+
+    NetBox writes generic FKs in two shapes, see the comment in
+    `_resolve_body` for the full motivation. This helper handles
+    the paired shape only; the unified dict shape is handled in
+    the main loop.
+
+    Detection rule, the body has a pair when both:
+
+    * a field whose name ends in `_type` carries a string that
+      looks like a NetBox content type (`app.model`); AND
+    * a sibling field with the same prefix and the `_id` suffix
+      exists.
+
+    Resolution rule, for each such pair:
+
+    1. If the `_id` field is already an integer, leave both
+       fields alone, the body was already in write-ready shape.
+    2. Otherwise treat the `_id` value as the target's natural
+       key, resolve it via `resolve_simple_fk` against the
+       destination index for the content type named in `_type`.
+    3. On a destination-index miss, fall back to the
+       FEAT-36b look-ahead path so the parent gets created on
+       demand and the resolved id is then patched into the body.
+    4. On total miss, drop both fields, the audit log records
+       the FK with the same MISSING / OUT_OF_SCOPE category as
+       a normal FK drop so the operator sees the same picture.
+
+    The pair stays together throughout, the destination treats
+    a write that drops only one half as a validation error, so
+    we drop both or neither.
+
+    Returns a new dict, the input `body` is not mutated.
+    """
+
+    new_body = dict(body)
+
+    # Find every `_type` field whose value is a content-type
+    # string AND whose sibling `_id` field exists. We list the
+    # pairs first then resolve in a second pass so adding the
+    # resolved id does not perturb the iteration.
+    pairs: list[tuple[str, str, str]] = []
+    for field_name, value in body.items():
+        if not field_name.endswith("_type"):
+            continue
+        if not isinstance(value, str) or "." not in value:
+            continue
+        prefix = field_name[: -len("_type")]
+        id_field = f"{prefix}_id"
+        if id_field not in body:
+            continue
+        pairs.append((field_name, id_field, value))
+
+    for type_field, id_field, target_ct in pairs:
+        raw_id = body[id_field]
+        # An already-resolved integer means the write body is
+        # ready; skip the pair.
+        if isinstance(raw_id, int):
+            continue
+
+        # Try resolving against the destination index first.
+        try:
+            rid = resolve_simple_fk(
+                raw_id, target_ct, index, http=http, registry=registry
+            )
+            new_body[id_field] = rid
+            continue
+        except (KeyError, ValueError) as exc:
+            queue_size_before = (
+                len(deferred_queue) if deferred_queue is not None else 0
+            )
+            # Try the look-ahead path so the parent can be
+            # created on demand from the snapshot.
+            recovered = _try_lookahead(
+                value=raw_id,
+                target_ct=target_ct,
+                http=http,
+                index=index,
+                registry=registry,
+                snapshot_index=snapshot_index,
+                processing_stack=processing_stack,
+                deferred_queue=deferred_queue,
+                child_ct=owner_ct,
+                child_nk=current_nk,
+                field_name=id_field,
+                openapi=openapi,
+                auditor=auditor,
+            )
+            if recovered is not None:
+                new_body[id_field] = recovered
+                continue
+
+            # Total miss, classify the drop for the audit and
+            # remove both halves of the pair from the body.
+            _record_drop(
+                auditor=auditor,
+                snapshot_index=snapshot_index,
+                deferred_queue=deferred_queue,
+                queue_size_before=queue_size_before,
+                value=raw_id,
+                child_ct=owner_ct,
+                child_nk=current_nk,
+                field_name=id_field,
+                target_ct=target_ct,
+            )
+            _warn_dropped(owner_ct, id_field, target_ct, exc)
+            new_body.pop(id_field, None)
+            new_body.pop(type_field, None)
+
+    return new_body
 
 
 def _record_drop(
