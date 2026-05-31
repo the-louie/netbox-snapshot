@@ -392,7 +392,7 @@ def _resolve_body(
             if recovered is not None:
                 resolved[field_name] = recovered
                 continue
-            _record_drop(
+            category = _record_drop(
                 auditor=auditor,
                 snapshot_index=snapshot_index,
                 deferred_queue=deferred_queue,
@@ -403,7 +403,22 @@ def _resolve_body(
                 field_name=field_name,
                 target_ct=spec.fk_target,
             )
-            _warn_dropped(content_type, field_name, spec.fk_target, exc)
+            # Suppress the per-row warning when the audit
+            # classified this as OUT_OF_SCOPE: those drops are
+            # documented behaviour of the network-only scope
+            # and would just add noise to stderr. The audit
+            # summary at end-of-run still shows them.
+            #
+            # `category is None` means no auditor was wired in
+            # (the backwards-compat path used by some unit
+            # tests). In that case we cannot tell if the drop
+            # is OUT_OF_SCOPE or not, so we keep the legacy
+            # warn-everything behaviour. The audit is the
+            # source of truth for the suppression rule, so
+            # turning the auditor off naturally falls back to
+            # the noisier-but-safer path.
+            if category is not DropCategory.OUT_OF_SCOPE:
+                _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
     return resolved
 
@@ -516,7 +531,7 @@ def _resolve_polymorphic_id_pairs(
 
             # Total miss, classify the drop for the audit and
             # remove both halves of the pair from the body.
-            _record_drop(
+            category = _record_drop(
                 auditor=auditor,
                 snapshot_index=snapshot_index,
                 deferred_queue=deferred_queue,
@@ -527,7 +542,8 @@ def _resolve_polymorphic_id_pairs(
                 field_name=id_field,
                 target_ct=target_ct,
             )
-            _warn_dropped(owner_ct, id_field, target_ct, exc)
+            if category is not DropCategory.OUT_OF_SCOPE:
+                _warn_dropped(owner_ct, id_field, target_ct, exc)
             new_body.pop(id_field, None)
             new_body.pop(type_field, None)
 
@@ -647,7 +663,7 @@ def _resolve_termination_lists(
                     })
                     continue
                 # Total miss, record the drop and skip the item.
-                _record_drop(
+                category = _record_drop(
                     auditor=auditor,
                     snapshot_index=snapshot_index,
                     deferred_queue=deferred_queue,
@@ -658,7 +674,8 @@ def _resolve_termination_lists(
                     field_name=field_name,
                     target_ct=target_ct,
                 )
-                _warn_dropped(owner_ct, field_name, target_ct, exc)
+                if category is not DropCategory.OUT_OF_SCOPE:
+                    _warn_dropped(owner_ct, field_name, target_ct, exc)
 
         if resolved_items:
             new_body[field_name] = resolved_items
@@ -684,7 +701,7 @@ def _record_drop(
     child_nk: tuple[Any, ...],
     field_name: str,
     target_ct: str,
-) -> None:
+) -> DropCategory | None:
     """Classify an FK that the resolver could not place, record it.
 
     Three categories the operator distinguishes:
@@ -697,10 +714,17 @@ def _record_drop(
     * `MISSING_FROM_SOURCE` when the snapshot covers the target
       content type but is missing this specific NK, real data
       gap on the source.
+
+    Returns the chosen category so the caller can adjust its
+    warning behaviour, task #21 wants the `dropping FK` log
+    line suppressed for `OUT_OF_SCOPE` because those drops are
+    documented behaviour and not warnings. Returns `None` when
+    no auditor is wired in (the call is a no-op and the caller
+    falls back to the legacy warn-everything path).
     """
 
     if auditor is None:
-        return
+        return None
 
     target_nk = normalise_nk(value)
 
@@ -722,6 +746,7 @@ def _record_drop(
         target_content_type=target_ct,
         target_nk=target_nk,
     ))
+    return category
 
 
 def _try_lookahead(
