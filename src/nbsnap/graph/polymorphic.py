@@ -211,8 +211,8 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
 ]
 
 
-# Task #33: curated table of FK fields whose validation rules
-# create a runtime cycle that the static planner cannot see.
+# Curated table of FK fields whose validation rules create a
+# runtime cycle that the static planner cannot see.
 #
 # Example, `dcim.device.primary_ip4` looks like a simple FK
 # from Device to IPAddress in the OpenAPI schema. The planner

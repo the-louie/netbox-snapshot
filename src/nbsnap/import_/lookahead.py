@@ -129,7 +129,7 @@ def resolve_or_create(
     3. **Destination tier (FEAT-36b2).** Ask the destination
        NKIndex; on a hit, return the id immediately. No
        network, no snapshot lookup, no recursion.
-    3a. **Failure short-circuit (task #29).** If a previous
+    3a. **Failure short-circuit.** If a previous
        attempt to create this record failed AND step 3 did
        not find an id on the destination, return None
        immediately. Caching the failure makes
@@ -140,7 +140,7 @@ def resolve_or_create(
     4. **Snapshot tier (FEAT-36b3).** Ask the SnapshotIndex.
        On a miss, return None and let the caller drop the FK
        via the existing out-of-scope path.
-    5. **Body resolution (task #22).** Push the key onto
+    5. **Body resolution.** Push the key onto
        `processing_stack` and route the snapshot body through
        `_resolve_body` so every FK in the body is replaced
        with a resolved destination id. Required when `openapi`
@@ -192,23 +192,15 @@ def resolve_or_create(
     if existing is not None:
         return existing
 
-    # Step 3a (task #29), failure short-circuit AFTER the
-    # destination lookup. If a previous attempt to create this
-    # record failed AND it is still missing from the
-    # destination, do not retry. The rescue-10 run showed the
-    # same failed Device POST being retried dozens of times,
-    # once per interface that referenced that device. Caching
-    # the failure makes second-and-later attempts O(1) lookups
-    # instead of HTTP round-trips.
-    #
-    # Audit classification note: callers that observe a None
-    # return from this branch will see the resulting drop
-    # bucketed as MISSING_FROM_SOURCE (the snapshot has the
-    # record, but it is not on the destination). That is the
-    # safest bucket because the record DOES exist in the
-    # snapshot but failed to land on the destination, which is
-    # operationally close to "the source has a stale reference",
-    # the standard MISSING_FROM_SOURCE meaning.
+    # Step 3a, failure short-circuit AFTER the destination
+    # lookup. If a previous create attempt for this key
+    # returned FAILED AND the record is still absent from the
+    # destination, do not retry. Without this guard, every
+    # child that references the same failed parent would
+    # re-issue the same failing POST. The caller routes the
+    # subsequent drop into the UPSERT_FAILED audit bucket so
+    # the operator sees destination/policy issues
+    # distinguished from missing-source data.
     if failed_keys is not None and key in failed_keys:
         logger.debug(
             "look-ahead skip %s NK=%r, previous attempt failed",
@@ -225,7 +217,7 @@ def resolve_or_create(
     # BODY before upsert and pop the key in a finally so an
     # inner raise does not leave the stack corrupted.
     #
-    # FEAT-36 follow-up (task #22): The naive `body=dict(snapshot_body)`
+    # FEAT-36 follow-up: The naive `body=dict(snapshot_body)`
     # call sent raw NK-shaped FKs at NetBox. NetBox refuses with
     # HTTP 400 because, for example, `manufacturer: ["debian"]`
     # is not a valid integer FK. We now route the snapshot body
@@ -279,7 +271,7 @@ def resolve_or_create(
         processing_stack.discard(key)
 
     if result.outcome is UpsertOutcome.FAILED:
-        # Task #29: cache the failure so siblings that reference
+        # cache the failure so siblings that reference
         # the same parent do not re-issue the same failing POST.
         if failed_keys is not None:
             failed_keys.add(key)

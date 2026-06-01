@@ -44,6 +44,15 @@ class DropCategory(Enum):
     OUT_OF_SCOPE = "out_of_scope"
     MISSING_FROM_SOURCE = "missing_from_source"
     DEFERRED_TO_PHASE2 = "deferred_to_phase2"
+    # An earlier look-ahead create attempt for the referenced
+    # record itself returned FAILED. The destination POST was
+    # refused by NetBox (e.g. validation error), not by an
+    # nbsnap bug, so the reference is not "missing from
+    # source", it is "we could not place it". This category
+    # exists because mis-bucketing as MISSING_FROM_SOURCE
+    # inflates the operator's data-quality concern when the
+    # real issue is destination policy or a tool gap.
+    UPSERT_FAILED = "upsert_failed"
 
 
 @dataclass

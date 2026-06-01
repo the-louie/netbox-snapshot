@@ -90,6 +90,176 @@ assertion lists the missing endpoints.
 ## Open, Phase 5, Import engine
 
 
+### [REFACTOR-01] Introduce `ResolveContext` dataclass for the resolver call graph
+
+**Context:** the code review at
+`__doc/code_reviews/20260615-1437_import_code_post_lp_review.md`
+flagged the resolver call graph in `src/nbsnap/import_/driver.py`
+as a DRY violation. Today `_try_lookahead`, `_resolve_polymorphic_id_pairs`,
+`_resolve_termination_lists`, and the recursive callout from
+`resolve_or_create` in `src/nbsnap/import_/lookahead.py` each
+shuffle the same eight to ten keyword arguments
+(`http`, `index`, `registry`, `snapshot_index`,
+`processing_stack`, `deferred_queue`, `auditor`, `failed_keys`,
+`deferred_fields_by_ct`, `openapi`).
+
+**Why this matters:** adding any new parameter touches five
+or more call sites and every test that constructs the call.
+A single missed forward silently disables a feature.
+
+**Recommended shape:**
+
+```python
+@dataclass(frozen=True)
+class ResolveContext:
+    http: NetboxHTTP
+    index: NKIndex
+    registry: NKRegistry
+    snapshot_index: SnapshotIndex
+    processing_stack: set[tuple[str, NaturalKey]]
+    deferred_queue: list[DeferredFK]
+    auditor: Auditor
+    failed_keys: set[tuple[str, NaturalKey]]
+    deferred_fields_by_ct: dict[str, set[str]]
+    openapi: OpenAPI
+```
+
+`_try_lookahead` and the two pre-passes accept `ctx: ResolveContext`
+plus their own task-specific arguments. The context is built
+once at the top of `run_import` and passed through unchanged.
+
+**Estimated Effort:** 3-4h. Mostly mechanical but touches
+the resolver pre-passes, `_try_lookahead`, `resolve_or_create`,
+and every test that constructs these calls (5+ test files).
+
+
+### [REFACTOR-02] Unified drop-recording helper
+
+**Context:** `src/nbsnap/import_/driver.py` has three sites
+that follow the pattern `queue_size_before = len(deferred_queue) if deferred_queue is not None else 0`,
+then call the resolver, then call `_record_drop(...)`. The
+boilerplate adds noise to the resolver pre-passes and risks
+divergence when one site updates and the others do not.
+
+**Recommended shape:** wrap the pattern in
+`ctx.resolve_with_audit(value, target_ct, child_ct, child_nk, field_name)`
+returning `(rid: int | None, category: DropCategory | None)`.
+The caller branches on `rid is None` to decide warn-or-drop.
+
+**Estimated Effort:** 1-2h on top of REFACTOR-01.
+
+
+### [REFACTOR-03] BodyPreparer for write-time body coercion
+
+**Context:** write-time body coercion is scattered across
+`src/nbsnap/import_/driver.py` and `src/nbsnap/import_/upsert.py`:
+enum-dict collapse, None drop, custom-fields filter, and
+deferred-field strip all live in separate places.
+
+**Recommended shape:** a `BodyPreparer` class with one
+`prepare(content_type, body)` entry point that runs the chain
+in a documented order. The driver calls it once before
+`upsert`; `upsert` does not re-run any boundary coercions.
+
+**Estimated Effort:** 2-3h. Requires careful test coverage of
+the order-of-operations between custom-fields filtering and
+deferred-field stripping.
+
+
+### [REFACTOR-04] `Phase2Outcome` enum
+
+**Context:** `src/nbsnap/import_/phase2.py` uses raw string
+keys (`"failed"`, `"patched"`, `"skipped"`) on
+`Phase2Summary.counts`. `src/nbsnap/import_/upsert.py` already
+defines `UpsertOutcome` as an enum. The asymmetry invites
+typos and makes both consumers harder to evolve.
+
+**Recommended shape:** define `Phase2Outcome` enum with
+`PATCHED`, `SKIPPED`, `FAILED` and migrate `Phase2Summary` and
+its tests.
+
+**Estimated Effort:** 1h.
+
+
+### [REFACTOR-05] Pre-resolution deferred-field strip ordering
+
+**Context:** `src/nbsnap/import_/driver.py:_strip_deferred_fields_and_queue`
+runs at the end of `_resolve_body`, AFTER per-field FK
+resolution. If FK resolution drops the field (because the
+target was unresolvable), the strip pass cannot queue a
+DeferredFK for it and Phase-2 never patches.
+
+**Recommended shape:** strip deferred fields from the input
+body BEFORE per-field resolution, then queue the DeferredFK
+using the snapshot's pre-resolution value. The body resolver
+no longer needs to resolve fields that will be stripped
+anyway.
+
+**Estimated Effort:** 2h. Touches the resolver order which is
+already fragile, needs careful test coverage.
+
+
+### [REFACTOR-06] Instance-scoped `_KNOWN_CF_CACHE`
+
+**Context:** the customfield cache in
+`src/nbsnap/import_/upsert.py` is a module global keyed by
+`http.base_url`. Test isolation requires explicit
+`_KNOWN_CF_CACHE.clear()` in fixtures. A test that targets a
+new base URL and forgets to clear can mask stale-cache
+regressions.
+
+**Recommended shape:** move the cache onto the `NetboxHTTP`
+instance, or expose a `clear_cf_cache()` and call from a
+pytest autouse fixture. The first option also lets library
+callers reset the cache mid-process.
+
+**Estimated Effort:** 1h.
+
+
+### [REFACTOR-07] `ProgressReporter` accepts auditor at construction
+
+**Context:** `src/nbsnap/import_/progress.py:ProgressReporter`
+is built in the CLI without an auditor, then
+`run_import` calls `bind_auditor` once the summary exists.
+The window between construction and bind is empty today, but
+the design depends on call-order discipline.
+
+**Recommended shape:** let `run_import` take an `Auditor`
+parameter and construct the reporter inside the driver with
+the auditor already wired. Remove `bind_auditor`.
+
+**Estimated Effort:** 1h.
+
+
+### [REFACTOR-08] `_WARNED_MISSING_FK` moved onto `ImportSummary`
+
+**Context:** the warn-once dedup sentinel in
+`src/nbsnap/import_/driver.py` is a module global. A second
+`run_import` invocation in the same process silently misses
+warnings for already-seen triples. CLI is unaffected because
+each invocation is a fresh process, but library callers and
+test runs share the global.
+
+**Recommended shape:** move the set onto `ImportSummary` so
+each run has its own dedup state. Pass through the resolver
+helpers the same way `failed_keys` is threaded today.
+
+**Estimated Effort:** 30 min.
+
+
+### [REFACTOR-09] Remove `_iter_jsonl` shim in driver.py
+
+**Context:** `src/nbsnap/import_/driver.py:_iter_jsonl` is a
+one-line re-export of `iter_jsonl` from
+`src/nbsnap/import_/snapshot_index.py`, kept for
+"existing call sites". All call sites are inside `driver.py`
+itself and can use `iter_jsonl` directly.
+
+**Recommended shape:** inline the calls, delete the shim.
+
+**Estimated Effort:** 10 min.
+
+
 ### [TEST-06] Idempotency two-run integration test
 
 **Context:** `goals.md` success criterion 2.

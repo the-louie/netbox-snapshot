@@ -12,8 +12,8 @@ slow, or about to crash, the operator could not tell.
   `# Importing dcim.site (10 records)`
 * Sampled per-row progress lines (every Nth row, plus the
   first and the last) so high-cardinality content types like
-  `dcim.interface` (3582 rows in the rescue-10 snapshot) do
-  not flood the terminal but the operator still sees steady
+  `dcim.interface` (thousands of rows per import) do not
+  flood the terminal but the operator still sees steady
   motion: `#   dcim.interface 1/3582 ... #   dcim.interface
   100/3582 ...`
 

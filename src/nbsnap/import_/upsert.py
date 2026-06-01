@@ -10,7 +10,7 @@ The upsert routine:
    noop. Otherwise issue a PATCH with only the differing fields
    so the destination's audit log shows the minimal diff.
 
-Task #28 added a `custom_fields` filter at the write boundary,
+A `custom_fields` filter runs at the write boundary because
 the look-ahead path can fire for racks and devices BEFORE the
 extras.customfield main phase has imported the field
 definitions. Without filtering, NetBox refuses the POST with
@@ -43,8 +43,8 @@ class UpsertOutcome(Enum):
     UPDATED = "updated"
     NOOP = "noop"
     FAILED = "failed"
-    # Task #32: the record body is structurally incomplete
-    # after resolution (e.g. a dcim.cable with neither
+    # The record body is structurally incomplete after
+    # resolution (e.g. a dcim.cable with neither
     # a_terminations nor b_terminations) and posting it would
     # produce a confusing NetBox `__all__` error. The upsert
     # path short-circuits these rows so the operator sees a
@@ -64,7 +64,7 @@ class UpsertResult:
     message: str = ""
 
 
-# Task #28: cache of `content_type -> set[custom_field_name]`,
+# Cache of `content_type -> set[custom_field_name]`,
 # populated lazily on first call to `_filter_custom_fields`. The
 # cache key is the http base URL so a test that exercises two
 # destinations does not see cross-contamination.
@@ -190,8 +190,9 @@ def _filter_custom_fields(
     return out
 
 
-# Task #34: NetBox POST failures that are not actually tool
-# bugs and should surface as SKIPPED rather than FAILED. Each
+# Curated table of NetBox POST failures that reflect
+# destination policy rather than tool bugs, and should surface
+# as SKIPPED rather than FAILED in the audit summary. Each
 # entry pairs a content type with a substring fragment of the
 # error body and a human-readable explanation that the audit
 # log carries on the result.
@@ -208,7 +209,10 @@ def _filter_custom_fields(
 _POST_FAILURE_SKIP_PATTERNS: list[dict[str, str]] = [
     {
         "content_type": "ipam.iprange",
-        "match": "Defined addresses overlap",
+        # Anchor on the multi-word phrase NetBox always emits
+        # for the overlap rejection. A bare "overlap" would
+        # collide with unrelated text containing that word.
+        "match": "addresses overlap with range",
         "explanation": (
             "iprange refused due to overlap with an existing range. "
             "The source NetBox allowed this overlap; the destination's "
@@ -299,7 +303,7 @@ def upsert(
             message=f"no endpoint registered for {content_type}",
         )
 
-    # Task #32 precondition: skip rows whose body cannot
+    # precondition: skip rows whose body cannot
     # form a legal POST (e.g. a cable with no resolvable
     # endpoints on either side). NetBox would refuse with an
     # opaque `__all__` error; the SKIPPED outcome makes the
@@ -327,7 +331,7 @@ def upsert(
         # land at the default instead of failing the whole row.
         # See `_coerce_body_for_write` for the rationale.
         #
-        # Task #28: also filter custom_fields keys against the
+        # also filter custom_fields keys against the
         # destination's known list so a look-ahead that fires
         # before the extras.customfield phase does not hit a
         # cascade of "Custom field X does not exist" rejections.
@@ -338,7 +342,7 @@ def upsert(
         try:
             created = http.post(endpoint, post_body)
         except Exception as exc:  # noqa: BLE001 - surface anything to audit
-            # Task #34: some POST failures are not tool bugs,
+            # some POST failures are not tool bugs,
             # they reflect destination policy (e.g. IPRange
             # overlap refused by ENFORCE_GLOBAL_UNIQUE). The
             # classifier returns an explanation string for
@@ -442,7 +446,7 @@ def _coerce_body_for_write(
        can still import via `--allow-enum-dict-bypass`. Fresh
        snapshots are flat already, this is a no-op for them.
 
-    2. **None drop (task #26, opt-in via `drop_nones=True`)**,
+    2. **None drop (opt-in via `drop_nones=True`)**,
        NetBox refuses certain write-only fields with HTTP 400
        `field may not be blank` when the body explicitly carries
        `null`. The canonical case is `dcim.cable.profile`, which

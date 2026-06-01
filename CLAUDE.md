@@ -213,6 +213,24 @@ constraint.
   An audit pass that removes a batch of tickets together is
   acceptable and preferred when several related tickets land
   in the same session.
+* **Comment policy.** Comments must ONLY reference the actual
+  code at their location, not history or task numbers. Two
+  legitimate places for prose:
+  1. **Module and function docstrings** that describe the
+     contract: inputs, outputs, invariants, why this exists,
+     when callers reach for it.
+  2. **Inline comments on a specific block of complex code**
+     where the reader cannot derive the WHY by reading the
+     code alone. The WHY is a non-obvious constraint, a
+     subtle invariant, a workaround for a specific NetBox
+     behaviour, or an ordering requirement.
+  Do NOT add comments that describe what changed
+  ("FEAT-XX added this", "task #YY moved this here"),
+  comments that narrate the obvious ("loop over the rows"),
+  or comments that re-state a function name. Reference the
+  git history for change provenance and a separate design
+  doc for project history. Existing comments that violate
+  this rule should be revised when touched.
 
 ## Repository layout (planned)
 

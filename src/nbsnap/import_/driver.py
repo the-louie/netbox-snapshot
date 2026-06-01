@@ -77,7 +77,7 @@ def run_import(
     still recovers most fields but the round-trip guarantee is
     gone, so use only when re-export is not yet possible.
 
-    `progress` (task #27): an optional `ProgressReporter` that
+    `progress`: an optional `ProgressReporter` that
     emits per-content-type and per-row stderr lines during the
     run and flushes the audit JSONL on a periodic cadence. Pass
     `None` (the default) to keep the driver silent during the
@@ -108,27 +108,26 @@ def run_import(
     snapshot_index = SnapshotIndex.from_snapshot(snapshot_dir)
     deferred_queue: list[DeferredFK] = []
     processing_stack: set[tuple[str, tuple[Any, ...]]] = set()
-    # Task #29: cache of `(content_type, NK)` pairs whose
-    # look-ahead create attempt already failed. Subsequent
+    # Cache of `(content_type, NK)` pairs whose look-ahead
+    # create attempt already returned FAILED. Subsequent
     # references to the same parent short-circuit instead of
-    # hitting the network again, which on the rescue-10 import
-    # converted a multi-hour retry storm into a single attempt
-    # per failed parent.
+    # re-issuing the failing POST, converting a per-child
+    # retry storm into a single attempt per failed parent.
     failed_keys: set[tuple[str, tuple[Any, ...]]] = set()
-    # Task #30: index of `content_type -> set[field_name]` for
-    # the planner-deferred edges in the manifest. Phase-1
-    # strips these fields from every POST body so NetBox's
-    # validators do not refuse the create on a not-yet-bound
-    # FK (e.g. Device.primary_ip4 references an IPAddress
-    # whose `assigned_object` is not yet set). Phase-2 PATCHes
-    # the stripped values back in via the deferred_queue.
+    # Index of `content_type -> set[field_name]` for the
+    # planner-deferred edges in the manifest. Phase-1 strips
+    # these fields from every POST body so NetBox's validators
+    # do not refuse the create on a not-yet-bound FK (e.g.
+    # Device.primary_ip4 references an IPAddress whose
+    # `assigned_object` is not yet set). Phase-2 PATCHes the
+    # stripped values back in via the deferred_queue.
     deferred_fields_by_ct: dict[str, set[str]] = {}
     for edge in manifest.deferred_edges:
         child_ct = edge.get("child")
         field_name = edge.get("field")
         if isinstance(child_ct, str) and isinstance(field_name, str):
             deferred_fields_by_ct.setdefault(child_ct, set()).add(field_name)
-    # Task #33: merge in the curated KNOWN_VALIDATION_CYCLES
+    # merge in the curated KNOWN_VALIDATION_CYCLES
     # table. These are write-time NetBox validator constraints
     # (e.g. Device.primary_ip4 must point at an IPAddress whose
     # `assigned_object` is one of this device's interfaces)
@@ -162,9 +161,9 @@ def run_import(
             continue
 
         # Count rows up-front so the progress reporter can pick
-        # a sensible sample stride. The file is small enough
-        # that an extra pass is cheap; even the largest fixture
-        # in the rescue-10 set is ~10 MB.
+        # a sensible sample stride. Each JSONL file is at most
+        # tens of megabytes for renderer-minimum scope, so the
+        # extra streaming pass is cheap.
         rows = list(_iter_jsonl(file_path))
         if progress is not None:
             progress.start_phase(ct, total=len(rows))
@@ -329,9 +328,9 @@ def _resolve_body(
     is wired into the simple-FK branch.
     """
 
-    # Task #23 pre-pass: resolve paired polymorphic-id fields
-    # before the per-field loop. NetBox uses two patterns for
-    # generic FKs in WRITE bodies:
+    # Pre-pass: resolve paired polymorphic-id fields before
+    # the per-field loop. NetBox uses two patterns for generic
+    # FKs in WRITE bodies:
     #
     #   (a) the unified shape `{"object_type": "dcim.interface",
     #       "object_id": <int>}` (handled in the loop below).
@@ -364,7 +363,7 @@ def _resolve_body(
         deferred_fields_by_ct=deferred_fields_by_ct,
     )
 
-    # Task #25 pre-pass: resolve Cable termination dicts. The
+    # Pre-pass: resolve Cable termination dicts. The
     # snapshot stores cable terminations as
     # `[{"object_natural_key": [...nk...], "object_type":
     # "dcim.interface"}, ...]`, NetBox expects `object_id: <int>`
@@ -394,7 +393,11 @@ def _resolve_body(
             continue
         if spec.is_m2m:
             resolved[field_name] = _safe_resolve_m2m(
-                value, spec.fk_target, index, http, registry, content_type, field_name
+                value, spec.fk_target, index, http, registry, content_type, field_name,
+                snapshot_index=snapshot_index,
+                auditor=auditor,
+                current_nk=current_nk,
+                failed_keys=failed_keys,
             )
             continue
         if isinstance(value, dict) and "object_type" in value:
@@ -443,6 +446,7 @@ def _resolve_body(
                 child_nk=current_nk,
                 field_name=field_name,
                 target_ct=spec.fk_target,
+                failed_keys=failed_keys,
             )
             # Suppress the per-row warning when the audit
             # classified this as OUT_OF_SCOPE: those drops are
@@ -462,8 +466,8 @@ def _resolve_body(
                 _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
 
-    # Task #30 final pass: strip deferred-edge fields from the
-    # resolved body and push DeferredFK entries so Phase-2 can
+    # Final pass: strip deferred-edge fields from the resolved
+    # body and push DeferredFK entries so Phase-2 can
     # PATCH them in once both endpoints exist. NetBox refuses
     # POSTs whose cycle-closing FKs reference parents that are
     # not yet "in the right state" (e.g. Device.primary_ip4
@@ -479,6 +483,7 @@ def _resolve_body(
         deferred_fields_by_ct=deferred_fields_by_ct,
         deferred_queue=deferred_queue,
         openapi=openapi,
+        auditor=auditor,
     )
     return resolved
 
@@ -490,6 +495,7 @@ def _strip_deferred_fields_and_queue(
     current_nk: tuple[Any, ...],
     original_body: dict[str, Any],
     deferred_fields_by_ct: dict[str, set[str]] | None,
+    auditor: Auditor | None = None,
     deferred_queue: list[Any] | None,
     openapi: OpenAPI,
 ) -> dict[str, Any]:
@@ -597,6 +603,15 @@ def _strip_deferred_fields_and_queue(
                 target_nk=target_nk,
             )
         )
+        if auditor is not None:
+            auditor.record(DropEvent(
+                category=DropCategory.DEFERRED_TO_PHASE2,
+                child_content_type=content_type,
+                child_nk=current_nk,
+                field_name=field_name,
+                target_content_type=target_ct,
+                target_nk=target_nk,
+            ))
     return out
 
 
@@ -722,6 +737,7 @@ def _resolve_polymorphic_id_pairs(
                 child_nk=current_nk,
                 field_name=id_field,
                 target_ct=target_ct,
+                failed_keys=failed_keys,
             )
             if category is not DropCategory.OUT_OF_SCOPE:
                 _warn_dropped(owner_ct, id_field, target_ct, exc)
@@ -858,6 +874,7 @@ def _resolve_termination_lists(
                     child_nk=current_nk,
                     field_name=field_name,
                     target_ct=target_ct,
+                    failed_keys=failed_keys,
                 )
                 if category is not DropCategory.OUT_OF_SCOPE:
                     _warn_dropped(owner_ct, field_name, target_ct, exc)
@@ -886,26 +903,33 @@ def _record_drop(
     child_nk: tuple[Any, ...],
     field_name: str,
     target_ct: str,
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> DropCategory | None:
     """Classify an FK that the resolver could not place, record it.
 
-    Three categories the operator distinguishes:
+    Four categories the operator distinguishes:
 
     * `DEFERRED_TO_PHASE2` when the look-ahead pushed onto the
       deferred queue, the cycle-breaker is doing its job.
-    * `OUT_OF_SCOPE` when the snapshot does not carry the target
-      content type at all, the CLAUDE.md "network model only"
-      scope excludes it.
-    * `MISSING_FROM_SOURCE` when the snapshot covers the target
-      content type but is missing this specific NK, real data
-      gap on the source.
+    * `UPSERT_FAILED` when the look-ahead actually tried to
+      create the referenced parent and NetBox refused (the
+      target's NK is in `failed_keys`). The audit summary
+      surfaces these as destination/policy issues rather than
+      "missing from source", which would mis-bias the
+      operator's data-quality assessment.
+    * `OUT_OF_SCOPE` when the snapshot does not carry the
+      target content type at all, the CLAUDE.md "network
+      model only" scope excludes it by design.
+    * `MISSING_FROM_SOURCE` when the snapshot covers the
+      target content type but is missing this specific NK,
+      a real data gap on the source.
 
     Returns the chosen category so the caller can adjust its
-    warning behaviour, task #21 wants the `dropping FK` log
-    line suppressed for `OUT_OF_SCOPE` because those drops are
-    documented behaviour and not warnings. Returns `None` when
-    no auditor is wired in (the call is a no-op and the caller
-    falls back to the legacy warn-everything path).
+    warning behaviour, the suppression of stderr "dropping
+    FK" lines for OUT_OF_SCOPE drops is the operator-noise
+    motivation. Returns `None` when no auditor is wired in
+    (the call is a no-op and the caller falls back to the
+    legacy warn-everything path).
     """
 
     if auditor is None:
@@ -918,6 +942,14 @@ def _record_drop(
     )
     if deferred_grew:
         category = DropCategory.DEFERRED_TO_PHASE2
+    elif (
+        failed_keys is not None
+        and (target_ct, target_nk) in failed_keys
+    ):
+        # A previous look-ahead create attempt for this exact
+        # target NK already FAILED. The operator-meaningful
+        # signal is "upsert refused", not "missing from source".
+        category = DropCategory.UPSERT_FAILED
     elif snapshot_index is not None and not snapshot_index.has_content_type(target_ct):
         category = DropCategory.OUT_OF_SCOPE
     else:
@@ -961,7 +993,7 @@ def _try_lookahead(
 
     `openapi` and `auditor` flow into `resolve_or_create` so the
     recursive upsert can route the snapshot body through
-    `_resolve_body` before posting (task #22). Without these,
+    `_resolve_body` before posting. Without these,
     the look-ahead would POST raw NK-shaped FKs and NetBox would
     reject the create with HTTP 400.
     """
@@ -1025,8 +1057,20 @@ def _safe_resolve_m2m(
     registry: Any,
     content_type: str,
     field_name: str,
+    *,
+    snapshot_index: _SnapshotIndexType | None = None,
+    auditor: Auditor | None = None,
+    current_nk: tuple[Any, ...] = (),
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> list[int]:
-    """Resolve each m2m item independently; drop the ones that miss."""
+    """Resolve each m2m item independently; drop the ones that miss.
+
+    Per-item drops are recorded on the audit log with the same
+    classifier as simple FKs so the operator sees a consistent
+    picture, M2M misses on `tags` and `tagged_vlans` should
+    surface as OUT_OF_SCOPE or MISSING_FROM_SOURCE rows in the
+    summary instead of vanishing entirely.
+    """
 
     from nbsnap.import_.fk_resolve import resolve_simple_fk as resolve_one
 
@@ -1037,6 +1081,18 @@ def _safe_resolve_m2m(
         try:
             resolved = resolve_one(item, parent_ct, index, http=http, registry=registry)
         except (KeyError, ValueError) as exc:
+            _record_drop(
+                auditor=auditor,
+                snapshot_index=snapshot_index,
+                deferred_queue=None,
+                queue_size_before=0,
+                value=item,
+                child_ct=content_type,
+                child_nk=current_nk,
+                field_name=field_name,
+                target_ct=parent_ct,
+                failed_keys=failed_keys,
+            )
             _warn_dropped(content_type, field_name, parent_ct, exc)
             continue
         if resolved is not None:
