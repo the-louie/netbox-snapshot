@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 from nbsnap.import_.driver import ImportSummary, run_import
 from nbsnap.import_.lookahead import DeferredFK
-from nbsnap.import_.phase2 import Phase2Summary
+from nbsnap.import_.phase2 import Phase2Summary, Phase2Outcome
 from nbsnap.schema.status import VersionSkew
 
 
@@ -178,7 +178,7 @@ def test_driver_stop_on_phase2_failure(tmp_path: Path, monkeypatch) -> None:
         return {}
 
     failed_summary = Phase2Summary()
-    failed_summary.counts["failed"] = 1
+    failed_summary.counts[Phase2Outcome.FAILED] = 1
     failed_summary.failures.append((entry, "HTTP 400 bad"))
 
     with patch("nbsnap.import_.driver._resolve_body", fake_resolve_body), \

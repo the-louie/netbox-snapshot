@@ -29,6 +29,7 @@ import logging
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from enum import Enum
 
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
 from nbsnap.import_.lookahead import DeferredFK
@@ -39,16 +40,30 @@ from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
 logger = logging.getLogger(__name__)
 
 
+class Phase2Outcome(Enum):
+    """Per-entry outcome of the Phase-2 deferred-FK writer.
+
+    Mirrors `UpsertOutcome` so callers can branch on the same
+    enum surface. The string values are kept identical to the
+    earlier raw-string keys for backwards-compatible audit
+    JSONL consumers.
+    """
+
+    PATCHED = "patched"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 @dataclass
 class Phase2Summary:
     """Aggregate per-PATCH outcomes for the Phase-2 pass."""
 
-    counts: Counter[str] = field(default_factory=Counter)
+    counts: Counter[Phase2Outcome] = field(default_factory=Counter)
     failures: list[tuple[DeferredFK, str]] = field(default_factory=list)
 
     def is_clean(self) -> bool:
         """True iff the run completed without any per-PATCH failure."""
-        return self.counts.get("failed", 0) == 0
+        return self.counts.get(Phase2Outcome.FAILED, 0) == 0
 
 
 def run_phase2(
@@ -87,7 +102,7 @@ def run_phase2(
                 "Phase-2: child %s NK=%r not on destination, skipping",
                 entry.child_content_type, entry.child_nk,
             )
-            summary.counts["skipped"] += 1
+            summary.counts[Phase2Outcome.SKIPPED] += 1
             continue
 
         # Look up the target NK. ensure_built is idempotent so
@@ -100,7 +115,7 @@ def run_phase2(
                 entry.target_content_type, entry.target_nk,
                 entry.child_content_type, entry.field_name,
             )
-            summary.counts["skipped"] += 1
+            summary.counts[Phase2Outcome.SKIPPED] += 1
             continue
 
         # Build the endpoint URL for the child record and PATCH
@@ -111,7 +126,7 @@ def run_phase2(
             # Should not happen because the child was created
             # successfully in Phase-1, but defend against a
             # registry mismatch by skipping rather than crashing.
-            summary.counts["skipped"] += 1
+            summary.counts[Phase2Outcome.SKIPPED] += 1
             continue
 
         try:
@@ -122,11 +137,11 @@ def run_phase2(
                 entry.child_content_type, child_id, entry.field_name,
                 exc.status, exc.body[:160],
             )
-            summary.counts["failed"] += 1
+            summary.counts[Phase2Outcome.FAILED] += 1
             summary.failures.append((entry, str(exc)))
             continue
 
-        summary.counts["patched"] += 1
+        summary.counts[Phase2Outcome.PATCHED] += 1
         logger.info(
             "Phase-2 PATCH %s id=%d %s -> %s id=%d",
             entry.child_content_type, child_id, entry.field_name,

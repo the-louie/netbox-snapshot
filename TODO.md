@@ -319,38 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [REFACTOR-04] `Phase2Outcome` enum
-
-**Context:** `src/nbsnap/import_/phase2.py` uses raw string
-keys (`"failed"`, `"patched"`, `"skipped"`) on
-`Phase2Summary.counts`. `src/nbsnap/import_/upsert.py` already
-defines `UpsertOutcome` as an enum. The asymmetry invites
-typos and makes both consumers harder to evolve.
-
-**Requirements:**
-
-- Define `Phase2Outcome(Enum)` in `phase2.py` with members
-  `PATCHED = "patched"`, `SKIPPED = "skipped"`,
-  `FAILED = "failed"`.
-- Migrate `Phase2Summary.counts` to be keyed by the enum.
-  Update the `is_clean()` helper and all internal references
-  to use the enum.
-- Update the CLI summary code in
-  `src/nbsnap/import_cli.py` to read enum keys via `.value`
-  when formatting the output string.
-
-**Testing:**
-
-- Update `tests/unit/test_import_phase2.py` to use the enum
-  in assertions instead of raw strings.
-- Run the unit suite, confirm green.
-- Re-run the rescue-10 import, confirm the summary block's
-  `phase2:` line still reads
-  `patched=N skipped=N failed=N`.
-
-**Estimated Effort:** 1h.
-
-
 ### [REFACTOR-05] Pre-resolution deferred-field strip ordering
 
 **Context:** `src/nbsnap/import_/driver.py:_strip_deferred_fields_and_queue`
@@ -488,30 +456,6 @@ test runs share the global.
 - Run the full unit suite, confirm green.
 
 **Estimated Effort:** 30 min - 1h.
-
-
-### [REFACTOR-09] Remove `_iter_jsonl` shim in driver.py
-
-**Context:** `src/nbsnap/import_/driver.py:_iter_jsonl` is a
-one-line re-export of `iter_jsonl` from
-`src/nbsnap/import_/snapshot_index.py`, kept for
-"existing call sites". All call sites are inside `driver.py`
-itself and can use `iter_jsonl` directly.
-
-**Requirements:**
-
-- Replace every call to `_iter_jsonl` inside `driver.py` with
-  a direct call to
-  `nbsnap.import_.snapshot_index.iter_jsonl`. Add the import.
-- Delete the `_iter_jsonl` definition.
-
-**Testing:**
-
-- Grep for `_iter_jsonl` across the entire repo; the only
-  remaining hit should be in comments or removed.
-- Run the full unit suite, confirm green.
-
-**Estimated Effort:** 10 min.
 
 
 ### [BUG-01a] Enum-dict preflight scans every row and records structured per-file counts

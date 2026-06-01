@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 from nbsnap.import_.audit import Auditor, DropCategory, DropEvent
 from nbsnap.import_.driver import ImportSummary
-from nbsnap.import_.phase2 import Phase2Summary
+from nbsnap.import_.phase2 import Phase2Summary, Phase2Outcome
 from nbsnap.import_.upsert import UpsertOutcome
 from nbsnap.import_cli import (
     EXIT_OK,
@@ -47,7 +47,7 @@ def _summary(
 
     p2 = Phase2Summary()
     if phase2_failed:
-        p2.counts["failed"] = phase2_failed
+        p2.counts[Phase2Outcome.FAILED] = phase2_failed
 
     s = ImportSummary(preflight=pre)
     s.failures = failures or []

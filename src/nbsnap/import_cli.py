@@ -35,6 +35,7 @@ import requests
 from nbsnap.export.manifest import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
 from nbsnap.import_.driver import ImportSummary, run_import
+from nbsnap.import_.phase2 import Phase2Outcome
 from nbsnap.import_.upsert import UpsertOutcome
 from nbsnap.schema.openapi import SCHEMA_PATH
 from nbsnap.schema.status import VersionSkew
@@ -215,9 +216,9 @@ def run_import_cli(args: argparse.Namespace) -> int:
     sys.stderr.write(f"  audit log: {audit_path}\n")
     if summary.phase2 is not None:
         sys.stderr.write(
-            f"  phase2: patched={summary.phase2.counts.get('patched', 0)} "
-            f"skipped={summary.phase2.counts.get('skipped', 0)} "
-            f"failed={summary.phase2.counts.get('failed', 0)}\n"
+            f"  phase2: patched={summary.phase2.counts.get(Phase2Outcome.PATCHED, 0)} "
+            f"skipped={summary.phase2.counts.get(Phase2Outcome.SKIPPED, 0)} "
+            f"failed={summary.phase2.counts.get(Phase2Outcome.FAILED, 0)}\n"
         )
     return _compute_exit_code(
         summary, max_skew,
@@ -261,7 +262,7 @@ def _compute_exit_code(
     from nbsnap.import_.audit import DropCategory
 
     phase2_failures = (
-        summary.phase2.counts.get("failed", 0)
+        summary.phase2.counts.get(Phase2Outcome.FAILED, 0)
         if summary.phase2 is not None
         else 0
     )

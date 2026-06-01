@@ -24,7 +24,7 @@ import pytest
 from nbsnap.http.client import NetboxHTTPError
 from nbsnap.import_.lookahead import DeferredFK
 from nbsnap.import_.nk_index import NKIndex
-from nbsnap.import_.phase2 import Phase2Summary, run_phase2
+from nbsnap.import_.phase2 import Phase2Summary, run_phase2, Phase2Outcome
 from nbsnap.natkey.registry import default as default_registry
 
 
@@ -74,7 +74,7 @@ def test_run_phase2_patches_each_entry(dest_index: NKIndex, registry) -> None:
     queue = [_entry()]
     summary = run_phase2(http, queue, dest_index=dest_index, registry=registry)
 
-    assert summary.counts["patched"] == 1
+    assert summary.counts[Phase2Outcome.PATCHED] == 1
     assert summary.is_clean()
     http.patch.assert_called_once_with(
         "dcim/devices/99/", {"primary_ip4": 7}
@@ -110,7 +110,7 @@ def test_run_phase2_handles_multiple_entries(
     ]
     summary = run_phase2(http, queue, dest_index=dest_index, registry=registry)
 
-    assert summary.counts["patched"] == 2
+    assert summary.counts[Phase2Outcome.PATCHED] == 2
     assert http.patch.call_count == 2
 
 
@@ -136,8 +136,8 @@ def test_run_phase2_skips_when_child_missing(
         http, [_entry()], dest_index=dest_index, registry=registry
     )
 
-    assert summary.counts["skipped"] == 1
-    assert summary.counts.get("patched", 0) == 0
+    assert summary.counts[Phase2Outcome.SKIPPED] == 1
+    assert summary.counts.get(Phase2Outcome.PATCHED, 0) == 0
     http.patch.assert_not_called()
 
 
@@ -160,7 +160,7 @@ def test_run_phase2_skips_when_target_missing(
         http, [_entry()], dest_index=dest_index, registry=registry
     )
 
-    assert summary.counts["skipped"] == 1
+    assert summary.counts[Phase2Outcome.SKIPPED] == 1
     http.patch.assert_not_called()
 
 
@@ -182,7 +182,7 @@ def test_run_phase2_skips_unknown_content_type(
     summary = run_phase2(
         http, [entry], dest_index=dest_index, registry=registry
     )
-    assert summary.counts["skipped"] == 1
+    assert summary.counts[Phase2Outcome.SKIPPED] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ def test_run_phase2_records_patch_failure(
         http, [_entry()], dest_index=dest_index, registry=registry
     )
 
-    assert summary.counts["failed"] == 1
+    assert summary.counts[Phase2Outcome.FAILED] == 1
     assert not summary.is_clean()
     assert len(summary.failures) == 1
     entry, msg = summary.failures[0]
@@ -242,8 +242,8 @@ def test_run_phase2_continues_after_one_failure(
     ]
     summary = run_phase2(http, queue, dest_index=dest_index, registry=registry)
 
-    assert summary.counts["failed"] == 1
-    assert summary.counts["patched"] == 1
+    assert summary.counts[Phase2Outcome.FAILED] == 1
+    assert summary.counts[Phase2Outcome.PATCHED] == 1
 
 
 def test_phase2summary_is_clean_only_when_zero_failures() -> None:
@@ -252,8 +252,8 @@ def test_phase2summary_is_clean_only_when_zero_failures() -> None:
     Phase-1."""
 
     s = Phase2Summary()
-    s.counts["patched"] = 5
-    s.counts["skipped"] = 3
+    s.counts[Phase2Outcome.PATCHED] = 5
+    s.counts[Phase2Outcome.SKIPPED] = 3
     assert s.is_clean()
-    s.counts["failed"] = 1
+    s.counts[Phase2Outcome.FAILED] = 1
     assert not s.is_clean()
