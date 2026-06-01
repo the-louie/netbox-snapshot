@@ -14,7 +14,6 @@ The driver:
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -34,6 +33,7 @@ from nbsnap.import_.fk_resolve import (
 )
 from nbsnap.import_.nk_index import NKIndex
 from nbsnap.import_.preflight import PreflightReport, run_preflight
+from nbsnap.import_.snapshot_index import iter_jsonl
 from nbsnap.import_.upsert import UpsertOutcome, UpsertResult, upsert
 from nbsnap.natkey.registry import default as default_registry
 from nbsnap.schema.openapi import SCHEMA_PATH, OpenAPI
@@ -164,7 +164,7 @@ def run_import(
         # a sensible sample stride. Each JSONL file is at most
         # tens of megabytes for renderer-minimum scope, so the
         # extra streaming pass is cheap.
-        rows = list(_iter_jsonl(file_path))
+        rows = list(iter_jsonl(file_path))
         if progress is not None:
             progress.start_phase(ct, total=len(rows))
 
@@ -272,17 +272,6 @@ def _content_type_order(manifest: Manifest, snapshot_dir: Path) -> list[str]:
     seen = set(ordered)
     ordered.extend(sorted(scope - seen))
     return ordered
-
-
-def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
-    """Re-export of the shared JSONL streamer in snapshot_index.
-
-    Keeps the existing call sites in `run_import` happy while
-    routing the actual logic through the shared helper.
-    """
-    from nbsnap.import_.snapshot_index import iter_jsonl
-
-    yield from iter_jsonl(path)
 
 
 def _resolve_body(
