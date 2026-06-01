@@ -83,6 +83,14 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "import-side coerce should still recover, but the "
              "snapshot will not round-trip cleanly.",
     )
+    parser.add_argument(
+        "--max-parse-errors",
+        type=int,
+        default=0,
+        help="exit with EXIT_ROW_FAILURES when the snapshot has "
+             "more than N malformed JSONL rows; default 0 (any "
+             "parse error fails the run)",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -220,9 +228,20 @@ def run_import_cli(args: argparse.Namespace) -> int:
             f"skipped={summary.phase2.counts.get(Phase2Outcome.SKIPPED, 0)} "
             f"failed={summary.phase2.counts.get(Phase2Outcome.FAILED, 0)}\n"
         )
+    sys.stderr.write(
+        f"  snapshot parse errors: {len(summary.parse_errors)}\n"
+    )
+    for entry in summary.parse_errors[:5]:
+        sys.stderr.write(
+            f"    {entry['path']}:{entry['lineno']}: {entry['message']}\n"
+        )
+    if len(summary.parse_errors) > 5:
+        remaining = len(summary.parse_errors) - 5
+        sys.stderr.write(f"    ... and {remaining} more\n")
     return _compute_exit_code(
         summary, max_skew,
         allow_enum_dict_bypass=args.allow_enum_dict_bypass,
+        max_parse_errors=args.max_parse_errors,
     )
 
 
@@ -231,6 +250,7 @@ def _compute_exit_code(
     max_skew: VersionSkew,
     *,
     allow_enum_dict_bypass: bool = False,
+    max_parse_errors: int = 0,
 ) -> int:
     """Map a fully-categorised ImportSummary to a CLI exit code.
 
@@ -270,7 +290,15 @@ def _compute_exit_code(
         1 for ev in summary.auditor.events
         if ev.category is DropCategory.MISSING_FROM_SOURCE
     )
-    if summary.failures or phase2_failures or missing_from_source:
+    parse_errors_over_threshold = (
+        len(summary.parse_errors) > max_parse_errors
+    )
+    if (
+        summary.failures
+        or phase2_failures
+        or missing_from_source
+        or parse_errors_over_threshold
+    ):
         if summary.failures:
             sys.stderr.write(
                 f"  first failure: {summary.failures[0].message}\n"

@@ -1120,42 +1120,6 @@ structural rule does not.
 **Estimated Effort:** 2h.
 
 
-### [BUG-06] `_iter_jsonl` silently skips malformed lines
-
-**Context:** Source review R-13.
-`src/nbsnap/import_/snapshot_index.py:iter_jsonl` catches
-`json.JSONDecodeError` per line and silently skips. A
-truncated or hand-edited snapshot row vanishes from the
-import with no operator-visible signal.
-
-**Why this matters:** a snapshot that was manually edited
-(e.g. someone redacting a secret with a broken regex) loses
-those rows silently. The destination ends up with fewer
-records than expected and the operator has no warning.
-
-**Requirements:**
-
-- Log every JSONDecodeError at WARNING with the file path
-  and the line number.
-- Count parse errors in a new `ImportSummary.parse_errors:
-  list[dict]` field (each entry `{path, lineno, message}`).
-- Surface in the end-of-run summary block:
-  ```
-  snapshot parse errors: 0
-  ```
-  When non-zero, list the first 5 with `... and N more`.
-- Add a CLI flag `--max-parse-errors N` (default 0) that
-  causes a non-zero exit when exceeded. Matches the
-  FEAT-41 / FEAT-49 pattern for skip thresholds.
-
-**Testing:** unit test that feeds a JSONL file with one
-malformed line; assert the parse error is logged and counted.
-End-to-end: hand-edit a rescue-10 row to introduce a parse
-error and confirm the summary surfaces it.
-
-**Estimated Effort:** 1h.
-
-
 ### [BUG-07] Phase-2 PATCH treats 2xx as success without verifying field update
 
 **Context:** Source review R-14.

@@ -77,6 +77,7 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "on_error": "continue",
         "audit_out": None,
         "allow_enum_dict_bypass": False,
+        "max_parse_errors": 0,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

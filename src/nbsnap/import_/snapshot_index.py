@@ -21,12 +21,15 @@ interesting only beyond that scale.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 __all__ = ["NaturalKey", "SnapshotIndex", "iter_jsonl"]
+
+logger = logging.getLogger(__name__)
 
 # A natural key in the snapshot's JSONL is a JSON-deserialised
 # list-of-lists. We normalise to tuple-of-tuples at load time so
@@ -60,7 +63,12 @@ class SnapshotIndex:
     _by_key: dict[tuple[str, NaturalKey], dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
-    def from_snapshot(cls, snapshot_dir: Path) -> SnapshotIndex:
+    def from_snapshot(
+        cls,
+        snapshot_dir: Path,
+        *,
+        errors: list[dict[str, Any]] | None = None,
+    ) -> SnapshotIndex:
         """Walk every JSONL under `snapshot_dir`, build the index.
 
         Skips known audit-log files (`flags.jsonl`,
@@ -71,11 +79,10 @@ class SnapshotIndex:
         importer will surface the gap as an out-of-scope drop
         when it gets there.
 
-        Malformed rows are silently skipped. The export pipeline
-        already routes those through `flags.jsonl`, so reaching
-        a malformed row here would indicate hand-edited JSONL
-        and the defensive skip keeps the loader from aborting on
-        a single bad line.
+        Malformed rows are skipped so a single bad line does not
+        abort the load. When `errors` is supplied the parse
+        failures are recorded there; either way a WARNING log is
+        emitted for each.
         """
 
         # CONTENT_TYPE_FILES maps content_type -> "<app>/<file>.jsonl".
@@ -102,7 +109,7 @@ class SnapshotIndex:
                 # warning if it actually needs records from this
                 # file.
                 continue
-            for row in iter_jsonl(jsonl_path):
+            for row in iter_jsonl(jsonl_path, errors=errors):
                 nk = _to_tuple(row.get("natural_key"))
                 body = row.get("body") or {}
                 if isinstance(body, dict):
@@ -156,22 +163,39 @@ class SnapshotIndex:
         return iter(self._by_key.keys())
 
 
-def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
-    """Stream a JSONL file, skipping blank or malformed lines silently.
+def iter_jsonl(
+    path: Path,
+    errors: list[dict[str, Any]] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Stream a JSONL file, skipping blank or malformed lines.
 
-    The export pipeline already routes broken rows through
-    `flags.jsonl`, so reaching a malformed row here would
-    indicate hand-edited JSONL. We defend against it by
-    swallowing JSONDecodeError per-line; the operator can
-    inspect the file independently if they suspect corruption.
+    A malformed row here is unusual, the export pipeline routes
+    broken rows through `flags.jsonl`. A parse failure during
+    import therefore points at a hand-edited or truncated
+    snapshot.
+
+    If `errors` is supplied, every `JSONDecodeError` appends a
+    `{"path": str(path), "lineno": int, "message": str}` entry
+    so the caller can surface the count and offending lines in
+    the end-of-run summary. The error is also logged at WARNING
+    regardless of whether `errors` was provided, so the operator
+    has at least one breadcrumb to follow.
     """
 
     with path.open(encoding="utf-8") as fp:
-        for raw in fp:
-            raw = raw.strip()
-            if not raw:
+        for lineno, raw in enumerate(fp, start=1):
+            stripped = raw.strip()
+            if not stripped:
                 continue
             try:
-                yield json.loads(raw)
-            except json.JSONDecodeError:
-                continue
+                yield json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                logger.warning(
+                    "parse error in %s:%d: %s", path, lineno, exc.msg,
+                )
+                if errors is not None:
+                    errors.append({
+                        "path": str(path),
+                        "lineno": lineno,
+                        "message": exc.msg,
+                    })

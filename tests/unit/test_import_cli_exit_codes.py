@@ -34,6 +34,7 @@ def _summary(
     audit_events: list[DropEvent] | None = None,
     phase2_failed: int = 0,
     blocking: bool = False,
+    parse_errors: list[dict] | None = None,
 ) -> ImportSummary:
     """Build an `ImportSummary` shaped for the exit-code logic."""
 
@@ -54,6 +55,7 @@ def _summary(
     s.auditor = auditor
     s.counts = Counter()
     s.phase2 = p2 if phase2_failed else None
+    s.parse_errors = parse_errors or []
     return s
 
 
@@ -140,3 +142,28 @@ def test_mixed_audit_categories_only_missing_matters() -> None:
     assert _compute_exit_code(s, VersionSkew.MINOR) == EXIT_OK
     s.auditor.record(_drop(DropCategory.MISSING_FROM_SOURCE, ("c",)))
     assert _compute_exit_code(s, VersionSkew.MINOR) == EXIT_ROW_FAILURES
+
+
+def test_parse_errors_over_threshold_fails_run() -> None:
+    """BUG-06: parse errors over `max_parse_errors` cause
+    EXIT_ROW_FAILURES; under the threshold stays EXIT_OK."""
+
+    one_err = [{"path": "x.jsonl", "lineno": 5, "message": "bad"}]
+    s = _summary(parse_errors=one_err)
+    # Default threshold (0) treats any parse error as failure.
+    assert _compute_exit_code(s, VersionSkew.MINOR) == EXIT_ROW_FAILURES
+    # Raising the threshold above the count keeps the run clean.
+    assert (
+        _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=1)
+        == EXIT_OK
+    )
+
+
+def test_no_parse_errors_does_not_fail() -> None:
+    """A clean run with zero parse errors stays OK at any threshold."""
+
+    s = _summary()
+    assert (
+        _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=0)
+        == EXIT_OK
+    )

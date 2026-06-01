@@ -59,6 +59,12 @@ class ImportSummary:
     # during Phase-1 by the resolver via `Auditor.record`. The
     # CLI surfaces this to stderr and to `audit.jsonl`.
     auditor: Auditor = field(default_factory=Auditor)
+    # JSONL rows that failed to parse during snapshot load
+    # (BUG-06). Each entry is `{path, lineno, message}`. The
+    # export pipeline catches malformed bodies upstream; a
+    # non-empty list here points at hand-edited or truncated
+    # snapshot files.
+    parse_errors: list[dict[str, Any]] = field(default_factory=list)
 
 
 def run_import(
@@ -105,7 +111,9 @@ def run_import(
     from nbsnap.import_.lookahead import DeferredFK
     from nbsnap.import_.snapshot_index import SnapshotIndex
 
-    snapshot_index = SnapshotIndex.from_snapshot(snapshot_dir)
+    snapshot_index = SnapshotIndex.from_snapshot(
+        snapshot_dir, errors=summary.parse_errors
+    )
     deferred_queue: list[DeferredFK] = []
     processing_stack: set[tuple[str, tuple[Any, ...]]] = set()
     # Cache of `(content_type, NK)` pairs whose look-ahead
@@ -164,7 +172,7 @@ def run_import(
         # a sensible sample stride. Each JSONL file is at most
         # tens of megabytes for renderer-minimum scope, so the
         # extra streaming pass is cheap.
-        rows = list(iter_jsonl(file_path))
+        rows = list(iter_jsonl(file_path, errors=summary.parse_errors))
         if progress is not None:
             progress.start_phase(ct, total=len(rows))
 
