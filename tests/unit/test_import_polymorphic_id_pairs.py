@@ -109,6 +109,25 @@ def test_resolves_paired_polymorphic_id_against_destination() -> None:
     assert out["address"] == "10.0.0.1/24"
 
 
+def test_absent_id_with_present_type_drops_type() -> None:
+    """A snapshot row that carries `<prefix>_type` set to a
+    content-type string but has NO `<prefix>_id` key at all
+    (not even a null) is the same legal-unbound case as the
+    explicit-null one. NetBox treats a lone `_type` as a
+    half-pair and refuses; the resolver must drop the `_type`
+    so the POST goes out clean."""
+
+    body = {
+        "address": "10.0.0.1/24",
+        "assigned_object_type": "virtualization.vminterface",
+        # `assigned_object_id` deliberately omitted.
+    }
+    out = _call(body)
+    assert "assigned_object_type" not in out
+    assert "assigned_object_id" not in out
+    assert out["address"] == "10.0.0.1/24"
+
+
 def test_null_id_drops_both_halves_of_pair() -> None:
     """An intentionally-unbound polymorphic FK in the source
     (`assigned_object_id: null` with a non-null
@@ -160,20 +179,22 @@ def test_miss_on_both_drops_both_halves() -> None:
     assert out["address"] == "10.0.0.1/24"
 
 
-def test_content_type_type_field_without_sibling_id_passes_through() -> None:
-    """A `_type` field carrying a content-type string but with
-    NO matching `_id` sibling is not a pair, leave it
-    untouched. The sibling check is what disambiguates a pair
-    from a stray content-type field."""
+def test_content_type_type_field_without_sibling_id_is_dropped() -> None:
+    """A `_type` field carrying a content-type-shaped value
+    (e.g. "dcim.interface") with NO matching `_id` sibling is
+    still treated as half of a polymorphic pair: NetBox refuses
+    lone `_type` writes the same way it refuses null-id writes.
+    The resolver drops the `_type` so the body lands as the
+    intentionally-unbound shape NetBox accepts."""
 
     body = {
-        # Content-type shaped value, but no `weird_object_id`
-        # sibling, so this is NOT a polymorphic pair.
         "weird_object_type": "dcim.interface",
         "other_field": "some-value",
     }
     out = _call(body)
-    assert out == body
+    # `_type` dropped, other fields untouched.
+    assert "weird_object_type" not in out
+    assert out["other_field"] == "some-value"
 
 
 def test_lone_type_field_with_non_content_type_value_passes_through() -> None:

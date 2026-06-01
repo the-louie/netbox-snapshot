@@ -673,6 +673,14 @@ def _resolve_polymorphic_id_pairs(
     # pairs first then resolve in a second pass so adding the
     # resolved id does not perturb the iteration.
     pairs: list[tuple[str, str, str]] = []
+    # NetBox treats `<prefix>_type` and `<prefix>_id` as a unit
+    # on writes: setting one without the other surfaces as
+    # "field cannot be null" on the missing half. We treat the
+    # `_type` field as part of a pair whenever its value is a
+    # content-type-shaped string, even if the sibling `_id`
+    # is absent from the body. That lets the loop below drop
+    # both fields cleanly (rather than letting a stray `_type`
+    # leak into the POST).
     for field_name, value in body.items():
         if not field_name.endswith("_type"):
             continue
@@ -680,23 +688,21 @@ def _resolve_polymorphic_id_pairs(
             continue
         prefix = field_name[: -len("_type")]
         id_field = f"{prefix}_id"
-        if id_field not in body:
-            continue
         pairs.append((field_name, id_field, value))
 
     for type_field, id_field, target_ct in pairs:
-        raw_id = body[id_field]
+        raw_id = body.get(id_field)
         # An already-resolved integer means the write body is
         # ready; skip the pair.
         if isinstance(raw_id, int):
             continue
 
-        # A null `_id` means the source row expresses an
-        # intentionally-unbound polymorphic FK (e.g. an
-        # IPAddress not yet assigned to an interface). NetBox
-        # refuses `..._id: null` paired with a non-null `_type`;
-        # the legal write shape is to omit both halves so the
-        # record creates with the FK unbound.
+        # A null OR absent `_id` (paired with a non-null
+        # `_type`) means the source row expresses an
+        # intentionally-unbound polymorphic FK. NetBox refuses
+        # `..._id: null` and refuses a lone `_type` for the
+        # same reason; the legal write shape is to omit both
+        # halves so the record creates with the FK unbound.
         if raw_id is None:
             new_body.pop(id_field, None)
             new_body.pop(type_field, None)
