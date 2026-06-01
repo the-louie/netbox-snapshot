@@ -128,6 +128,17 @@ def run_import(
         field_name = edge.get("field")
         if isinstance(child_ct, str) and isinstance(field_name, str):
             deferred_fields_by_ct.setdefault(child_ct, set()).add(field_name)
+    # Task #33: merge in the curated KNOWN_VALIDATION_CYCLES
+    # table. These are write-time NetBox validator constraints
+    # (e.g. Device.primary_ip4 must point at an IPAddress whose
+    # `assigned_object` is one of this device's interfaces)
+    # that the static planner cannot see in the schema, so the
+    # manifest's deferred_edges does not list them. Merging
+    # here makes Phase-1 strip them and queue them for Phase-2
+    # the same way it would for a planner-detected cycle.
+    from nbsnap.graph.polymorphic import known_validation_cycle_fields
+    for ct, fields in known_validation_cycle_fields().items():
+        deferred_fields_by_ct.setdefault(ct, set()).update(fields)
 
     auditor = summary.auditor
 

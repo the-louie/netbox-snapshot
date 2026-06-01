@@ -211,6 +211,81 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
 ]
 
 
+# Task #33: curated table of FK fields whose validation rules
+# create a runtime cycle that the static planner cannot see.
+#
+# Example, `dcim.device.primary_ip4` looks like a simple FK
+# from Device to IPAddress in the OpenAPI schema. The planner
+# orders Device after IPAddress and considers the edge done.
+# But NetBox's write validator enforces an additional rule,
+# the IPAddress's `assigned_object` must point at one of THIS
+# device's interfaces. That makes the real dependency graph
+# Device -> IPAddress -> Interface -> Device, a multi-hop
+# cycle that closes through the Interface relation.
+#
+# The SCC pass would catch this cycle if Interface.device
+# were edge-present at planning time, but Interface is
+# created with `device` already set to an int, so the static
+# schema does not surface the back-edge. The result is the
+# planner leaving these fields off `deferred_edges` and
+# Phase-1 trying to POST a Device with primary_ip4 set on a
+# fresh destination, which NetBox refuses.
+#
+# Each entry adds `(content_type, field_name)` to the runtime
+# `deferred_fields_by_ct` index so the body resolver strips
+# the field before POST and queues a `DeferredFK` for Phase-2
+# to PATCH in after the cycle endpoints exist.
+#
+# Keep this list TIGHT, every entry is a write-time
+# constraint NetBox enforces that the static schema does not
+# express. Adding an entry that NetBox does not enforce only
+# delays the field's value into Phase-2 for no benefit.
+KNOWN_VALIDATION_CYCLES: list[dict[str, Any]] = [
+    {
+        "content_type": "dcim.device",
+        "field": "primary_ip4",
+        "note": "IPAddress.assigned_object must be one of device's interfaces",
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "content_type": "dcim.device",
+        "field": "primary_ip6",
+        "note": "same rule as primary_ip4, for IPv6",
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "content_type": "dcim.device",
+        "field": "oob_ip",
+        "note": "same rule as primary_ip4, for out-of-band management",
+        "verified_against": "netbox 4.6.2",
+    },
+    {
+        "content_type": "dcim.virtualchassis",
+        "field": "master",
+        "note": "Device.virtual_chassis must point back at this chassis",
+        "verified_against": "netbox 4.6.2",
+    },
+]
+
+
+def known_validation_cycle_fields() -> dict[str, set[str]]:
+    """Return the validation-cycle fields as a
+    `content_type -> set[field_name]` mapping, ready to merge
+    into the driver's `deferred_fields_by_ct` index.
+
+    Mirrors the shape the driver already builds from
+    `manifest.deferred_edges`, so the merge is a single
+    `setdefault + update` per content type.
+    """
+
+    by_ct: dict[str, set[str]] = {}
+    for entry in KNOWN_VALIDATION_CYCLES:
+        ct = entry["content_type"]
+        field = entry["field"]
+        by_ct.setdefault(ct, set()).add(field)
+    return by_ct
+
+
 def add_hint_edges(graph: Graph, scope: set[str]) -> None:
     """Add synthetic FK edges from the polymorphic hint table.
 
