@@ -449,20 +449,22 @@ def _resolve_body(
                 failed_keys=failed_keys,
             )
             # Suppress the per-row warning when the audit
-            # classified this as OUT_OF_SCOPE: those drops are
-            # documented behaviour of the network-only scope
-            # and would just add noise to stderr. The audit
-            # summary at end-of-run still shows them.
+            # classified this as OUT_OF_SCOPE (documented
+            # network-only scope behaviour) or
+            # DEFERRED_TO_PHASE2 (Phase-2 will PATCH the field).
+            # Both categories add operator noise without
+            # actionable signal; the audit summary at
+            # end-of-run carries the counts.
             #
             # `category is None` means no auditor was wired in
             # (the backwards-compat path used by some unit
-            # tests). In that case we cannot tell if the drop
-            # is OUT_OF_SCOPE or not, so we keep the legacy
-            # warn-everything behaviour. The audit is the
-            # source of truth for the suppression rule, so
+            # tests). In that case we cannot tell which
+            # bucket the drop belongs to, so we keep the
+            # legacy warn-everything behaviour. The audit is
+            # the source of truth for the suppression rule, so
             # turning the auditor off naturally falls back to
             # the noisier-but-safer path.
-            if category is not DropCategory.OUT_OF_SCOPE:
+            if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                 _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
 
@@ -764,7 +766,7 @@ def _resolve_polymorphic_id_pairs(
                 target_ct=target_ct,
                 failed_keys=failed_keys,
             )
-            if category is not DropCategory.OUT_OF_SCOPE:
+            if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                 _warn_dropped(owner_ct, id_field, target_ct, exc)
             new_body.pop(id_field, None)
             new_body.pop(type_field, None)
@@ -901,7 +903,7 @@ def _resolve_termination_lists(
                     target_ct=target_ct,
                     failed_keys=failed_keys,
                 )
-                if category is not DropCategory.OUT_OF_SCOPE:
+                if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                     _warn_dropped(owner_ct, field_name, target_ct, exc)
 
         if resolved_items:
