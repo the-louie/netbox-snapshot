@@ -55,6 +55,24 @@ def test_iprange_overlap_error_classified_as_skip() -> None:
     assert "ENFORCE_GLOBAL_UNIQUE" in explanation
 
 
+def test_ipaddress_duplicate_error_classified_as_skip() -> None:
+    """An ipam.ipaddress POST refused because of a duplicate
+    already on the destination returns an explanation that
+    the audit log carries. Same family of issue as the
+    iprange overlap; destination policy refusal rather than
+    a tool bug."""
+
+    body = (
+        'HTTP 400 from POST ipam/ip-addresses/: '
+        '{"address":["Duplicate IP address found in global table: '
+        '172.16.255.13/24"]}'
+    )
+    explanation = _classify_post_failure("ipam.ipaddress", body)
+    assert explanation is not None
+    assert "duplicate" in explanation.lower()
+    assert "ENFORCE_GLOBAL_UNIQUE" in explanation
+
+
 def test_classifier_matches_content_type_strictly() -> None:
     """The same error text on a different content type is NOT
     classified as skip; the rule pair is (content_type, text)

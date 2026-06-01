@@ -220,6 +220,20 @@ _POST_FAILURE_SKIP_PATTERNS: list[dict[str, str]] = [
             "destination policy or remove the overlapping snapshot row."
         ),
     },
+    {
+        "content_type": "ipam.ipaddress",
+        # Same family of issue as the iprange overlap above.
+        # NetBox returns this aggregate error when ENFORCE_GLOBAL_UNIQUE
+        # is on and the snapshot carries a duplicate address.
+        "match": "Duplicate IP address found",
+        "explanation": (
+            "ip-address refused due to a duplicate already on the "
+            "destination. The source NetBox allowed this duplicate; the "
+            "destination's ENFORCE_GLOBAL_UNIQUE policy refuses it. "
+            "Either relax the destination policy or de-duplicate the "
+            "source data."
+        ),
+    },
 ]
 
 
