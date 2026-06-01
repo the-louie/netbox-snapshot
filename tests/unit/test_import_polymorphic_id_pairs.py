@@ -109,6 +109,25 @@ def test_resolves_paired_polymorphic_id_against_destination() -> None:
     assert out["address"] == "10.0.0.1/24"
 
 
+def test_null_id_drops_both_halves_of_pair() -> None:
+    """An intentionally-unbound polymorphic FK in the source
+    (`assigned_object_id: null` with a non-null
+    `assigned_object_type`) must result in BOTH halves
+    being dropped from the body. NetBox refuses `..._id:
+    null` paired with a non-null `..._type`; the only legal
+    shape for an unbound FK is omitting both."""
+
+    body = {
+        "address": "10.0.0.1/24",
+        "assigned_object_type": "dcim.interface",
+        "assigned_object_id": None,
+    }
+    out = _call(body)
+    assert "assigned_object_type" not in out
+    assert "assigned_object_id" not in out
+    assert out["address"] == "10.0.0.1/24"
+
+
 def test_integer_id_passes_through_untouched() -> None:
     """If the `_id` field already carries an integer, the
     pre-pass is a no-op for that pair."""

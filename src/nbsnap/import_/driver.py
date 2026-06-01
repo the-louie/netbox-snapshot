@@ -691,11 +691,30 @@ def _resolve_polymorphic_id_pairs(
         if isinstance(raw_id, int):
             continue
 
+        # A null `_id` means the source row expresses an
+        # intentionally-unbound polymorphic FK (e.g. an
+        # IPAddress not yet assigned to an interface). NetBox
+        # refuses `..._id: null` paired with a non-null `_type`;
+        # the legal write shape is to omit both halves so the
+        # record creates with the FK unbound.
+        if raw_id is None:
+            new_body.pop(id_field, None)
+            new_body.pop(type_field, None)
+            continue
+
         # Try resolving against the destination index first.
         try:
             rid = resolve_simple_fk(
                 raw_id, target_ct, index, http=http, registry=registry
             )
+            if rid is None:
+                # Resolver returned None without raising
+                # (e.g. value is not list-shaped). Same fix as
+                # the explicit-null branch above: drop both
+                # halves so NetBox sees a legal write shape.
+                new_body.pop(id_field, None)
+                new_body.pop(type_field, None)
+                continue
             new_body[id_field] = rid
             continue
         except (KeyError, ValueError) as exc:
