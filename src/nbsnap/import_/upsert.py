@@ -190,6 +190,58 @@ def _filter_custom_fields(
     return out
 
 
+# Task #34: NetBox POST failures that are not actually tool
+# bugs and should surface as SKIPPED rather than FAILED. Each
+# entry pairs a content type with a substring fragment of the
+# error body and a human-readable explanation that the audit
+# log carries on the result.
+#
+# Why match by substring? NetBox's HTTP 400 bodies are not
+# stable JSON shapes across versions, the error text inside
+# the `__all__` or named-field arrays IS stable for the cases
+# we know about. A loose substring match is the right
+# robustness trade-off here.
+#
+# Add entries sparingly, every entry hides a class of failure
+# from the operator's primary error count, so the explanation
+# field should clearly tell them what to investigate.
+_POST_FAILURE_SKIP_PATTERNS: list[dict[str, str]] = [
+    {
+        "content_type": "ipam.iprange",
+        "match": "Defined addresses overlap",
+        "explanation": (
+            "iprange refused due to overlap with an existing range. "
+            "The source NetBox allowed this overlap; the destination's "
+            "ENFORCE_GLOBAL_UNIQUE policy refuses it. Either relax the "
+            "destination policy or remove the overlapping snapshot row."
+        ),
+    },
+]
+
+
+def _classify_post_failure(content_type: str, error_text: str) -> str | None:
+    """Inspect a failed-POST error body and decide whether the
+    failure is one of the known skip-rather-than-fail cases.
+
+    Returns the explanation string from
+    `_POST_FAILURE_SKIP_PATTERNS` when a pattern matches, or
+    None to leave the result as a regular FAILED outcome.
+
+    The check is exact-match-on-content-type + substring on
+    the error text. Keep the patterns tight: we are
+    converting a NetBox-reported error from "tool failure" to
+    "skipped row" in the audit, so a false positive could
+    silently swallow a real bug.
+    """
+
+    for entry in _POST_FAILURE_SKIP_PATTERNS:
+        if entry["content_type"] != content_type:
+            continue
+        if entry["match"] in error_text:
+            return entry["explanation"]
+    return None
+
+
 def _record_is_structurally_incomplete(
     content_type: str, body: Mapping[str, Any]
 ) -> str | None:
@@ -286,6 +338,22 @@ def upsert(
         try:
             created = http.post(endpoint, post_body)
         except Exception as exc:  # noqa: BLE001 - surface anything to audit
+            # Task #34: some POST failures are not tool bugs,
+            # they reflect destination policy (e.g. IPRange
+            # overlap refused by ENFORCE_GLOBAL_UNIQUE). The
+            # classifier returns an explanation string for
+            # those cases and the outcome becomes SKIPPED so
+            # the operator sees a clean count instead of a
+            # failure that looks like nbsnap's bug.
+            skip_reason = _classify_post_failure(content_type, str(exc))
+            if skip_reason is not None:
+                return UpsertResult(
+                    outcome=UpsertOutcome.SKIPPED,
+                    content_type=content_type,
+                    natural_key=natural_key,
+                    destination_id=None,
+                    message=skip_reason,
+                )
             return UpsertResult(
                 outcome=UpsertOutcome.FAILED,
                 content_type=content_type,
