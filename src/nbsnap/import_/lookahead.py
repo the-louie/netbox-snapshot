@@ -271,11 +271,25 @@ def resolve_or_create(
         processing_stack.discard(key)
 
     if result.outcome is UpsertOutcome.FAILED:
-        # cache the failure so siblings that reference
-        # the same parent do not re-issue the same failing POST.
+        # Cache the failure so siblings that reference the
+        # same parent do not re-issue the same failing POST.
         if failed_keys is not None:
             failed_keys.add(key)
-        logger.warning(
+        # Log at DEBUG, not WARNING. A look-ahead upsert
+        # failure here is expected operator-quiet behaviour
+        # when the parent's own FK chain was unresolvable
+        # during early phases (e.g. cable phase look-ahead
+        # for an interface whose device cannot yet be
+        # created because the device's own dependencies are
+        # not yet on the destination). The actionable
+        # observability is the `dropping FK` warning emitted
+        # by the underlying FK resolution; this message would
+        # only repeat that fact one level removed. The main
+        # Phase-1 phase for the same content type runs later
+        # and picks up the record successfully in normal
+        # cases. Operators who want to see the full chain can
+        # enable DEBUG logging.
+        logger.debug(
             "look-ahead upsert failed for %s NK=%r: %s",
             content_type, natural_key, result.message,
         )
