@@ -1160,41 +1160,6 @@ VERIFIED_MISMATCH.
 enum.
 
 
-### [FEAT-47] Suppress duplicate bypass file list when `--allow-enum-dict-bypass` is set
-
-**Context:** Source review R-15. When the operator passes
-`--allow-enum-dict-bypass`, the preflight still emits the
-full list of offending files (10+ lines on rescue-10), then
-the import runs. The operator already opted in; reprinting
-the list is noise.
-
-**Why this matters:** in a clean run with the bypass active,
-the operator wants the summary, not a repeat of the
-preflight warning.
-
-**Requirements:**
-
-- In `src/nbsnap/import_cli.py:run_import_cli`, when
-  `args.allow_enum_dict_bypass` is True, replace the verbose
-  per-file warning block with a single line:
-  ```
-  Enum-dict bypass active: N files used the import-side coerce.
-  ```
-- The full file list still lands in `audit.jsonl` (or a
-  dedicated `preflight-bypass.jsonl` next to it) so forensic
-  inspection survives.
-- When the bypass is NOT set, keep the verbose preflight
-  warning since the operator needs to see what would fail.
-
-**Testing:** unit test in
-`tests/unit/test_import_cli_errors.py` asserting the
-verbose block is suppressed when the flag is set, and the
-single-line summary fires instead. Re-run rescue-10 and
-confirm the summary stderr drops by ~10 lines.
-
-**Estimated Effort:** 30 min.
-
-
 ### [FEAT-48] Audit summary "top offending" lifts the 5-entry cap
 
 **Context:** Source review R-16.

@@ -200,16 +200,33 @@ def run_import_cli(args: argparse.Namespace) -> int:
             f"{sorted(summary.preflight.missing_content_types)}\n"
         )
     if summary.preflight.snapshot_format_issues:
-        sys.stderr.write(
-            "nbsnap import: snapshot format issues detected:\n"
-        )
-        for issue in summary.preflight.snapshot_format_issues[:10]:
-            sys.stderr.write(f"  {issue}\n")
-        sys.stderr.write(
-            "Re-export the snapshot with a current nbsnap, "
-            "or pass --allow-enum-dict-bypass to proceed via "
-            "the import-side coerce.\n"
-        )
+        if args.allow_enum_dict_bypass:
+            # FEAT-47: the operator already opted into the
+            # bypass; reprinting the full per-file list is just
+            # noise. Collapse to one summary line. The structured
+            # detail still lands on disk via `bypass_out` so a
+            # forensic inspector can reconstruct what coerced.
+            sys.stderr.write(
+                f"  enum-dict bypass active: "
+                f"{len(summary.preflight.snapshot_format_issues)} "
+                "files used the import-side coerce.\n"
+            )
+            bypass_path = audit_path.with_name("preflight-bypass.jsonl")
+            with bypass_path.open("w", encoding="utf-8") as fp:
+                for issue in summary.preflight.snapshot_format_issues:
+                    fp.write(json.dumps({"issue": issue}) + "\n")
+            sys.stderr.write(f"  bypass detail: {bypass_path}\n")
+        else:
+            sys.stderr.write(
+                "nbsnap import: snapshot format issues detected:\n"
+            )
+            for issue in summary.preflight.snapshot_format_issues[:10]:
+                sys.stderr.write(f"  {issue}\n")
+            sys.stderr.write(
+                "Re-export the snapshot with a current nbsnap, "
+                "or pass --allow-enum-dict-bypass to proceed via "
+                "the import-side coerce.\n"
+            )
     for outcome in (
         UpsertOutcome.CREATED,
         UpsertOutcome.UPDATED,
