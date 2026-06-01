@@ -1264,43 +1264,6 @@ each new code. Document the matrix in the test docstring.
 land.
 
 
-### [BUG-08] `dropping FK` warning text misleads on MISSING_FROM_SOURCE
-
-**Context:** Source review R-18.
-`src/nbsnap/import_/driver.py:_warn_dropped` emits a
-phrase including `for <target_ct> not found on destination`
-for MISSING_FROM_SOURCE drops. The phrasing wrongly implies
-the destination is at fault; the snapshot itself is missing
-the referenced target.
-
-**Why this matters:** an operator chasing a MISSING_FROM_SOURCE
-warning will likely investigate the destination first and
-waste time before realising the source NetBox has a stale
-reference.
-
-**Requirements:**
-
-- Make `_warn_dropped` category-aware. Pass the
-  `DropCategory` from the caller and select the message
-  template accordingly:
-  - OUT_OF_SCOPE: already suppressed.
-  - DEFERRED_TO_PHASE2: already suppressed.
-  - MISSING_FROM_SOURCE: "source has a stale or broken
-    reference to %s NK=%r, the target is not in the snapshot
-    or on the destination".
-  - UPSERT_FAILED: "destination refused the create for %s
-    NK=%r, see audit log for the failure body".
-- Per-category remediation hints embedded in the message
-  (e.g. "rebuild the snapshot from a freshly-exported
-  source").
-
-**Testing:** unit test asserting the message text per
-category. Manual: trigger each scenario with a synthetic
-fixture.
-
-**Estimated Effort:** 1h.
-
-
 ---
 
 

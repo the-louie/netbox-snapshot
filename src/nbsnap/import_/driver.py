@@ -462,7 +462,10 @@ def _resolve_body(
             # turning the auditor off naturally falls back to
             # the noisier-but-safer path.
             if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
-                _warn_dropped(content_type, field_name, spec.fk_target, exc)
+                _warn_dropped(
+                    content_type, field_name, spec.fk_target, exc,
+                    category=category,
+                )
             continue
 
     # Final pass: strip deferred-edge fields from the resolved
@@ -764,7 +767,9 @@ def _resolve_polymorphic_id_pairs(
                 failed_keys=failed_keys,
             )
             if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
-                _warn_dropped(owner_ct, id_field, target_ct, exc)
+                _warn_dropped(
+                    owner_ct, id_field, target_ct, exc, category=category,
+                )
             new_body.pop(id_field, None)
             new_body.pop(type_field, None)
 
@@ -901,7 +906,10 @@ def _resolve_termination_lists(
                     failed_keys=failed_keys,
                 )
                 if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
-                    _warn_dropped(owner_ct, field_name, target_ct, exc)
+                    _warn_dropped(
+                        owner_ct, field_name, target_ct, exc,
+                        category=category,
+                    )
 
         if resolved_items:
             new_body[field_name] = resolved_items
@@ -1129,9 +1137,28 @@ _WARNED_MISSING_FK: set[tuple[str, str, str]] = set()
 
 
 def _warn_dropped(
-    content_type: str, field_name: str, target: str, exc: Exception
+    content_type: str,
+    field_name: str,
+    target: str,
+    exc: Exception,
+    *,
+    category: DropCategory | None = None,
 ) -> None:
-    """Log once per (ct, field, target) triple when an FK is dropped."""
+    """Log once per (ct, field, target) triple when an FK is dropped.
+
+    The message is category-aware so the operator's first
+    investigation target matches the actual fault site, see
+    `BUG-08`:
+
+    * `MISSING_FROM_SOURCE`, the source NetBox referenced a
+      target that is neither in the snapshot nor on the
+      destination. The fix is upstream of this tool.
+    * `UPSERT_FAILED`, the destination NetBox refused the
+      create. The audit log carries the failure body.
+    * Anything else (including `None`, which means the
+      auditor was not wired in for this call site) keeps the
+      legacy generic "dropping FK" phrasing.
+    """
 
     import logging
 
@@ -1139,10 +1166,24 @@ def _warn_dropped(
     if key in _WARNED_MISSING_FK:
         return
     _WARNED_MISSING_FK.add(key)
-    logging.getLogger(__name__).warning(
-        "dropping FK %s.%s -> %s, %s",
-        content_type,
-        field_name,
-        target,
-        exc.args[0] if exc.args else str(exc),
-    )
+    detail = exc.args[0] if exc.args else str(exc)
+    log = logging.getLogger(__name__)
+    if category is DropCategory.MISSING_FROM_SOURCE:
+        log.warning(
+            "source NetBox has a stale or broken reference: "
+            "%s.%s -> %s, the target is not in the snapshot or "
+            "on the destination (%s). Rebuild the snapshot from "
+            "a freshly-exported source.",
+            content_type, field_name, target, detail,
+        )
+    elif category is DropCategory.UPSERT_FAILED:
+        log.warning(
+            "destination NetBox refused the create for "
+            "%s.%s -> %s (%s). See audit log for the failure body.",
+            content_type, field_name, target, detail,
+        )
+    else:
+        log.warning(
+            "dropping FK %s.%s -> %s, %s",
+            content_type, field_name, target, detail,
+        )

@@ -157,11 +157,12 @@ def test_missing_from_source_drop_still_emits_warning(
         )
 
     assert auditor.events[0].category is DropCategory.MISSING_FROM_SOURCE
+    # BUG-08: MISSING_FROM_SOURCE drops emit a category-aware
+    # warning that points the operator at the source NetBox.
     drop_warnings = [
         r for r in caplog.records
-        if "dropping FK" in r.getMessage()
+        if "source NetBox has a stale or broken reference" in r.getMessage()
     ]
-    # At least one warning landed.
     assert drop_warnings
 
 
