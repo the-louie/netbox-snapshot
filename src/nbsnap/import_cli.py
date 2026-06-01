@@ -205,6 +205,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
         UpsertOutcome.CREATED,
         UpsertOutcome.UPDATED,
         UpsertOutcome.NOOP,
+        UpsertOutcome.SKIPPED,
         UpsertOutcome.FAILED,
     ):
         sys.stderr.write(f"  {outcome.value}: {summary.counts.get(outcome, 0)}\n")

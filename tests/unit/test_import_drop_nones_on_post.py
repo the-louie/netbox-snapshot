@@ -91,7 +91,13 @@ def test_coerce_enum_dict_collapse_still_runs_alongside_none_drop() -> None:
 
 def test_upsert_post_path_strips_null_profile() -> None:
     """Confirm the POST call sent by `upsert` does NOT carry
-    `profile` when the input body had `profile: None`."""
+    `profile` when the input body had `profile: None`.
+
+    The test body now also carries valid terminations because
+    task #32 added a precondition that skips cables without
+    them; we keep the cable shape to exercise the same code
+    path the bug actually hit (cable.profile is the canonical
+    rejection field, see task #26)."""
 
     http = MagicMock()
     http.get_all.return_value = iter([])  # empty index
@@ -101,7 +107,13 @@ def test_upsert_post_path_strips_null_profile() -> None:
         http,
         content_type="dcim.cable",
         natural_key=("c1",),
-        body={"profile": None, "type": "cat6", "status": "connected"},
+        body={
+            "profile": None,
+            "type": "cat6",
+            "status": "connected",
+            "a_terminations": [{"object_type": "dcim.interface", "object_id": 1}],
+            "b_terminations": [{"object_type": "dcim.interface", "object_id": 2}],
+        },
         index=NKIndex(),
         registry=default_registry(),
     )

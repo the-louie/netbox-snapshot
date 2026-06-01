@@ -43,6 +43,14 @@ class UpsertOutcome(Enum):
     UPDATED = "updated"
     NOOP = "noop"
     FAILED = "failed"
+    # Task #32: the record body is structurally incomplete
+    # after resolution (e.g. a dcim.cable with neither
+    # a_terminations nor b_terminations) and posting it would
+    # produce a confusing NetBox `__all__` error. The upsert
+    # path short-circuits these rows so the operator sees a
+    # clean `skipped: N` in the summary instead of an opaque
+    # validation failure burying the real issues.
+    SKIPPED = "skipped"
 
 
 @dataclass(frozen=True)
@@ -182,6 +190,42 @@ def _filter_custom_fields(
     return out
 
 
+def _record_is_structurally_incomplete(
+    content_type: str, body: Mapping[str, Any]
+) -> str | None:
+    """Decide whether `body` is missing required structure for
+    `content_type`. Returns a human-readable reason string when
+    the record should be skipped, or None to proceed.
+
+    Today this is wired only for `dcim.cable`, where NetBox
+    requires BOTH `a_terminations` and `b_terminations` to be
+    non-empty arrays. Without that, the POST returns the
+    aggregate `__all__: Must define A and B terminations`
+    error which is hard to act on. Skipping the row instead
+    surfaces a clean audit entry and lets the rest of the
+    import continue without the misleading failure noise.
+
+    Other content types with similar required-structure rules
+    can be added here as they surface; keep the checks tight
+    to known cases so we never skip a legitimately-empty
+    optional record.
+    """
+
+    if content_type != "dcim.cable":
+        return None
+    a = body.get("a_terminations")
+    b = body.get("b_terminations")
+    if not a or not b:
+        # Either side empty (or absent) means we cannot build
+        # a valid cable; NetBox would refuse anyway.
+        return (
+            "cable body has no resolvable terminations on at "
+            "least one side, skipping; the source row's "
+            "interface endpoints did not import successfully"
+        )
+    return None
+
+
 def upsert(
     http: NetboxHTTP,
     *,
@@ -201,6 +245,21 @@ def upsert(
             natural_key=natural_key,
             destination_id=None,
             message=f"no endpoint registered for {content_type}",
+        )
+
+    # Task #32 precondition: skip rows whose body cannot
+    # form a legal POST (e.g. a cable with no resolvable
+    # endpoints on either side). NetBox would refuse with an
+    # opaque `__all__` error; the SKIPPED outcome makes the
+    # situation clean in the audit summary instead.
+    skip_reason = _record_is_structurally_incomplete(content_type, body)
+    if skip_reason is not None:
+        return UpsertResult(
+            outcome=UpsertOutcome.SKIPPED,
+            content_type=content_type,
+            natural_key=natural_key,
+            destination_id=None,
+            message=skip_reason,
         )
 
     index.ensure_built(http, registry, content_type)
