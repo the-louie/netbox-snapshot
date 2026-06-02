@@ -537,52 +537,6 @@ forensic inspection survives.
   weight_unit, filter_logic, type).
 
 **Estimated Effort:** 1-2h. Depends on BUG-01a.
-
-
-### [BUG-02] Audit DEFERRED_TO_PHASE2 count diverges from Phase-2 patch count
-
-**Context:** Source review R-2. The audit's
-`deferred_to_phase2` counter in
-`src/nbsnap/import_/audit.py:Auditor` is incremented per
-`DropEvent` call. The deferred queue itself dedups by
-`(child_ct, child_nk, field_name)` in
-`src/nbsnap/import_/driver.py:_strip_deferred_fields_and_queue`,
-so Phase-2 only processes unique entries. Result: postfix8 had
-350 audit events and 242 Phase-2 patches; the numeric
-difference (108) reads as "Phase-2 left work undone" but is
-just a dedup artefact.
-
-**Why this matters:** when a real Phase-2 failure surfaces in
-the future, the operator cannot tell whether the gap is dedup
-noise or actual unpatched work without inspecting the audit
-log line-by-line.
-
-**Requirements:**
-
-- Apply the same `(child_ct, child_nk, field_name)` dedup key
-  in `Auditor.record` ONLY for `DropCategory.DEFERRED_TO_PHASE2`.
-  Other categories keep the current per-event recording.
-- OR (alternative): keep the current per-event recording but
-  add a `deferred_unique` count alongside `deferred_to_phase2`
-  in the summary block:
-  ```
-  deferred_to_phase2: 350 events / 242 unique
-  ```
-- Pick option (a) if the operator-facing simplicity is more
-  valuable; option (b) if the per-event count is needed for
-  forensic analysis. Document the decision in the audit
-  module's docstring.
-
-**Testing:** extend
-`tests/unit/test_import_audit_split.py` with a test that
-records the same `(child_ct, child_nk, field_name)` triple
-twice as DEFERRED_TO_PHASE2 and asserts the chosen counter
-behaviour. Re-run rescue-10 and confirm the audit summary
-matches the Phase-2 patched count.
-
-**Estimated Effort:** 1h.
-
-
 ### [FEAT-40] Per-content-type SKIPPED breakdown in CLI summary
 
 **Context:** Source review R-3. Current

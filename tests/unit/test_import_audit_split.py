@@ -64,6 +64,76 @@ def test_record_keeps_distinct_fields_separate() -> None:
     assert len(a.events) == 2
 
 
+def test_deferred_dedupe_matches_phase2_queue_key() -> None:
+    """BUG-02: DEFERRED_TO_PHASE2 dedup key matches the Phase-2
+    queue's `(child_ct, child_nk, field)`. Two distinct devices
+    deferring the same primary_ip4 stay as TWO audit events, so
+    audit count matches Phase-2 patched count."""
+
+    def _defer(child_nk: tuple, target_nk: tuple) -> DropEvent:
+        return DropEvent(
+            category=DropCategory.DEFERRED_TO_PHASE2,
+            child_content_type="dcim.device",
+            child_nk=child_nk,
+            field_name="primary_ip4",
+            target_content_type="ipam.ipaddress",
+            target_nk=target_nk,
+        )
+
+    a = Auditor()
+    # Two different devices referencing the same IP (shared
+    # primary_ip4 is unusual but the dedup must not collapse them).
+    a.record(_defer(child_nk=(("h",), "d1"), target_nk=("10.0.0.1/24",)))
+    a.record(_defer(child_nk=(("h",), "d2"), target_nk=("10.0.0.1/24",)))
+    assert len(a.events) == 2
+
+
+def test_deferred_dedupe_collapses_same_child_same_field() -> None:
+    """The same `(child_ct, child_nk, field)` appearing twice in
+    the deferred path collapses to one audit event, matching the
+    Phase-2 queue's behaviour."""
+
+    def _defer(target_nk: tuple) -> DropEvent:
+        return DropEvent(
+            category=DropCategory.DEFERRED_TO_PHASE2,
+            child_content_type="dcim.device",
+            child_nk=(("h",), "d1"),
+            field_name="primary_ip4",
+            target_content_type="ipam.ipaddress",
+            target_nk=target_nk,
+        )
+
+    a = Auditor()
+    a.record(_defer(target_nk=("10.0.0.1/24",)))
+    # Same child + same field, even with a different target,
+    # must collapse because Phase-2 only patches once per
+    # (child_ct, child_nk, field).
+    a.record(_defer(target_nk=("10.0.0.2/24",)))
+    assert len(a.events) == 1
+
+
+def test_non_deferred_categories_keep_quadruple_dedup() -> None:
+    """OUT_OF_SCOPE and MISSING_FROM_SOURCE still dedupe on the
+    `(child_ct, field, target_ct, target_nk)` quadruple, so a
+    thousand Devices referencing the same missing Region remain
+    one audit event."""
+
+    def _missing(child_nk: tuple, target_nk: tuple) -> DropEvent:
+        return DropEvent(
+            category=DropCategory.MISSING_FROM_SOURCE,
+            child_content_type="dcim.device",
+            child_nk=child_nk,
+            field_name="site",
+            target_content_type="dcim.site",
+            target_nk=target_nk,
+        )
+
+    a = Auditor()
+    a.record(_missing(child_nk=(("h",), "d1"), target_nk=("ghost",)))
+    a.record(_missing(child_nk=(("h",), "d2"), target_nk=("ghost",)))
+    assert len(a.events) == 1
+
+
 # ---------------------------------------------------------------------------
 # Auditor.render_summary
 # ---------------------------------------------------------------------------

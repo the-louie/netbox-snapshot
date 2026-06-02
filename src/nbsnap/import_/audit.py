@@ -94,18 +94,35 @@ class DropEvent:
 class Auditor:
     """Accumulates drop events and renders the operator summary.
 
-    Records dedupe on the `(child_ct, field, target_ct,
-    target_nk)` quadruple so a run that touches a thousand
-    Devices each missing the same Region does not flood the log
-    with a thousand identical lines, only one entry per missing
-    target survives.
+    Dedup is category-aware (see `BUG-02`):
+
+    * For most categories the key is the
+      `(child_ct, field, target_ct, target_nk)` quadruple, so
+      a run that touches a thousand Devices each missing the
+      same Region collapses to one audit entry.
+    * For `DEFERRED_TO_PHASE2` the key is the
+      `(child_ct, child_nk, field)` triple, mirroring the
+      `_strip_deferred_fields_and_queue` work-queue key so the
+      audit count and the Phase-2 patched count compare cleanly.
     """
 
     events: list[DropEvent] = field(default_factory=list)
     _seen: set[tuple[Any, ...]] = field(default_factory=set)
 
     def record(self, event: DropEvent) -> None:
-        """Record one event; de-dupes on the quadruple key.
+        """Record one event with category-aware deduplication.
+
+        For most categories the dedup key is the quadruple
+        `(child_ct, field, target_ct, target_nk)`, so 1,000
+        Devices each missing the same Region collapse to one
+        audit entry.
+
+        For `DEFERRED_TO_PHASE2` the key drops `target_ct` and
+        `target_nk` and adds `child_nk` instead, giving
+        `(child_ct, child_nk, field)`. This matches the
+        deduplication that `_strip_deferred_fields_and_queue`
+        applies to the Phase-2 work queue, so the audit count
+        and the Phase-2 patched count compare cleanly.
 
         The first occurrence wins; later occurrences are
         silently dropped. We log at INFO level so the operator
@@ -113,12 +130,21 @@ class Auditor:
         surface.
         """
 
-        key = (
-            event.child_content_type,
-            event.field_name,
-            event.target_content_type,
-            event.target_nk,
-        )
+        if event.category is DropCategory.DEFERRED_TO_PHASE2:
+            key: tuple[Any, ...] = (
+                "deferred",
+                event.child_content_type,
+                event.child_nk,
+                event.field_name,
+            )
+        else:
+            key = (
+                "default",
+                event.child_content_type,
+                event.field_name,
+                event.target_content_type,
+                event.target_nk,
+            )
         if key in self._seen:
             return
         self._seen.add(key)
