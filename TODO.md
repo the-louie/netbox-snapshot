@@ -319,40 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [REFACTOR-07] `ProgressReporter` accepts auditor at construction
-
-**Context:** `src/nbsnap/import_/progress.py:ProgressReporter`
-is built in the CLI without an auditor, then
-`run_import` calls `bind_auditor` once the summary exists.
-The window between construction and bind is empty today, but
-the design depends on call-order discipline.
-
-**Requirements:**
-
-- Restructure so the driver creates `ImportSummary` (and
-  therefore the `Auditor`) BEFORE the progress reporter. Pass
-  the auditor to the reporter constructor.
-- In `src/nbsnap/import_cli.py`, build the reporter only
-  after `run_import` has produced the summary, OR refactor
-  so `run_import` accepts the reporter's I/O target (stream,
-  audit_path) and constructs the reporter internally.
-- Remove `bind_auditor` from `ProgressReporter`.
-- Update the driver's plan-order comment and the reporter's
-  module docstring to describe the new flow.
-
-**Testing:**
-
-- Update `tests/unit/test_import_progress.py` to drop the
-  bind_auditor pathway and verify the reporter has an
-  auditor from construction.
-- Update
-  `tests/unit/test_import_driver_phase2.py` and any other
-  test that constructs a reporter directly.
-- Run the full unit suite.
-
-**Estimated Effort:** 1h.
-
-
 ### [REFACTOR-08] `_WARNED_MISSING_FK` moved onto `ImportSummary`
 
 **Context:** the warn-once dedup sentinel in

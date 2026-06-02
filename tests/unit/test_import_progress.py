@@ -182,16 +182,15 @@ def test_close_flushes_audit_on_final_exit(tmp_path: Path) -> None:
     assert len(rows) == 1
 
 
-def test_bind_auditor_attaches_after_construction(tmp_path: Path) -> None:
-    """The CLI builds the reporter before `run_import` creates
-    the summary that owns the auditor. `bind_auditor` lets the
-    driver wire them together once both exist."""
+def test_reporter_constructed_with_auditor_flushes_on_close(tmp_path: Path) -> None:
+    """REFACTOR-07: the reporter takes its auditor at
+    construction; there is no late-binding API. `close()`
+    flushes the events the auditor has accumulated."""
 
     audit_path = tmp_path / "audit.jsonl"
-    p = ProgressReporter(stream=None, auditor=None, audit_path=audit_path)
     auditor = Auditor()
     auditor.record(_drop())
-    p.bind_auditor(auditor)
+    p = ProgressReporter(stream=None, auditor=auditor, audit_path=audit_path)
     p.close()
     assert audit_path.exists()
     assert "out_of_scope" in audit_path.read_text()
@@ -212,22 +211,20 @@ def test_zero_total_phase_still_emits_header() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_driver_binds_auditor_onto_progress(tmp_path: Path) -> None:
-    """Integration check: when the CLI hands a reporter into
-    `run_import`, the driver binds the auditor onto it so the
-    periodic flush works during the run, not only at close().
+def test_driver_constructs_reporter_with_live_auditor(tmp_path: Path) -> None:
+    """REFACTOR-07 integration check: passing `progress_stream`
+    and `progress_audit_path` to `run_import` causes the driver
+    to construct the ProgressReporter internally, after the
+    summary exists. The reporter is born with the live auditor
+    attached, so periodic flushes pick up drops during the run."""
 
-    Without this binding, a hard-killed import would lose all
-    audit drops, defeating the purpose of #27's flush cadence.
-    """
-
+    import io
     import json
     from unittest.mock import MagicMock
 
     from nbsnap.import_.driver import run_import
     from nbsnap.schema.status import VersionSkew
 
-    # Minimal snapshot the driver can load.
     (tmp_path / "manifest.json").write_text(json.dumps({
         "version": 1, "netbox_version": "4.6.2",
         "counts": {}, "deferred_edges": [],
@@ -238,27 +235,24 @@ def test_driver_binds_auditor_onto_progress(tmp_path: Path) -> None:
         "openapi": "3.0.3", "paths": {}, "components": {"schemas": {}},
     }))
 
-    # Stub preflight so we do not hit a real NetBox.
     import nbsnap.import_.driver as driver_mod
     original_preflight = driver_mod.run_preflight
     fake_report = MagicMock()
     fake_report.is_blocking.return_value = False
     driver_mod.run_preflight = lambda *_a, **_kw: fake_report
     try:
-        # Reporter starts with no auditor; the driver should
-        # bind one.
         audit_path = tmp_path / "audit.jsonl"
-        p = ProgressReporter(
-            stream=None, auditor=None, audit_path=audit_path,
-        )
-        assert p._auditor is None  # pre-bind state
+        stream = io.StringIO()
         summary = run_import(
             MagicMock(), tmp_path,
             max_skew=VersionSkew.MAJOR, on_error="continue",
-            progress=p,
+            progress_stream=stream,
+            progress_audit_path=audit_path,
         )
-        # After the run, the reporter knows about the summary's
-        # auditor.
-        assert p._auditor is summary.auditor
+        # The summary's auditor exists, and the run succeeded.
+        # No backwards-compat handle to assert against; the
+        # forward guarantee is that the reporter never had a
+        # `None` auditor.
+        assert summary.auditor is not None
     finally:
         driver_mod.run_preflight = original_preflight

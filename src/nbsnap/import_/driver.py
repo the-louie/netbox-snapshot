@@ -75,6 +75,8 @@ def run_import(
     on_error: str = "stop",
     allow_enum_dict_bypass: bool = False,
     progress: Any = None,
+    progress_stream: Any = None,
+    progress_audit_path: Path | None = None,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
 
@@ -83,12 +85,17 @@ def run_import(
     still recovers most fields but the round-trip guarantee is
     gone, so use only when re-export is not yet possible.
 
-    `progress`: an optional `ProgressReporter` that
-    emits per-content-type and per-row stderr lines during the
-    run and flushes the audit JSONL on a periodic cadence. Pass
-    `None` (the default) to keep the driver silent during the
-    run, the CLI passes a stderr-bound reporter so operators
-    watching a long import see steady motion.
+    Three ways to wire progress reporting (REFACTOR-07):
+
+    * Pass nothing, the driver stays silent.
+    * Pass `progress_stream=sys.stderr` (and optionally
+      `progress_audit_path`) and the driver builds a
+      `ProgressReporter` internally AFTER constructing the
+      summary, so the reporter is born with a live auditor
+      handle. This is the supported path for the CLI.
+    * Pass `progress=<pre-built ProgressReporter>` for tests
+      that need to inject a fake reporter. Must have its
+      auditor attached at construction (no late binding).
     """
 
     snapshot_dir = Path(snapshot_dir)
@@ -149,14 +156,18 @@ def run_import(
 
     auditor = summary.auditor
 
-    # Bind the auditor to the progress reporter so the
-    # periodic JSONL flush picks up newly-recorded drops in
-    # real time. The reporter is constructed in the CLI
-    # without a live auditor handle because the auditor lives
-    # on the summary; we wire them together here once both
-    # exist.
-    if progress is not None:
-        progress.bind_auditor(auditor)
+    # If the caller asked for path-based progress reporting,
+    # construct the ProgressReporter here, with the auditor
+    # already attached. This is the REFACTOR-07 path that
+    # replaces the older "build reporter in the CLI, late-bind
+    # the auditor in the driver" flow.
+    if progress is None and progress_stream is not None:
+        from nbsnap.import_.progress import ProgressReporter
+        progress = ProgressReporter(
+            stream=progress_stream,
+            auditor=auditor,
+            audit_path=progress_audit_path,
+        )
 
     # Phase-1: per content type, in the order recorded in the
     # manifest. We do not re-plan here; the snapshot is the

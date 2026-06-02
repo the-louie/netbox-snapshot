@@ -184,17 +184,6 @@ class ProgressReporter:
         self._auditor.write_jsonl(self._audit_path)
         self._last_flush_at = now
 
-    def bind_auditor(self, auditor: Auditor) -> None:
-        """Attach an `Auditor` after construction.
-
-        The CLI builds the reporter before `run_import` runs,
-        but the auditor lives on the summary that `run_import`
-        creates. The driver calls `bind_auditor` once the
-        summary is in hand so the periodic JSONL flush has
-        access to the live drop list.
-        """
-
-        self._auditor = auditor
 
     def close(self) -> None:
         """Final audit flush, called at the end of `run_import`.

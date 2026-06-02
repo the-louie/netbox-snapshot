@@ -137,21 +137,12 @@ def run_import_cli(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # Run, catching the high-likelihood failure modes per category
     # ------------------------------------------------------------------
-    # Live progress reporter wired to stderr. We always emit
-    # progress; the driver only invokes the reporter if the
-    # caller provided one, so other entry points stay quiet by
-    # default. The reporter also flushes audit.jsonl on a
-    # 30-second cadence so a hard-killed import still leaves
-    # diagnostic state on disk. The driver binds the auditor
-    # onto the reporter once the summary exists.
-    from nbsnap.import_.progress import ProgressReporter
-
+    # Path-based progress wiring (REFACTOR-07). The driver
+    # constructs the ProgressReporter internally after it
+    # builds the summary, so the reporter is born with a live
+    # auditor handle. Hard-kill safety still works because the
+    # reporter flushes audit.jsonl on a 30-second cadence.
     audit_path = args.audit_out or (in_dir / "audit.jsonl")
-    progress = ProgressReporter(
-        stream=sys.stderr,
-        auditor=None,           # bound inside run_import
-        audit_path=audit_path,
-    )
 
     try:
         summary = run_import(
@@ -159,7 +150,8 @@ def run_import_cli(args: argparse.Namespace) -> int:
             max_skew=max_skew,
             on_error=args.on_error,
             allow_enum_dict_bypass=args.allow_enum_dict_bypass,
-            progress=progress,
+            progress_stream=sys.stderr,
+            progress_audit_path=audit_path,
         )
     except requests.exceptions.SSLError as exc:
         sys.stderr.write(
