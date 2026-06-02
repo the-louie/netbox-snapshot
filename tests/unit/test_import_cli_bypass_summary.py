@@ -61,7 +61,10 @@ def _fake_preflight_with_issues() -> MagicMock:
     pre.version_skew = VersionSkew.NONE
     pre.missing_content_types = set()
     pre.snapshot_format_issues = [
-        f"dcim/devices.jsonl row {i}: legacy enum dict" for i in range(12)
+        {"path": f"dcim/devices-{i}.jsonl",
+         "field": "status",
+         "rows_affected": 1}
+        for i in range(12)
     ]
     return pre
 

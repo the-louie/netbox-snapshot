@@ -214,14 +214,14 @@ def run_import_cli(args: argparse.Namespace) -> int:
             bypass_path = audit_path.with_name("preflight-bypass.jsonl")
             with bypass_path.open("w", encoding="utf-8") as fp:
                 for issue in summary.preflight.snapshot_format_issues:
-                    fp.write(json.dumps({"issue": issue}) + "\n")
+                    fp.write(json.dumps(issue, sort_keys=True) + "\n")
             sys.stderr.write(f"  bypass detail: {bypass_path}\n")
         else:
             sys.stderr.write(
                 "nbsnap import: snapshot format issues detected:\n"
             )
             for issue in summary.preflight.snapshot_format_issues[:10]:
-                sys.stderr.write(f"  {issue}\n")
+                sys.stderr.write(f"  {_format_issue(issue)}\n")
             sys.stderr.write(
                 "Re-export the snapshot with a current nbsnap, "
                 "or pass --allow-enum-dict-bypass to proceed via "
@@ -261,6 +261,27 @@ def run_import_cli(args: argparse.Namespace) -> int:
         summary, max_skew,
         allow_enum_dict_bypass=args.allow_enum_dict_bypass,
         max_parse_errors=args.max_parse_errors,
+    )
+
+
+def _format_issue(issue: dict | str) -> str:
+    """Render a `snapshot_format_issues` entry as a human line.
+
+    BUG-01a moved the report's issues from raw strings to
+    `{path, field, rows_affected}` dicts. Old call sites that
+    still pass a string (e.g. some tests) keep working
+    unchanged.
+    """
+
+    if isinstance(issue, str):
+        return issue
+    path = issue.get("path", "<unknown>")
+    field_name = issue.get("field", "<unknown>")
+    rows = issue.get("rows_affected", 0)
+    return (
+        f"{path}: field {field_name!r} carries the "
+        f"{{value, label}} enum-dict shape in {rows} row(s); the "
+        f"snapshot was exported before FEAT-36-blocker landed"
     )
 
 

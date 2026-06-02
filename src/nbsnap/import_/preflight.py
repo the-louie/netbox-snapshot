@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from nbsnap.export.manifest import Manifest
 from nbsnap.http.client import NetboxHTTP
@@ -57,7 +58,10 @@ class PreflightReport:
     snapshot_format_version: int = 1
     # FEAT-36h: list of `path: field` strings, one per jsonl
     # file whose first row carries the legacy enum-dict shape.
-    snapshot_format_issues: list[str] = field(default_factory=list)
+    # Each issue is `{"path": str, "field": str, "rows_affected": int}`.
+    # BUG-01a moved this from raw strings to structured dicts;
+    # the CLI renders them back to strings for the operator.
+    snapshot_format_issues: list[dict[str, Any]] = field(default_factory=list)
 
     def is_blocking(
         self,
@@ -81,49 +85,58 @@ class PreflightReport:
         return not self.version_skew.allowed_by(max_skew)
 
 
-def sample_enum_dict_check(snapshot_dir: Path) -> list[str]:
-    """Sample the first row of each jsonl, flag enum-dict shapes.
+def sample_enum_dict_check(snapshot_dir: Path) -> list[dict[str, Any]]:
+    """Walk every row of each jsonl, flag enum-dict shapes.
 
-    Returns one human-readable string per offending file. Each
-    string carries the relative path and the first field name
-    that exhibits the `{value, label}` shape so the operator can
-    verify with `head -1 <file> | jq`.
+    Returns one entry per offending file in the shape
+    `{"path": str, "field": str, "rows_affected": int}`, sorted
+    by path. The `field` is the first enum-dict field seen, which
+    is enough for the operator to verify with
+    `jq 'select(.body.<field>|type=="object")' <file>`.
 
-    Performance: O(files) reads of at most `_SAMPLE_BYTES` each.
-    The renderer-minimum snapshot has fewer than 30 jsonl files
-    so the total cost is well under 10 ms even on a cold cache.
+    Performance: O(rows) `json.loads` calls. Sub-second on a
+    100k-row file because the decoder is the bottleneck.
+    BUG-01a: this used to read only the first line, so a
+    snapshot with only some legacy rows passed preflight clean.
     """
 
-    issues: list[str] = []
+    issues: list[dict[str, Any]] = []
     for jsonl in sorted(snapshot_dir.rglob("*.jsonl")):
         if jsonl.name in _AUDIT_FILES:
             continue
+        first_field: str | None = None
+        rows_affected = 0
         with jsonl.open(encoding="utf-8") as fp:
-            line = fp.readline(_SAMPLE_BYTES)
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        body = row.get("body") or {}
-        if not isinstance(body, dict):
-            continue
-        for field_name, value in body.items():
-            if (
-                isinstance(value, dict)
-                and frozenset(value.keys()) == _ENUM_DICT_KEYS
-            ):
-                rel = jsonl.relative_to(snapshot_dir).as_posix()
-                issues.append(
-                    f"{rel}: field {field_name!r} carries the "
-                    f"{{value, label}} enum-dict shape; the snapshot "
-                    f"was exported before FEAT-36-blocker landed"
-                )
-                # One issue per file is enough; the operator
-                # only needs to know the snapshot is bad, the
-                # exact field is just a witness.
-                break
+            for raw in fp:
+                stripped = raw.strip()
+                if not stripped:
+                    continue
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                body = row.get("body") or {}
+                if not isinstance(body, dict):
+                    continue
+                row_has_enum_dict = False
+                for field_name, value in body.items():
+                    if (
+                        isinstance(value, dict)
+                        and frozenset(value.keys()) == _ENUM_DICT_KEYS
+                    ):
+                        if first_field is None:
+                            first_field = field_name
+                        row_has_enum_dict = True
+                        break
+                if row_has_enum_dict:
+                    rows_affected += 1
+        if rows_affected > 0:
+            rel = jsonl.relative_to(snapshot_dir).as_posix()
+            issues.append({
+                "path": rel,
+                "field": first_field,
+                "rows_affected": rows_affected,
+            })
     return issues
 
 

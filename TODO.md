@@ -319,50 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [BUG-01a] Enum-dict preflight scans every row and records structured per-file counts
-
-**Context:** Source review item R-1 at
-`__doc/code_reviews/20260616-0612_postfix8_robustness_review.md`.
-`src/nbsnap/import_/preflight.py:sample_enum_dict_check`
-reads only the FIRST line of each `.jsonl` to detect the
-legacy `{"value": ..., "label": ...}` shape. A snapshot
-where ONLY some rows carry the shape passes preflight
-unflagged. This sub-ticket fixes the under-coverage and
-makes the report carry actionable per-file counts.
-
-**Requirements:**
-
-- Change `sample_enum_dict_check` in `preflight.py` to walk
-  every row of each `.jsonl` rather than `fp.readline()`. The
-  per-file scan cost on a 100k-row file should still be
-  sub-second since `json.loads` is the bottleneck.
-- Replace the current `list[str]` shape of
-  `PreflightReport.snapshot_format_issues` with
-  `list[dict]` of `{path, field, rows_affected}`. Keep the
-  string representation in the CLI for backwards readability
-  but include the row count.
-- In `_collapse_enum_dict` in `upsert.py`, add a regression
-  guard: refuse to collapse when the enclosed `value` is a
-  non-primitive (dict, list). Today the predicate is
-  `isinstance(inner, str | int | bool) or inner is None`;
-  verify the guard holds and capture the invariant in a test
-  asserting `{"value": {"nested": 1}, "label": "x"}` passes
-  through unmodified.
-
-**Testing:**
-
-- Create
-  `tests/fixtures/legacy-enum-dict-partial/dcim/sites.jsonl`
-  with row 1 clean and row 2 carrying the legacy shape.
-  Assert `sample_enum_dict_check` returns one issue with
-  `rows_affected == 1`.
-- Add
-  `tests/unit/test_preflight_enum_dict.py::test_collapse_preserves_nested_value`
-  for the non-primitive guard.
-
-**Estimated Effort:** 1-2h.
-
-
 ### [BUG-01b] Add `DropCategory.BYPASS_COERCED` and emit per-row coerce audit when bypass is active
 
 **Context:** sub-ticket of BUG-01. After BUG-01a hardens the

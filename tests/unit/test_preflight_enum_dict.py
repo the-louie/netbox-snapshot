@@ -27,8 +27,8 @@ def _write_jsonl(path: Path, *rows: dict) -> None:
 
 def test_enum_dict_in_first_row_is_flagged(tmp_path: Path) -> None:
     """A snapshot row where `status` is the legacy
-    `{value, label}` dict is flagged with the file path and
-    field name."""
+    `{value, label}` dict is flagged with the file path,
+    the offending field name, and the per-file row count."""
 
     _write_jsonl(tmp_path / "dcim" / "sites.jsonl", {
         "natural_key": ["hall-a"],
@@ -39,8 +39,9 @@ def test_enum_dict_in_first_row_is_flagged(tmp_path: Path) -> None:
     })
     issues = sample_enum_dict_check(tmp_path)
     assert len(issues) == 1
-    assert "dcim/sites.jsonl" in issues[0]
-    assert "status" in issues[0]
+    assert issues[0]["path"] == "dcim/sites.jsonl"
+    assert issues[0]["field"] == "status"
+    assert issues[0]["rows_affected"] == 1
 
 
 def test_clean_snapshot_returns_no_issues(tmp_path: Path) -> None:
@@ -137,7 +138,9 @@ def test_is_blocking_when_enum_dict_issues_present() -> None:
     carries the legacy enum-dict shape."""
 
     r = PreflightReport()
-    r.snapshot_format_issues = ["dcim/sites.jsonl: field 'status' ..."]
+    r.snapshot_format_issues = [
+        {"path": "dcim/sites.jsonl", "field": "status", "rows_affected": 1}
+    ]
     assert r.is_blocking(VersionSkew.MAJOR) is True
 
 
@@ -147,7 +150,9 @@ def test_bypass_clears_enum_dict_block() -> None:
     rows."""
 
     r = PreflightReport()
-    r.snapshot_format_issues = ["dcim/sites.jsonl: field 'status' ..."]
+    r.snapshot_format_issues = [
+        {"path": "dcim/sites.jsonl", "field": "status", "rows_affected": 1}
+    ]
     assert r.is_blocking(VersionSkew.MAJOR, allow_enum_dict_bypass=True) is False
 
 
@@ -158,3 +163,51 @@ def test_missing_content_types_still_blocks_even_with_bypass() -> None:
     r = PreflightReport()
     r.missing_content_types = {"dcim.fakefake"}
     assert r.is_blocking(VersionSkew.MAJOR, allow_enum_dict_bypass=True) is True
+
+
+def test_partial_legacy_snapshot_is_flagged_and_counted(tmp_path: Path) -> None:
+    """BUG-01a: a snapshot whose first row is clean but later
+    rows carry the legacy shape must still be flagged. The old
+    first-line-only sampler missed this case."""
+
+    path = tmp_path / "dcim" / "sites.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join([
+        json.dumps({
+            "natural_key": ["a"],
+            "body": {"name": "a", "status": "active"},
+        }),
+        json.dumps({
+            "natural_key": ["b"],
+            "body": {
+                "name": "b",
+                "status": {"value": "active", "label": "Active"},
+            },
+        }),
+        json.dumps({
+            "natural_key": ["c"],
+            "body": {
+                "name": "c",
+                "status": {"value": "active", "label": "Active"},
+            },
+        }),
+    ]) + "\n")
+    issues = sample_enum_dict_check(tmp_path)
+    assert len(issues) == 1
+    assert issues[0]["rows_affected"] == 2
+
+
+def test_collapse_preserves_nested_value() -> None:
+    """BUG-01a: `_collapse_enum_dict` must NOT collapse when the
+    `value` slot carries a non-primitive (dict/list). The
+    enum-dict invariant says `value` is a scalar; anything else
+    is a real payload dict that happens to share the key shape."""
+
+    from nbsnap.export.extractor import _collapse_enum_dict
+
+    nested = {"value": {"nested": 1}, "label": "x"}
+    # The collapse helper must leave this alone, not silently
+    # promote the inner dict.
+    assert _collapse_enum_dict(nested) is nested
+    listed = {"value": [1, 2, 3], "label": "x"}
+    assert _collapse_enum_dict(listed) is listed
