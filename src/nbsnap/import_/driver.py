@@ -71,6 +71,11 @@ class ImportSummary:
     # their first drop warning instead of the second silently
     # inheriting the first's suppressions.
     _warned_missing_fk: set[tuple[str, str, str]] = field(default_factory=set)
+    # FEAT-40: per-content-type SKIPPED count, keyed by
+    # content type and reason group. The CLI breaks the summary
+    # out so an operator can see which content type lost rows
+    # and why, instead of one opaque `skipped: N` line.
+    skipped_by_ct: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 def run_import(
@@ -221,6 +226,16 @@ def run_import(
                 auditor=auditor,
             )
             summary.counts[result.outcome] += 1
+            if result.outcome is UpsertOutcome.SKIPPED:
+                # FEAT-40: break SKIPPED out by content type and
+                # reason group so the CLI summary can show
+                # actionable per-ct totals instead of one opaque
+                # number. Reason groups come from the message
+                # prefix; we pull the first part before "(" or
+                # the colon as a stable key.
+                bucket = summary.skipped_by_ct.setdefault(ct, {})
+                reason = _skip_reason_group(result.message or "")
+                bucket[reason] = bucket.get(reason, 0) + 1
             if progress is not None:
                 progress.tick(ct, row_index)
             if result.outcome is UpsertOutcome.FAILED:
@@ -1167,6 +1182,28 @@ def _safe_resolve_m2m(
         if resolved is not None:
             out.append(resolved)
     return out
+
+
+def _skip_reason_group(message: str) -> str:
+    """Compress an upsert SKIPPED message to a short reason key.
+
+    NetBox/nbsnap SKIPPED messages are free-text today; we
+    take the substring up to the first colon or parenthesis
+    and trim it. Known reason groups:
+
+    * `no resolvable terminations` for dcim.cable.
+    * `duplicate IP in global table` for ipam.ipaddress.
+    * `overlap with existing range` for ipam.iprange.
+    * unknown messages collapse to `other`.
+
+    FEAT-40 surfaces this key in the CLI summary so the
+    operator does not have to grep audit.jsonl.
+    """
+
+    if not message:
+        return "other"
+    head = message.split(":", 1)[0].split("(", 1)[0].strip()
+    return head or "other"
 
 
 def _warn_dropped(

@@ -235,6 +235,25 @@ def run_import_cli(args: argparse.Namespace) -> int:
         UpsertOutcome.FAILED,
     ):
         sys.stderr.write(f"  {outcome.value}: {summary.counts.get(outcome, 0)}\n")
+        if outcome is UpsertOutcome.SKIPPED and summary.skipped_by_ct:
+            # FEAT-40: break the SKIPPED total out by content
+            # type so a CI gate can apply per-bucket policy
+            # without grepping audit.jsonl.
+            for ct in sorted(summary.skipped_by_ct):
+                reasons = summary.skipped_by_ct[ct]
+                total = sum(reasons.values())
+                if len(reasons) == 1:
+                    only = next(iter(reasons))
+                    sys.stderr.write(
+                        f"    {ct}: {total} ({only})\n"
+                    )
+                else:
+                    pretty = ", ".join(
+                        f"{r}={n}" for r, n in sorted(reasons.items())
+                    )
+                    sys.stderr.write(
+                        f"    {ct}: {total} ({pretty})\n"
+                    )
     sys.stderr.write(
         summary.auditor.render_summary(limit=args.audit_summary_limit)
     )

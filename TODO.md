@@ -319,49 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [FEAT-40] Per-content-type SKIPPED breakdown in CLI summary
-
-**Context:** Source review R-3. Current
-`src/nbsnap/import_cli.py:run_import_cli` prints a single
-`skipped: N` line. The 104-row postfix8 SKIPPED count is a
-mix of 4 dcim.cable (no terminations), 19 ipam.ipaddress
-(duplicate), 81 ipam.iprange (overlap). The operator cannot
-tell which content types lost rows without grepping
-`audit.jsonl`.
-
-**Why this matters:** a CI pipeline gating on the summary
-needs to break SKIPPED out by content type to apply
-per-category policy (e.g. "tolerate up to 5 cable skips but
-fail on any IPAddress skip").
-
-**Requirements:**
-
-- Extend `ImportSummary` with a
-  `skipped_by_ct: dict[str, int]` field updated each time
-  `upsert` returns `SKIPPED`. Initialise in the main loop in
-  `src/nbsnap/import_/driver.py`.
-- Optional: track the SKIPPED reason group too, by capturing
-  the message prefix or by tagging the upsert result with a
-  category enum. Today the message is free-text so the group
-  has to be parsed.
-- Update the CLI summary block to print:
-  ```
-  skipped: 104
-    dcim.cable: 4 (no resolvable terminations)
-    ipam.ipaddress: 19 (duplicate IP in global table)
-    ipam.iprange: 81 (overlap with existing range)
-  ```
-- Document the per-ct breakdown in the auditor's module
-  docstring so future readers know what to expect.
-
-**Testing:** extend the import-cli error tests with a fixture
-that yields three SKIPPED outcomes across two content types.
-Assert the summary block formats per-ct correctly. Run
-rescue-10 and verify the actual numbers.
-
-**Estimated Effort:** 1-2h.
-
-
 ### [FEAT-41] `--max-skipped` threshold for non-zero exit on SKIPPED rows
 
 **Context:** Source review R-4. Today
