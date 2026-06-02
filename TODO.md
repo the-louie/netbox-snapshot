@@ -319,42 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [REFACTOR-05] Pre-resolution deferred-field strip ordering
-
-**Context:** `src/nbsnap/import_/driver.py:_strip_deferred_fields_and_queue`
-runs at the end of `_resolve_body`, AFTER per-field FK
-resolution. If FK resolution drops the field (because the
-target was unresolvable), the strip pass cannot queue a
-DeferredFK for it and Phase-2 never patches.
-
-**Requirements:**
-
-- Re-arrange `_resolve_body` so the strip-and-queue runs
-  BEFORE per-field FK resolution.
-- Update `_strip_deferred_fields_and_queue` to queue
-  DeferredFK entries using the snapshot's pre-resolution
-  value (the natural-key form) and have Phase-2 resolve the
-  target NK at PATCH time. This already works because
-  Phase-2 looks up by NK against the destination index.
-- Adjust the existing dedup logic so it still triggers
-  whether the strip ran first or last.
-- Remove the now-unnecessary FK resolution attempt for any
-  field listed in `deferred_fields_by_ct`.
-
-**Testing:**
-
-- Update
-  `tests/unit/test_import_deferred_fields_strip.py` to
-  assert the strip happens before per-field resolution. Add
-  a regression case where a deferred field's target is not
-  resolvable but the strip still queues the field.
-- Run the full unit suite.
-- Re-run rescue-10 and confirm Phase-2 patched count is at
-  least as high as the postfix8 baseline (242).
-
-**Estimated Effort:** 1-2h.
-
-
 ### [REFACTOR-06] Instance-scoped `_KNOWN_CF_CACHE`
 
 **Context:** the customfield cache in

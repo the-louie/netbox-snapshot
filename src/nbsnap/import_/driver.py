@@ -344,6 +344,26 @@ def _resolve_body(
     # _id with the destination integer id. The standard loop
     # below then sees an already-resolved int and passes it
     # through untouched.
+    # Pre-resolution strip (REFACTOR-05). Pull the deferred-edge
+    # fields out before any FK resolver runs. If we let the
+    # field loop touch them first, a resolver miss would drop
+    # the field silently and Phase-2 would never PATCH; doing
+    # the strip first guarantees the DeferredFK queues even when
+    # the target is currently unresolvable on the destination.
+    # Phase-2 looks up the target NK against the destination
+    # NKIndex at PATCH time, so the queue only needs the raw NK
+    # form the snapshot already carries.
+    body = _strip_deferred_fields_and_queue(
+        body,
+        content_type=content_type,
+        current_nk=current_nk,
+        original_body=body,
+        deferred_fields_by_ct=deferred_fields_by_ct,
+        deferred_queue=deferred_queue,
+        openapi=openapi,
+        auditor=auditor,
+    )
+
     body = _resolve_polymorphic_id_pairs(
         body,
         openapi,
@@ -468,25 +488,6 @@ def _resolve_body(
                 )
             continue
 
-    # Final pass: strip deferred-edge fields from the resolved
-    # body and push DeferredFK entries so Phase-2 can
-    # PATCH them in once both endpoints exist. NetBox refuses
-    # POSTs whose cycle-closing FKs reference parents that are
-    # not yet "in the right state" (e.g. Device.primary_ip4
-    # referencing an IPAddress whose `assigned_object` is not
-    # set yet). Removing those fields here lets the Phase-1
-    # POST land cleanly; Phase-2's per-edge PATCH writes the
-    # FK once the cycle endpoints are all in place.
-    resolved = _strip_deferred_fields_and_queue(
-        resolved,
-        content_type=content_type,
-        current_nk=current_nk,
-        original_body=body,
-        deferred_fields_by_ct=deferred_fields_by_ct,
-        deferred_queue=deferred_queue,
-        openapi=openapi,
-        auditor=auditor,
-    )
     return resolved
 
 

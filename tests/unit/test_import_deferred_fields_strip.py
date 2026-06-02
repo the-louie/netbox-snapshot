@@ -388,3 +388,45 @@ def test_resolve_body_strips_deferred_field_and_queues_entry() -> None:
     assert len(queue) == 1
     assert queue[0].field_name == "primary_ip4"
     assert queue[0].child_content_type == "dcim.device"
+
+
+def test_strip_queues_even_when_target_unresolvable() -> None:
+    """REFACTOR-05 regression: the strip runs BEFORE per-field
+    resolution. A deferred field whose target is missing on the
+    destination still gets queued for Phase-2, because Phase-2
+    looks the target up at PATCH time. Before this change the
+    field would be dropped silently by the resolver and Phase-2
+    would never see it."""
+
+    from unittest.mock import MagicMock
+    from nbsnap.import_.driver import _resolve_body
+    from nbsnap.import_.nk_index import NKIndex
+    from nbsnap.import_.snapshot_index import SnapshotIndex
+    from nbsnap.natkey.registry import default as default_registry
+
+    # Empty destination index: the target IPAddress does NOT
+    # exist on the destination. Before REFACTOR-05 the per-field
+    # resolver would drop the field; with the strip moved first,
+    # the DeferredFK queues regardless of resolution outcome.
+    dest = NKIndex()
+    body = {
+        "name": "d39a",
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
+                        [[["d"], "D39A"], "Vlan600"]],
+    }
+    queue: list = []
+    out = _resolve_body(
+        "dcim.device", body, _device_schema(),
+        dest, MagicMock(get_all=MagicMock(return_value=iter([]))),
+        default_registry(),
+        snapshot_index=SnapshotIndex(),
+        processing_stack=set(),
+        deferred_queue=queue,
+        current_nk=(("hall-d",), "d39a"),
+        deferred_fields_by_ct={"dcim.device": {"primary_ip4"}},
+    )
+    assert "primary_ip4" not in out
+    assert out["name"] == "d39a"
+    # DeferredFK queued even though the target was unresolvable.
+    assert len(queue) == 1
+    assert queue[0].field_name == "primary_ip4"
