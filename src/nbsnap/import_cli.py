@@ -47,6 +47,10 @@ EXIT_ROW_FAILURES = 2
 EXIT_BAD_INVOCATION = 3
 EXIT_DESTINATION_UNREACHABLE = 4
 EXIT_UNEXPECTED = 5
+# FEAT-41: SKIPPED rows over a configured threshold. Distinct
+# from EXIT_ROW_FAILURES because SKIPPED is "data did not
+# replicate" while FAILED is "data was rejected on write".
+EXIT_SKIPPED_OVER_THRESHOLD = 6
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,25 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         help="show at most N top-offending (content_type, field) "
              "lines in the end-of-run audit block; default 10. "
              "The full set is always available in the audit log.",
+    )
+    parser.add_argument(
+        "--max-skipped",
+        type=int,
+        default=-1,
+        help="exit EXIT_SKIPPED_OVER_THRESHOLD (6) when the run "
+             "skipped more than N rows in total; default -1 means "
+             "unbounded. Per-content-type overrides via "
+             "--max-skipped-<content_type> always take precedence.",
+    )
+    parser.add_argument(
+        "--max-skipped-ct",
+        action="append",
+        default=[],
+        metavar="<content_type>=<N>",
+        help="per-content-type skip threshold, e.g. "
+             "`--max-skipped-ct ipam.ipaddress=5`. Repeatable. "
+             "Triggers EXIT_SKIPPED_OVER_THRESHOLD (6) when any "
+             "listed content type's SKIPPED count exceeds its N.",
     )
 
 
@@ -280,7 +303,31 @@ def run_import_cli(args: argparse.Namespace) -> int:
         summary, max_skew,
         allow_enum_dict_bypass=args.allow_enum_dict_bypass,
         max_parse_errors=args.max_parse_errors,
+        max_skipped=args.max_skipped,
+        max_skipped_ct=_parse_max_skipped_ct(args.max_skipped_ct),
     )
+
+
+def _parse_max_skipped_ct(values: list[str]) -> dict[str, int]:
+    """Parse --max-skipped-ct flag values into a dict.
+
+    Each value is `<content_type>=<N>`. Values that don't match
+    are silently ignored, which avoids a noisy argparse failure
+    for a user who mistypes a content type. The exit-code
+    helper logs a warning when the dict ends up empty but the
+    operator passed at least one --max-skipped-ct flag.
+    """
+
+    out: dict[str, int] = {}
+    for raw in values:
+        if "=" not in raw:
+            continue
+        ct, _, n = raw.partition("=")
+        try:
+            out[ct.strip()] = int(n)
+        except ValueError:
+            continue
+    return out
 
 
 def _format_issue(issue: dict | str) -> str:
@@ -310,6 +357,8 @@ def _compute_exit_code(
     *,
     allow_enum_dict_bypass: bool = False,
     max_parse_errors: int = 0,
+    max_skipped: int = -1,
+    max_skipped_ct: dict[str, int] | None = None,
 ) -> int:
     """Map a fully-categorised ImportSummary to a CLI exit code.
 
@@ -363,6 +412,23 @@ def _compute_exit_code(
                 f"  first failure: {summary.failures[0].message}\n"
             )
         return EXIT_ROW_FAILURES
+
+    # FEAT-41: SKIPPED gating. Per-ct thresholds win over the
+    # global threshold so an operator can say "fail on any
+    # ipam.ipaddress skip, tolerate up to 10 dcim.cable skips"
+    # with one flag invocation each.
+    per_ct = max_skipped_ct or {}
+    skipped_totals = {
+        ct: sum(reasons.values())
+        for ct, reasons in summary.skipped_by_ct.items()
+    }
+    over_per_ct = any(
+        skipped_totals.get(ct, 0) > limit for ct, limit in per_ct.items()
+    )
+    total_skipped = sum(skipped_totals.values())
+    over_global = max_skipped >= 0 and total_skipped > max_skipped
+    if over_per_ct or over_global:
+        return EXIT_SKIPPED_OVER_THRESHOLD
     return EXIT_OK
 
 

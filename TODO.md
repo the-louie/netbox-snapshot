@@ -319,44 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [FEAT-41] `--max-skipped` threshold for non-zero exit on SKIPPED rows
-
-**Context:** Source review R-4. Today
-`src/nbsnap/import_cli.py:_compute_exit_code` returns
-EXIT_OK (0) regardless of how many rows were SKIPPED.
-Unattended pipelines running `set -e` style gates do not
-notice when 2% of source data did not replicate. The
-postfix8 run hit 104 / 5153 = 2% silent loss.
-
-**Why this matters:** integration with CD pipelines requires
-exit-code granularity. Operators currently have to script a
-post-run audit-log inspection to apply policy.
-
-**Requirements:**
-
-- Add CLI flag `--max-skipped N` (default `0`, meaning "tolerate
-  no skips"). For backwards compatibility with the current
-  exit-code contract, default to `-1` (unbounded) initially and
-  document the upcoming default flip.
-- Add `--max-skipped-<content_type> N` overrides (parse the flag
-  family at parser-build time; collect into a `dict[str, int]`).
-- Extend `_compute_exit_code` to compare
-  `summary.skipped_by_ct` (from FEAT-40) against the thresholds
-  and return a new EXIT_SKIPPED_OVER_THRESHOLD (3) when
-  exceeded. Document in the CLI help text.
-- Document the new exit code in the operator runbook
-  (depends on DOC-01a).
-
-**Testing:** unit test in
-`tests/unit/test_import_cli_exit_codes.py` exercising
-`_compute_exit_code` with various skip counts and thresholds.
-End-to-end: re-run rescue-10 with
-`--max-skipped-ipam.ipaddress 5` and confirm exit code is
-EXIT_SKIPPED_OVER_THRESHOLD because 19 > 5.
-
-**Estimated Effort:** 2h. Depends on FEAT-40 landing first.
-
-
 ### [BUG-03] `_known_custom_fields_for` empty-set vs not-loaded ambiguity
 
 **Context:** Source review R-5.

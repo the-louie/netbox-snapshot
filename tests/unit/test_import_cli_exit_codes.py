@@ -167,3 +167,50 @@ def test_no_parse_errors_does_not_fail() -> None:
         _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=0)
         == EXIT_OK
     )
+
+
+def test_max_skipped_global_threshold_fires() -> None:
+    """FEAT-41: total SKIPPED above --max-skipped trips
+    EXIT_SKIPPED_OVER_THRESHOLD (6)."""
+
+    from nbsnap.import_cli import EXIT_SKIPPED_OVER_THRESHOLD
+    s = _summary()
+    s.skipped_by_ct = {"dcim.cable": {"no resolvable terminations": 4}}
+    code = _compute_exit_code(s, VersionSkew.MINOR, max_skipped=3)
+    assert code == EXIT_SKIPPED_OVER_THRESHOLD
+
+
+def test_max_skipped_negative_disables_global_gate() -> None:
+    """Default --max-skipped=-1 means unbounded; a SKIPPED
+    cloud does not flip the exit code."""
+
+    s = _summary()
+    s.skipped_by_ct = {"ipam.ipaddress": {"duplicate IP": 100}}
+    assert _compute_exit_code(s, VersionSkew.MINOR, max_skipped=-1) == EXIT_OK
+
+
+def test_max_skipped_per_ct_fires_independently() -> None:
+    """A per-content-type threshold trips even when the global
+    threshold is comfortable."""
+
+    from nbsnap.import_cli import EXIT_SKIPPED_OVER_THRESHOLD
+    s = _summary()
+    s.skipped_by_ct = {"ipam.ipaddress": {"duplicate IP": 19}}
+    code = _compute_exit_code(
+        s, VersionSkew.MINOR,
+        max_skipped=-1,
+        max_skipped_ct={"ipam.ipaddress": 5},
+    )
+    assert code == EXIT_SKIPPED_OVER_THRESHOLD
+
+
+def test_max_skipped_per_ct_under_threshold_is_ok() -> None:
+    """When the per-ct count fits, no exit-code flip."""
+
+    s = _summary()
+    s.skipped_by_ct = {"dcim.cable": {"no resolvable terminations": 4}}
+    code = _compute_exit_code(
+        s, VersionSkew.MINOR,
+        max_skipped_ct={"dcim.cable": 10},
+    )
+    assert code == EXIT_OK
