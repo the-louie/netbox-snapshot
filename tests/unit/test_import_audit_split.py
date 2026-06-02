@@ -371,3 +371,48 @@ def test_snapshot_index_has_content_type() -> None:
     idx._by_key[("dcim.site", ("hall-d",))] = {}
     assert idx.has_content_type("dcim.site") is True
     assert idx.has_content_type("dcim.region") is False
+
+
+def test_bypass_coerced_emits_one_event_per_field() -> None:
+    """BUG-01b: when the import-side coerce collapses an
+    enum-dict field on the way to a POST, the auditor records
+    a BYPASS_COERCED event so the operator can grep the audit
+    log and see which records were touched."""
+
+    from unittest.mock import MagicMock
+
+    from nbsnap.import_.upsert import UpsertOutcome, upsert
+
+    http = MagicMock()
+    http.base_url = "https://dest.example/"
+    http._cf_cache = None
+    http._cf_cache_failed = False
+    http.get_all.side_effect = lambda endpoint: iter([])
+    http.post.return_value = {"id": 42}
+
+    index = MagicMock()
+    index.ensure_built = MagicMock()
+    index.lookup.return_value = None
+    index.upsert_mapping = {}
+
+    auditor = Auditor()
+    upsert(
+        http,
+        content_type="dcim.site",
+        natural_key=("hall-a",),
+        body={
+            "slug": "hall-a",
+            "name": "Hall-A",
+            "status": {"value": "active", "label": "Active"},
+        },
+        index=index,
+        registry=MagicMock(),
+        auditor=auditor,
+    )
+    bypass = [
+        ev for ev in auditor.events
+        if ev.category is DropCategory.BYPASS_COERCED
+    ]
+    assert len(bypass) == 1
+    assert bypass[0].field_name == "status"
+    assert bypass[0].child_content_type == "dcim.site"

@@ -218,6 +218,7 @@ def run_import(
                 body=body,
                 index=index,
                 registry=registry,
+                auditor=auditor,
             )
             summary.counts[result.outcome] += 1
             if progress is not None:

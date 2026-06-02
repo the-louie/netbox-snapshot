@@ -42,7 +42,7 @@ def test_coerce_post_path_drops_none_values() -> None:
         "profile": None,   # the canonical bug case
         "length": None,
     }
-    out = _coerce_body_for_write(body, drop_nones=True)
+    out, _coerced = _coerce_body_for_write(body, drop_nones=True)
     assert "profile" not in out
     assert "length" not in out
     # Non-None fields survive.
@@ -56,7 +56,7 @@ def test_coerce_patch_path_keeps_none_values() -> None:
     the explicit null."""
 
     body = {"name": "Cable-1", "profile": None}
-    out = _coerce_body_for_write(body, drop_nones=False)
+    out, _coerced = _coerce_body_for_write(body, drop_nones=False)
     assert out["profile"] is None
 
 
@@ -65,7 +65,7 @@ def test_coerce_default_keeps_nones_for_backwards_compat() -> None:
     is False so existing callers behave identically to the
     pre-fix code."""
 
-    out = _coerce_body_for_write({"profile": None, "name": "x"})
+    out, _coerced = _coerce_body_for_write({"profile": None, "name": "x"})
     assert out["profile"] is None
 
 
@@ -79,7 +79,7 @@ def test_coerce_enum_dict_collapse_still_runs_alongside_none_drop() -> None:
         "status": {"value": "active", "label": "Active"},
         "profile": None,
     }
-    out = _coerce_body_for_write(body, drop_nones=True)
+    out, _coerced = _coerce_body_for_write(body, drop_nones=True)
     assert out["status"] == "active"
     assert "profile" not in out
 

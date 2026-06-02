@@ -53,6 +53,14 @@ class DropCategory(Enum):
     # inflates the operator's data-quality concern when the
     # real issue is destination policy or a tool gap.
     UPSERT_FAILED = "upsert_failed"
+    # A field was rewritten by the import-side `_collapse_enum_dict`
+    # coerce because the snapshot carries the legacy
+    # `{value, label}` shape. The record imported successfully,
+    # but the snapshot itself is stale and a re-export would
+    # avoid the coerce. The audit log carries one event per
+    # coerced field so an operator can verify which records
+    # the bypass touched (BUG-01b).
+    BYPASS_COERCED = "bypass_coerced"
 
 
 @dataclass

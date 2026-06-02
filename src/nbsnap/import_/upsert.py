@@ -301,8 +301,15 @@ def upsert(
     body: Mapping[str, Any],
     index: NKIndex,
     registry: NKRegistry,
+    auditor: Any = None,
 ) -> UpsertResult:
-    """Create-or-update one record on the destination."""
+    """Create-or-update one record on the destination.
+
+    When `auditor` is supplied, every field rewritten by the
+    write-side enum-dict coerce is recorded as a
+    `BYPASS_COERCED` audit event so the operator can inspect
+    which records the import-side coerce touched (BUG-01b).
+    """
 
     endpoint = CONTENT_TYPE_ENDPOINTS.get(content_type)
     if endpoint is None:
@@ -346,10 +353,14 @@ def upsert(
         # destination's known list so a look-ahead that fires
         # before the extras.customfield phase does not hit a
         # cascade of "Custom field X does not exist" rejections.
-        post_body = _filter_custom_fields(
-            _coerce_body_for_write(body, drop_nones=True),
-            http, content_type,
+        coerced_body, coerced_fields = _coerce_body_for_write(
+            body, drop_nones=True
         )
+        post_body = _filter_custom_fields(coerced_body, http, content_type)
+        if auditor is not None and coerced_fields:
+            _record_bypass_coerced(
+                auditor, content_type, natural_key, coerced_fields,
+            )
         try:
             created = http.post(endpoint, post_body)
         except Exception as exc:  # noqa: BLE001 - surface anything to audit
@@ -405,12 +416,14 @@ def upsert(
         # POST would otherwise PATCH unknown keys back and
         # trigger the same HTTP 400 the POST filter exists to
         # prevent.
+        coerced_diff, patch_coerced_fields = _coerce_body_for_write(diff)
+        if auditor is not None and patch_coerced_fields:
+            _record_bypass_coerced(
+                auditor, content_type, natural_key, patch_coerced_fields,
+            )
         http.patch(
             f"{endpoint}{existing_id}/",
-            _filter_custom_fields(
-                _coerce_body_for_write(diff),
-                http, content_type,
-            ),
+            _filter_custom_fields(coerced_diff, http, content_type),
         )
     except Exception as exc:  # noqa: BLE001
         return UpsertResult(
@@ -442,9 +455,35 @@ def _matches(current: Any, desired: Any) -> bool:
     return bool(current == desired)
 
 
+def _record_bypass_coerced(
+    auditor: Any, content_type: str,
+    natural_key: NaturalKey, fields: list[str],
+) -> None:
+    """Emit one BYPASS_COERCED audit event per coerced field.
+
+    The auditor dedups on the standard quadruple so a record
+    with five coerced fields produces five distinct events
+    (different field names); a record processed twice
+    (e.g. via the look-ahead path then the main phase) only
+    counts each (record, field) once.
+    """
+    from nbsnap.import_.audit import DropCategory, DropEvent
+
+    for field_name in fields:
+        auditor.record(DropEvent(
+            category=DropCategory.BYPASS_COERCED,
+            child_content_type=content_type,
+            child_nk=tuple(natural_key) if natural_key else (),
+            field_name=field_name,
+            target_content_type=content_type,
+            target_nk=tuple(natural_key) if natural_key else (),
+            message="snapshot value collapsed by import-side enum-dict coerce",
+        ))
+
+
 def _coerce_body_for_write(
     body: Mapping[str, Any], *, drop_nones: bool = False
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[str]]:
     """Defensive write-side body coercion.
 
     Two transforms applied, both safe to run on a body that has
@@ -487,9 +526,15 @@ def _coerce_body_for_write(
     from nbsnap.export.extractor import _collapse_enum_dict
 
     out: dict[str, Any] = {}
+    coerced_fields: list[str] = []
     for k, v in body.items():
         coerced = _collapse_enum_dict(v)
+        if coerced is not v:
+            # The enum-dict shape was actually collapsed.
+            # Caller audits these as BYPASS_COERCED so the
+            # operator sees per-field forensic detail.
+            coerced_fields.append(k)
         if drop_nones and coerced is None:
             continue
         out[k] = coerced
-    return out
+    return out, coerced_fields

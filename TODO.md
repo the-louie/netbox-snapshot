@@ -319,41 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [BUG-01b] Add `DropCategory.BYPASS_COERCED` and emit per-row coerce audit when bypass is active
-
-**Context:** sub-ticket of BUG-01. After BUG-01a hardens the
-preflight scan, operators still get no per-row trail of what
-the bypass coerce actually rewrote during the run. This
-sub-ticket records every coerced field as an audit event so
-forensic inspection survives.
-
-**Requirements:**
-
-- Add `BYPASS_COERCED` (or similar) to `DropCategory` in
-  `src/nbsnap/import_/audit.py`. Update the docstring
-  describing the category set.
-- Wire `_collapse_enum_dict` (or the caller in upsert.py)
-  to emit a `DropEvent(category=BYPASS_COERCED, ...)` when
-  `--allow-enum-dict-bypass` is active AND a field was
-  actually rewritten. Pass the auditor through the existing
-  call chain from `run_import`. Dedup on
-  `(content_type, natural_key, field)` so a record with five
-  enum-dict fields produces five events, not five per call.
-- Surface the count in the CLI summary alongside the
-  existing categories.
-
-**Testing:**
-
-- Extend `tests/unit/test_import_audit_split.py` with a
-  test asserting one `BYPASS_COERCED` event lands when a
-  body's `status` enum-dict is collapsed under the bypass
-  flag.
-- Re-run rescue-10 with the bypass active; confirm the
-  audit JSONL contains BYPASS_COERCED rows matching the
-  rescue-10 known enum-dict fields (status, airflow,
-  weight_unit, filter_logic, type).
-
-**Estimated Effort:** 1-2h. Depends on BUG-01a.
 ### [FEAT-40] Per-content-type SKIPPED breakdown in CLI summary
 
 **Context:** Source review R-3. Current
