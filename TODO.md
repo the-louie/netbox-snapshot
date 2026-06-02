@@ -319,39 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [REFACTOR-08] `_WARNED_MISSING_FK` moved onto `ImportSummary`
-
-**Context:** the warn-once dedup sentinel in
-`src/nbsnap/import_/driver.py` is a module global. A second
-`run_import` invocation in the same process silently misses
-warnings for already-seen triples. CLI is unaffected because
-each invocation is a fresh process, but library callers and
-test runs share the global.
-
-**Requirements:**
-
-- Add `_warned_missing_fk: set[tuple[str, str, str]]` to
-  `ImportSummary` (default-factory empty set).
-- Update `_warn_dropped` in `src/nbsnap/import_/driver.py` to
-  take the set as a parameter rather than reading the module
-  global.
-- Thread the set through `_resolve_body`,
-  `_resolve_polymorphic_id_pairs`,
-  `_resolve_termination_lists`, and `_safe_resolve_m2m`. If
-  REFACTOR-01 has landed, attach the set to `ResolveContext`
-  and read from there.
-- Delete `_WARNED_MISSING_FK` once no caller remains.
-
-**Testing:**
-
-- Add a test asserting two consecutive `run_import` calls in
-  the same process both emit the `dropping FK` warning for a
-  given triple (the global today would suppress the second).
-- Run the full unit suite, confirm green.
-
-**Estimated Effort:** 30 min - 1h.
-
-
 ### [BUG-01a] Enum-dict preflight scans every row and records structured per-file counts
 
 **Context:** Source review item R-1 at

@@ -63,9 +63,9 @@ def test_resolve_m2m_returns_list_of_ids() -> None:
 def test_safe_resolve_m2m_drops_missing_items() -> None:
     """One missing m2m item must not lose the whole list."""
 
-    from nbsnap.import_.driver import _WARNED_MISSING_FK, _safe_resolve_m2m
+    from nbsnap.import_.driver import _safe_resolve_m2m
 
-    _WARNED_MISSING_FK.clear()
+
     http = MagicMock()
     http.get_all.return_value = iter([])
     index = NKIndex()
@@ -85,10 +85,10 @@ def test_safe_resolve_m2m_drops_missing_items() -> None:
 def test_resolve_body_keeps_other_fields_when_m2m_target_missing() -> None:
     """A missing tag must drop the m2m entry, not abort the whole record."""
 
-    from nbsnap.import_.driver import _WARNED_MISSING_FK, _resolve_body
+    from nbsnap.import_.driver import _resolve_body
     from nbsnap.schema.openapi import OpenAPI
 
-    _WARNED_MISSING_FK.clear()
+
     http = MagicMock()
     http.get_all.return_value = iter([])
 

@@ -87,12 +87,6 @@ def test_out_of_scope_drop_does_not_emit_warning(caplog: pytest.LogCaptureFixtur
     classifies as OUT_OF_SCOPE and skips the warning. The
     audit picks the event up; stderr stays clean."""
 
-    # Clear the module-level "already warned" sentinel so the
-    # test does not race against earlier tests in the same
-    # session.
-    from nbsnap.import_.driver import _WARNED_MISSING_FK
-    _WARNED_MISSING_FK.clear()
-
     auditor = Auditor()
     body = {"slug": "hall-d", "region": ["elmia"]}
     http = MagicMock(get_all=MagicMock(return_value=iter([])))
@@ -130,9 +124,6 @@ def test_missing_from_source_drop_still_emits_warning(
     specific NK is missing, the resolver still warns because
     that signals a real data gap. The audit also records it
     in a separate bucket."""
-
-    from nbsnap.import_.driver import _WARNED_MISSING_FK
-    _WARNED_MISSING_FK.clear()
 
     # Seed the snapshot with a different region NK so the
     # classifier picks MISSING_FROM_SOURCE.

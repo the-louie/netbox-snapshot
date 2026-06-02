@@ -15,14 +15,16 @@ import logging
 import pytest
 
 from nbsnap.import_.audit import DropCategory
-from nbsnap.import_.driver import _WARNED_MISSING_FK, _warn_dropped
+from nbsnap.import_.driver import _warn_dropped
 
 
-@pytest.fixture(autouse=True)
-def _reset_dedup() -> None:
-    _WARNED_MISSING_FK.clear()
-    yield
-    _WARNED_MISSING_FK.clear()
+@pytest.fixture()
+def warn_dedup() -> set[tuple[str, str, str]]:
+    """A fresh per-test dedup set, mirroring what
+    `ImportSummary._warned_missing_fk` carries during a real
+    run. REFACTOR-08 moved the dedup off the module global."""
+
+    return set()
 
 
 def test_missing_from_source_warning_points_at_source(caplog) -> None:
@@ -58,17 +60,45 @@ def test_unknown_category_keeps_legacy_text(caplog) -> None:
     assert msg.startswith("dropping FK dcim.device.site")
 
 
-def test_warning_is_emitted_once_per_triple(caplog) -> None:
+def test_warning_is_emitted_once_per_triple(caplog, warn_dedup) -> None:
     """Dedup keyed on (ct, field, target) so flooding the log
-    with the same warning is impossible even across categories."""
+    with the same warning is impossible even across categories.
+    REFACTOR-08: the dedup set is per-call (and per-summary in a
+    real run); the caller passes it explicitly."""
 
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _warn_dropped(
             "dcim.device", "site", "dcim.site", KeyError("nope"),
             category=DropCategory.MISSING_FROM_SOURCE,
+            warn_dedup=warn_dedup,
         )
         _warn_dropped(
             "dcim.device", "site", "dcim.site", KeyError("nope"),
             category=DropCategory.UPSERT_FAILED,
+            warn_dedup=warn_dedup,
         )
     assert len(caplog.messages) == 1
+
+
+def test_two_summaries_dedup_independently(caplog) -> None:
+    """REFACTOR-08 regression: two `run_import` calls (modelled
+    here as two distinct dedup sets) both emit the first
+    warning. Before this change the second call inherited the
+    first's suppressions because the dedup was a module global."""
+
+    set_a: set[tuple[str, str, str]] = set()
+    set_b: set[tuple[str, str, str]] = set()
+    with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
+        _warn_dropped(
+            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            category=DropCategory.MISSING_FROM_SOURCE,
+            warn_dedup=set_a,
+        )
+        _warn_dropped(
+            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            category=DropCategory.MISSING_FROM_SOURCE,
+            warn_dedup=set_b,
+        )
+    # Each set saw the triple for the first time, both warnings
+    # fired.
+    assert len(caplog.messages) == 2

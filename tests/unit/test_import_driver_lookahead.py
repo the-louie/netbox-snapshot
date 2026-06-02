@@ -118,9 +118,8 @@ def test_lookahead_drops_unrecoverable_fk_with_warning() -> None:
     """Both indexes miss, the FK gets dropped via the existing
     warn-and-drop path. No exception, no new DeferredFK."""
 
-    from nbsnap.import_.driver import _WARNED_MISSING_FK
 
-    _WARNED_MISSING_FK.clear()
+
 
     http = MagicMock()
     http.get_all.return_value = iter([])

@@ -65,6 +65,12 @@ class ImportSummary:
     # non-empty list here points at hand-edited or truncated
     # snapshot files.
     parse_errors: list[dict[str, Any]] = field(default_factory=list)
+    # Per-run dedup for `_warn_dropped` (REFACTOR-08). Used to
+    # be a module global; making it instance-scoped means two
+    # `run_import` calls in the same process both surface
+    # their first drop warning instead of the second silently
+    # inheriting the first's suppressions.
+    _warned_missing_fk: set[tuple[str, str, str]] = field(default_factory=set)
 
 
 def run_import(
@@ -203,6 +209,7 @@ def run_import(
                 auditor=auditor,
                 failed_keys=failed_keys,
                 deferred_fields_by_ct=deferred_fields_by_ct,
+                warn_dedup=summary._warned_missing_fk,
             )
             result = upsert(
                 http,
@@ -308,6 +315,7 @@ def _resolve_body(
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
+    warn_dedup: set[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any]:
     """Resolve every FK NK in `body` back to a destination id.
 
@@ -389,6 +397,7 @@ def _resolve_body(
         owner_ct=content_type,
         failed_keys=failed_keys,
         deferred_fields_by_ct=deferred_fields_by_ct,
+        warn_dedup=warn_dedup,
     )
 
     # Pre-pass: resolve Cable termination dicts. The
@@ -411,6 +420,7 @@ def _resolve_body(
         owner_ct=content_type,
         failed_keys=failed_keys,
         deferred_fields_by_ct=deferred_fields_by_ct,
+        warn_dedup=warn_dedup,
     )
 
     resolved: dict[str, Any] = {}
@@ -426,6 +436,7 @@ def _resolve_body(
                 auditor=auditor,
                 current_nk=current_nk,
                 failed_keys=failed_keys,
+                warn_dedup=warn_dedup,
             )
             continue
         if isinstance(value, dict) and "object_type" in value:
@@ -434,7 +445,11 @@ def _resolve_body(
                     value, index, http=http, registry=registry
                 )
             except (KeyError, ValueError) as exc:
-                _warn_dropped(content_type, field_name, value.get("object_type", "?"), exc)
+                _warn_dropped(
+                    content_type, field_name,
+                    value.get("object_type", "?"), exc,
+                    warn_dedup=warn_dedup,
+                )
             continue
         try:
             resolved[field_name] = resolve_simple_fk(
@@ -496,6 +511,7 @@ def _resolve_body(
                 _warn_dropped(
                     content_type, field_name, spec.fk_target, exc,
                     category=category,
+                    warn_dedup=warn_dedup,
                 )
             continue
 
@@ -644,6 +660,7 @@ def _resolve_polymorphic_id_pairs(
     owner_ct: str,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
+    warn_dedup: set[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any]:
     """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
 
@@ -781,6 +798,7 @@ def _resolve_polymorphic_id_pairs(
             if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                 _warn_dropped(
                     owner_ct, id_field, target_ct, exc, category=category,
+                    warn_dedup=warn_dedup,
                 )
             new_body.pop(id_field, None)
             new_body.pop(type_field, None)
@@ -803,6 +821,7 @@ def _resolve_termination_lists(
     owner_ct: str,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
+    warn_dedup: set[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any]:
     """Convert termination dicts from snapshot to NetBox shape.
 
@@ -921,6 +940,7 @@ def _resolve_termination_lists(
                     _warn_dropped(
                         owner_ct, field_name, target_ct, exc,
                         category=category,
+                        warn_dedup=warn_dedup,
                     )
 
         if resolved_items:
@@ -1106,6 +1126,7 @@ def _safe_resolve_m2m(
     auditor: Auditor | None = None,
     current_nk: tuple[Any, ...] = (),
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    warn_dedup: set[tuple[str, str, str]] | None = None,
 ) -> list[int]:
     """Resolve each m2m item independently; drop the ones that miss.
 
@@ -1137,15 +1158,14 @@ def _safe_resolve_m2m(
                 target_ct=parent_ct,
                 failed_keys=failed_keys,
             )
-            _warn_dropped(content_type, field_name, parent_ct, exc)
+            _warn_dropped(
+                content_type, field_name, parent_ct, exc,
+                warn_dedup=warn_dedup,
+            )
             continue
         if resolved is not None:
             out.append(resolved)
     return out
-
-
-# Module-level "already warned" sentinel, dedupes per (ct, field, target).
-_WARNED_MISSING_FK: set[tuple[str, str, str]] = set()
 
 
 def _warn_dropped(
@@ -1155,6 +1175,7 @@ def _warn_dropped(
     exc: Exception,
     *,
     category: DropCategory | None = None,
+    warn_dedup: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Log once per (ct, field, target) triple when an FK is dropped.
 
@@ -1174,10 +1195,11 @@ def _warn_dropped(
 
     import logging
 
-    key = (content_type, field_name, target)
-    if key in _WARNED_MISSING_FK:
-        return
-    _WARNED_MISSING_FK.add(key)
+    if warn_dedup is not None:
+        key = (content_type, field_name, target)
+        if key in warn_dedup:
+            return
+        warn_dedup.add(key)
     detail = exc.args[0] if exc.args else str(exc)
     log = logging.getLogger(__name__)
     if category is DropCategory.MISSING_FROM_SOURCE:
