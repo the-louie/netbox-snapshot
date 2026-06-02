@@ -180,6 +180,25 @@ class NetboxHTTP:
         # transport tests do not require a live socket.
         self._session = session if session is not None else requests.Session()
 
+        # Instance-scoped custom-field cache (REFACTOR-06). The
+        # cache used to be a module global keyed by base_url,
+        # which meant a test that targeted a new base URL and
+        # forgot to clear it could mask stale-cache regressions.
+        # Keying off the instance makes each NetboxHTTP a clean
+        # slate without ceremony.
+        self._cf_cache: dict[str, set[str]] | None = None
+        self._cf_cache_failed: bool = False
+
+    def clear_cf_cache(self) -> None:
+        """Drop the per-instance custom-field cache.
+
+        Call this after a custom-field upsert phase so subsequent
+        record upserts re-read the destination's updated
+        custom-field registry.
+        """
+        self._cf_cache = None
+        self._cf_cache_failed = False
+
     # ------------------------------------------------------------------
     # Public diagnostics
     # ------------------------------------------------------------------

@@ -75,10 +75,6 @@ class UpsertResult:
 # that case the filter degrades to "do not filter" so an
 # unreachable customfield endpoint cannot cause silent data
 # loss on custom_fields.
-_KNOWN_CF_CACHE: dict[str, dict[str, set[str]]] = {}
-_FETCH_FAILED_SENTINEL = "_fetch_failed"
-
-
 def _load_destination_customfields(http: NetboxHTTP) -> dict[str, set[str]]:
     """Walk every customfield row on the destination and index
     each by every content type it applies to.
@@ -125,23 +121,24 @@ def _known_custom_fields_for(http: NetboxHTTP, content_type: str) -> set[str] | 
     custom fields for that content type.
     """
 
-    cache_key = getattr(http, "base_url", "default")
-    if cache_key in _KNOWN_CF_CACHE:
-        cached = _KNOWN_CF_CACHE[cache_key]
-        if _FETCH_FAILED_SENTINEL in cached:
-            return None
+    if getattr(http, "_cf_cache_failed", False):
+        return None
+    cached = getattr(http, "_cf_cache", None)
+    if cached is not None:
         return cached.get(content_type, set())
 
     try:
         by_ct = _load_destination_customfields(http)
     except Exception:  # noqa: BLE001 - degrade to do-not-filter on any error
-        # Mark the cache as failed so the filter degrades to
-        # do-not-filter rather than retrying the broken fetch
-        # on every record.
-        _KNOWN_CF_CACHE[cache_key] = {_FETCH_FAILED_SENTINEL: set()}
+        # Mark the instance cache as failed so the filter
+        # degrades to do-not-filter rather than retrying the
+        # broken fetch on every record.
+        if hasattr(http, "_cf_cache_failed"):
+            http._cf_cache_failed = True
         return None
 
-    _KNOWN_CF_CACHE[cache_key] = by_ct
+    if hasattr(http, "_cf_cache"):
+        http._cf_cache = by_ct
     return by_ct.get(content_type, set())
 
 

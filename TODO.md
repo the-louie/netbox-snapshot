@@ -319,42 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [REFACTOR-06] Instance-scoped `_KNOWN_CF_CACHE`
-
-**Context:** the customfield cache in
-`src/nbsnap/import_/upsert.py` is a module global keyed by
-`http.base_url`. Test isolation requires explicit
-`_KNOWN_CF_CACHE.clear()` in fixtures. A test that targets a
-new base URL and forgets to clear can mask stale-cache
-regressions.
-
-**Requirements:**
-
-- Move the cache from a module global onto the `NetboxHTTP`
-  instance. Add a `_cf_cache: dict[str, set[str]]` attribute
-  initialised in `NetboxHTTP.__init__`.
-- Update `_known_custom_fields_for` and
-  `_load_destination_customfields` in `upsert.py` to read
-  and write `http._cf_cache` instead of the module global.
-- Add a `NetboxHTTP.clear_cf_cache()` helper for callers
-  that need to invalidate after a customfield phase ran.
-- Remove `_KNOWN_CF_CACHE` and `_FETCH_FAILED_SENTINEL` from
-  `upsert.py`; rename the sentinel into a class constant on
-  NetboxHTTP if still needed.
-
-**Testing:**
-
-- Update
-  `tests/unit/test_import_custom_fields_filter.py` to drop
-  the explicit `_KNOWN_CF_CACHE.clear()` in setup_function;
-  each test creates a fresh `NetboxHTTP` mock so isolation
-  works naturally.
-- Add one test asserting two NetboxHTTP instances against
-  the same base URL maintain separate caches.
-
-**Estimated Effort:** 1h.
-
-
 ### [REFACTOR-07] `ProgressReporter` accepts auditor at construction
 
 **Context:** `src/nbsnap/import_/progress.py:ProgressReporter`

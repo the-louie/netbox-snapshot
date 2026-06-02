@@ -33,7 +33,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from nbsnap.import_.upsert import (
-    _KNOWN_CF_CACHE,
     _filter_custom_fields,
     _known_custom_fields_for,
 )
@@ -41,21 +40,22 @@ from nbsnap.import_.upsert import (
 
 def _fake_http(rows: list, *, base_url: str = "https://dest.example/") -> MagicMock:
     """A MagicMock NetboxHTTP whose `get_all` yields the
-    provided rows when the customfield endpoint is queried."""
+    provided rows when the customfield endpoint is queried.
+
+    The mock carries `_cf_cache=None` and
+    `_cf_cache_failed=False` so the upsert helpers' instance-
+    scoped cache (REFACTOR-06) treats each fake client as
+    cold.
+    """
 
     http = MagicMock()
     http.base_url = base_url
+    http._cf_cache = None
+    http._cf_cache_failed = False
     http.get_all.side_effect = lambda endpoint: iter(
         rows if "custom-fields" in endpoint else []
     )
     return http
-
-
-def setup_function() -> None:
-    """Wipe the module-level cache before each test so the
-    test order does not matter."""
-
-    _KNOWN_CF_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -191,3 +191,21 @@ def test_filter_handles_all_unknown_keys() -> None:
     out = _filter_custom_fields(body, http, "dcim.rack")
     assert out["custom_fields"] == {}
     assert out["name"] == "C1"
+
+
+def test_two_instances_keep_separate_caches() -> None:
+    """REFACTOR-06: two NetboxHTTP-like clients with the same
+    base_url maintain independent custom-field caches. Before
+    the instance-scoped move, the second client would see the
+    first's cache and skip its own GET."""
+
+    http_a = _fake_http(
+        [{"name": "field_a", "object_types": ["dcim.site"]}],
+        base_url="https://dest.example/",
+    )
+    http_b = _fake_http(
+        [{"name": "field_b", "object_types": ["dcim.site"]}],
+        base_url="https://dest.example/",
+    )
+    assert _known_custom_fields_for(http_a, "dcim.site") == {"field_a"}
+    assert _known_custom_fields_for(http_b, "dcim.site") == {"field_b"}
