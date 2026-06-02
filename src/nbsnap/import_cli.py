@@ -91,6 +91,14 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "more than N malformed JSONL rows; default 0 (any "
              "parse error fails the run)",
     )
+    parser.add_argument(
+        "--audit-summary-limit",
+        type=int,
+        default=10,
+        help="show at most N top-offending (content_type, field) "
+             "lines in the end-of-run audit block; default 10. "
+             "The full set is always available in the audit log.",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -235,7 +243,9 @@ def run_import_cli(args: argparse.Namespace) -> int:
         UpsertOutcome.FAILED,
     ):
         sys.stderr.write(f"  {outcome.value}: {summary.counts.get(outcome, 0)}\n")
-    sys.stderr.write(summary.auditor.render_summary())
+    sys.stderr.write(
+        summary.auditor.render_summary(limit=args.audit_summary_limit)
+    )
     audit_path = args.audit_out or (in_dir / "audit.jsonl")
     summary.auditor.write_jsonl(audit_path)
     sys.stderr.write(f"  audit log: {audit_path}\n")

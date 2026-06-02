@@ -95,7 +95,7 @@ def test_render_summary_when_no_events() -> None:
 
 
 def test_render_summary_lists_top_offenders() -> None:
-    """The top-5 offending (content_type, field) list shows
+    """The top-offending (content_type, field) list shows
     the most frequent pairs first."""
 
     a = Auditor()
@@ -105,6 +105,42 @@ def test_render_summary_lists_top_offenders() -> None:
     # distinct under target_nk.
     text = a.render_summary()
     assert "dcim.site.region: 7" in text
+
+
+def test_render_summary_caps_at_limit_with_trailer() -> None:
+    """FEAT-48: when more than `limit` distinct (ct, field)
+    pairs exist, the rendered summary shows the top `limit`
+    and trails with `... and N more`."""
+
+    a = Auditor()
+    # 15 distinct (ct, field) pairs so the cap kicks in.
+    for i in range(15):
+        a.record(_event(
+            child_ct=f"dcim.thing{i}",
+            field_name="field",
+            target_nk=(f"t-{i}",),
+        ))
+    text = a.render_summary(limit=10)
+    pair_lines = [
+        line for line in text.splitlines()
+        if line.strip().startswith("dcim.thing")
+    ]
+    assert len(pair_lines) == 10
+    assert "and 5 more" in text
+
+
+def test_render_summary_no_trailer_when_under_limit() -> None:
+    """With fewer pairs than the limit, no trailer fires."""
+
+    a = Auditor()
+    for i in range(3):
+        a.record(_event(
+            child_ct=f"dcim.thing{i}",
+            field_name="field",
+            target_nk=(f"t-{i}",),
+        ))
+    text = a.render_summary(limit=10)
+    assert "more (see audit log)" not in text
 
 
 # ---------------------------------------------------------------------------

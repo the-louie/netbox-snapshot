@@ -1160,36 +1160,6 @@ VERIFIED_MISMATCH.
 enum.
 
 
-### [FEAT-48] Audit summary "top offending" lifts the 5-entry cap
-
-**Context:** Source review R-16.
-`src/nbsnap/import_/audit.py:Auditor.render_summary` slices
-the by-pair counter at `[:5]`. The cap is arbitrary; on a
-larger snapshot with 20+ distinct drop sites, the operator
-sees only the top 5.
-
-**Why this matters:** truncating the top-N list hides drop
-sites that may individually be small but collectively
-explain a 10%+ skip rate. The "and N more" line is missing.
-
-**Requirements:**
-
-- Show all entries when the count is <= 10. Cap at 10 when
-  greater, with a trailing `... and N more (see audit log)`
-  line.
-- Sort by category then by count so OUT_OF_SCOPE and
-  MISSING_FROM_SOURCE separate visually in the summary.
-- Optional: `--audit-summary-limit N` CLI flag to set the
-  cap.
-
-**Testing:** unit test in
-`tests/unit/test_import_audit_split.py` with 15 distinct
-drop sites; assert the rendered summary shows 10 + "and 5
-more" trailer.
-
-**Estimated Effort:** 30 min.
-
-
 ### [FEAT-49] Exit-code bitmask reflecting SKIPPED granularity and bypass
 
 **Context:** Source review R-17.

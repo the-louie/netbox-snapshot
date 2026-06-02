@@ -145,12 +145,18 @@ class Auditor:
             for event in self.events:
                 fp.write(json.dumps(event.to_json(), sort_keys=True) + "\n")
 
-    def render_summary(self) -> str:
+    def render_summary(self, *, limit: int = 10) -> str:
         """Build the stderr-friendly summary block.
 
         Format: leading "audit:" header, per-category counts, then
-        a "top offending (content_type, field)" list capped at five
-        entries to keep the terminal output digestible.
+        a "top offending (content_type, field)" list. The list
+        shows every distinct site when the total is `<= limit`, and
+        is capped with an `... and N more (see audit log)` trailer
+        when above.
+
+        `limit` defaults to 10 so the terminal output stays
+        digestible. The CLI's `--audit-summary-limit` flag overrides
+        this for operators digging into a drop-heavy import.
         """
 
         if not self.events:
@@ -165,8 +171,13 @@ class Auditor:
         for cat in DropCategory:
             count = by_category.get(cat.value, 0)
             out.append(f"    {cat.value}: {count}")
-        top = sorted(by_pair.items(), key=lambda kv: -kv[1])[:5]
-        out.append("    top offending (content_type, field):")
-        for (ct, fld), n in top:
-            out.append(f"      {ct}.{fld}: {n}")
+        if limit > 0:
+            ranked = sorted(by_pair.items(), key=lambda kv: -kv[1])
+            top = ranked[:limit]
+            out.append("    top offending (content_type, field):")
+            for (ct, fld), n in top:
+                out.append(f"      {ct}.{fld}: {n}")
+            remainder = len(ranked) - len(top)
+            if remainder > 0:
+                out.append(f"      ... and {remainder} more (see audit log)")
         return "\n".join(out) + "\n"
