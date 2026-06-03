@@ -70,6 +70,10 @@ class ImportSummary:
     # (which holds permanent 4xx) so the audit can render
     # transient failures as UPSERT_FAILED_TRANSIENT.
     transient_keys: set[tuple[str, tuple[Any, ...]]] = field(default_factory=set)
+    # REFACTOR-01a: optional handle to the ResolveContext the
+    # driver built for this run. None until run_import attaches
+    # one; used by tests that need to introspect resolver state.
+    _ctx: Any = None
     # Per-run dedup for `_warn_dropped` (REFACTOR-08). Used to
     # be a module global; making it instance-scoped means two
     # `run_import` calls in the same process both surface
@@ -202,6 +206,29 @@ def run_import(
         deferred_fields_by_ct.setdefault(ct, set()).update(fields)
 
     auditor = summary.auditor
+
+    # REFACTOR-01a: bundle the resolver state once so subsequent
+    # ticket subtasks (01b, 01c) can migrate call sites to take
+    # `ctx` instead of threading ten kwargs through five
+    # signatures. Built but not yet consumed; the migration of
+    # _try_lookahead/resolve_or_create to read from ctx lands in
+    # REFACTOR-01b.
+    from nbsnap.import_.resolve_context import ResolveContext
+    ctx = ResolveContext(
+        http=http,
+        index=index,
+        registry=registry,
+        openapi=openapi,
+        snapshot_index=snapshot_index,
+        processing_stack=processing_stack,
+        deferred_queue=deferred_queue,
+        auditor=auditor,
+        failed_keys=failed_keys,
+        transient_keys=summary.transient_keys,
+        deferred_fields_by_ct=deferred_fields_by_ct,
+        warn_dedup=summary._warned_missing_fk,
+    )
+    summary._ctx = ctx  # expose for tests / 01b migration
 
     # If the caller asked for path-based progress reporting,
     # construct the ProgressReporter here, with the auditor

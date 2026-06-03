@@ -90,45 +90,6 @@ assertion lists the missing endpoints.
 ## Open, Phase 5, Import engine
 
 
-### [REFACTOR-01a] Define `ResolveContext` dataclass and build it in `run_import`
-
-**Context:** the code review at
-`__doc/code_reviews/20260615-1437_import_code_post_lp_review.md`
-flagged the resolver call graph in `src/nbsnap/import_/driver.py`
-as a DRY violation. Eight to ten parameters (`http`, `index`,
-`registry`, `snapshot_index`, `processing_stack`,
-`deferred_queue`, `auditor`, `failed_keys`,
-`deferred_fields_by_ct`, `openapi`) thread through five call
-sites; one missed forward silently disables a feature. This
-sub-ticket lands only the dataclass and its construction
-point so subsequent sub-tickets can migrate call sites.
-
-**Requirements:**
-
-- Add a new module
-  `src/nbsnap/import_/resolve_context.py` with a frozen
-  dataclass `ResolveContext` carrying the ten fields. Use
-  `TYPE_CHECKING` imports to avoid runtime cycles with
-  `lookahead.py` and `driver.py`.
-- In `src/nbsnap/import_/driver.py:run_import`, construct
-  `ctx = ResolveContext(http=http, index=index, ...)` once,
-  after the look-ahead state objects exist. Do not yet pass
-  `ctx` to any callee; migration lands in 01b and 01c.
-- Export `ResolveContext` from `nbsnap.import_` via
-  `__init__.py`.
-
-**Testing:**
-
-- Create `tests/unit/test_resolve_context.py` with a smoke
-  test that builds a `ResolveContext` from mocks and asserts
-  each field is accessible.
-- Run the existing import test suite, confirm no regression.
-- Confirm `from nbsnap.import_ import ResolveContext` works
-  from a Python REPL.
-
-**Estimated Effort:** 1-2h.
-
-
 ### [REFACTOR-01b] Migrate `_try_lookahead` and `resolve_or_create` to accept `ResolveContext`
 
 **Context:** sub-ticket of REFACTOR-01. With the dataclass
