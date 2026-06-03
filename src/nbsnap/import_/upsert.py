@@ -210,13 +210,27 @@ def _filter_custom_fields(
 # Add entries sparingly, every entry hides a class of failure
 # from the operator's primary error count, so the explanation
 # field should clearly tell them what to investigate.
-_POST_FAILURE_SKIP_PATTERNS: list[dict[str, str]] = [
+import re
+
+# BUG-05: structural matchers tolerate cosmetic NetBox error
+# rewording (e.g. "addresses overlap with range" -> "addresses
+# overlap with the range") because each pattern is a regex.
+# The `keywords` list backs the "near-miss" detector: when an
+# error text contains the keywords but does NOT match the
+# regex, we log at INFO so a maintainer notices NetBox drifted.
+# `verified_against` documents the last NetBox release the
+# regex was confirmed against; refresh by running the rescue
+# loop against a newer NetBox and updating either the version
+# tag or the regex (whichever drifted).
+_POST_FAILURE_SKIP_PATTERNS: list[dict[str, Any]] = [
     {
         "content_type": "ipam.iprange",
-        # Anchor on the multi-word phrase NetBox always emits
-        # for the overlap rejection. A bare "overlap" would
-        # collide with unrelated text containing that word.
-        "match": "addresses overlap with range",
+        "regex": re.compile(
+            r"addresses\s+overlap\s+with\s+(?:the\s+)?range",
+            re.IGNORECASE,
+        ),
+        "keywords": ("addresses", "overlap", "range"),
+        "verified_against": "NetBox 4.6.2",
         "explanation": (
             "iprange refused due to overlap with an existing range. "
             "The source NetBox allowed this overlap; the destination's "
@@ -226,10 +240,12 @@ _POST_FAILURE_SKIP_PATTERNS: list[dict[str, str]] = [
     },
     {
         "content_type": "ipam.ipaddress",
-        # Same family of issue as the iprange overlap above.
-        # NetBox returns this aggregate error when ENFORCE_GLOBAL_UNIQUE
-        # is on and the snapshot carries a duplicate address.
-        "match": "Duplicate IP address found",
+        "regex": re.compile(
+            r"duplicate\s+IP\s+(?:address\s+)?(?:found|detected)",
+            re.IGNORECASE,
+        ),
+        "keywords": ("duplicate", "IP"),
+        "verified_against": "NetBox 4.6.2",
         "explanation": (
             "ip-address refused due to a duplicate already on the "
             "destination. The source NetBox allowed this duplicate; the "
@@ -249,18 +265,30 @@ def _classify_post_failure(content_type: str, error_text: str) -> str | None:
     `_POST_FAILURE_SKIP_PATTERNS` when a pattern matches, or
     None to leave the result as a regular FAILED outcome.
 
-    The check is exact-match-on-content-type + substring on
-    the error text. Keep the patterns tight: we are
-    converting a NetBox-reported error from "tool failure" to
-    "skipped row" in the audit, so a false positive could
-    silently swallow a real bug.
+    BUG-05: the matchers are now regex shapes rather than
+    fixed-string substrings, so a cosmetic NetBox reword does
+    not silently flip the row from SKIPPED to FAILED. The
+    "near-miss" branch logs at INFO when the error text
+    contains all the pattern keywords but fails the regex, so
+    a maintainer sees the drift and can refresh the pattern.
     """
+
+    import logging
+    log = logging.getLogger(__name__)
 
     for entry in _POST_FAILURE_SKIP_PATTERNS:
         if entry["content_type"] != content_type:
             continue
-        if entry["match"] in error_text:
+        if entry["regex"].search(error_text):
             return entry["explanation"]
+        if all(kw.lower() in error_text.lower() for kw in entry["keywords"]):
+            log.info(
+                "BUG-05 near miss: %s error contains all pattern "
+                "keywords but did not match the structural regex "
+                "(verified_against=%s). This may indicate NetBox "
+                "reworded the error; consider refreshing the regex.",
+                content_type, entry["verified_against"],
+            )
     return None
 
 

@@ -160,3 +160,38 @@ def test_classifier_table_does_not_match_substring_of_unrelated_text() -> None:
 
     body = "The user-defined timer overlaps the timeout window."
     assert _classify_post_failure("ipam.iprange", body) is None
+
+
+# ---------------------------------------------------------------------------
+# BUG-05 regression: reworded NetBox messages and near-miss detection
+# ---------------------------------------------------------------------------
+
+
+def test_reworded_iprange_overlap_still_matches() -> None:
+    """BUG-05: a NetBox release that inserts 'the' or rewords
+    slightly still trips the regex matcher. Before the
+    structural shift, this would silently revert to FAILED."""
+
+    msg = "addresses overlap with the range 10.0.0.0/24"
+    assert _classify_post_failure("ipam.iprange", msg) is not None
+
+
+def test_reworded_ipaddress_duplicate_still_matches() -> None:
+    """BUG-05: 'Duplicate IP detected' instead of the canonical
+    'Duplicate IP address found' still classifies correctly."""
+
+    msg = "Duplicate IP detected at 192.168.1.1/24"
+    assert _classify_post_failure("ipam.ipaddress", msg) is not None
+
+
+def test_near_miss_logs_info_and_returns_none(caplog) -> None:
+    """BUG-05 near-miss detector: if the error contains the
+    keyword set but the structural regex fails, log INFO so a
+    maintainer notices NetBox drifted."""
+
+    import logging
+    msg = "wrap of the addresses showed overlap but not against any range"
+    with caplog.at_level(logging.INFO, logger="nbsnap.import_.upsert"):
+        result = _classify_post_failure("ipam.iprange", msg)
+    assert result is None
+    assert any("near miss" in m.lower() for m in caplog.messages)

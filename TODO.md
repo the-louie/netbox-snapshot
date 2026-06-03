@@ -644,49 +644,6 @@ control over how the tool reacts.
 **Estimated Effort:** 1-2h. Depends on FEAT-46b.
 
 
-### [BUG-05] `_classify_post_failure` substring matchers are NetBox-version-fragile
-
-**Context:** Source review R-12.
-`src/nbsnap/import_/upsert.py:_POST_FAILURE_SKIP_PATTERNS`
-matches a content type + free-text substring against the
-error body. Patterns:
-
-- `ipam.iprange` + `addresses overlap with range`
-- `ipam.ipaddress` + `Duplicate IP address found`
-
-A NetBox version that rewords these errors (e.g.
-"addresses overlap with the range" or "Duplicate IP detected")
-silently drops these patterns and the rows revert to FAILED.
-
-**Why this matters:** an operator upgrades NetBox, the same
-input that imported cleanly yesterday now exits 2. The error
-manifest does not say "I lost track of the matcher pattern."
-
-**Requirements:**
-
-- Match on the structural JSON shape NetBox emits (e.g. inspect
-  the parsed error body's `__all__` array element-by-element)
-  rather than free-text substring. Use a regex inside the
-  list entry for resilience.
-- Pin each pattern with a `verified_against` tag (same shape
-  as `KNOWN_VALIDATION_CYCLES`). Document a refresh checklist.
-- Add a "near-miss" detector: if a FAILED outcome's error
-  body contains one or more pattern keywords but does NOT
-  match the full structural rule, emit an INFO log so the
-  maintainer notices the drift.
-- Add a CI job that runs the import test suite against the
-  oldest and newest supported NetBox versions to catch drift
-  pre-merge.
-
-**Testing:** unit test in
-`tests/unit/test_import_post_failure_classifier.py` with
-synthetic error bodies for reworded variants. Assert the
-near-miss INFO fires when the pattern keywords match but the
-structural rule does not.
-
-**Estimated Effort:** 2h.
-
-
 ### [BUG-07] Phase-2 PATCH treats 2xx as success without verifying field update
 
 **Context:** Source review R-14.
