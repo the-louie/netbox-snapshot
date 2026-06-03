@@ -181,3 +181,79 @@ def test_destination_lookup_runs_before_failed_keys_short_circuit() -> None:
     )
     # The destination lookup wins, return the live id 99.
     assert rid == 99
+
+
+def test_transient_5xx_failure_does_not_get_cached() -> None:
+    """FEAT-45a: a 503 response leaves the key OUT of
+    `failed_keys`. The next look-ahead retries instead of
+    dropping the FK with a phantom MISSING_FROM_SOURCE."""
+
+    from unittest.mock import MagicMock, patch
+    from nbsnap.import_.lookahead import resolve_or_create
+    from nbsnap.import_.nk_index import NKIndex
+    from nbsnap.import_.snapshot_index import SnapshotIndex
+    from nbsnap.import_.upsert import UpsertOutcome, UpsertResult
+
+    failed_keys: set = set()
+    fake_result = UpsertResult(
+        outcome=UpsertOutcome.FAILED,
+        content_type="dcim.site",
+        natural_key=("hall-a",),
+        destination_id=None,
+        message="POST failed: 503",
+        http_status=503,
+    )
+    snapshot_index = SnapshotIndex()
+    snapshot_index._by_key[("dcim.site", ("hall-a",))] = {"slug": "a"}
+
+    with patch("nbsnap.import_.upsert.upsert", return_value=fake_result):
+        resolve_or_create(
+            MagicMock(get_all=MagicMock(return_value=iter([]))),
+            snapshot_index,
+            NKIndex(),
+            MagicMock(),
+            content_type="dcim.site",
+            natural_key=("hall-a",),
+            processing_stack=set(),
+            deferred_queue=[],
+            failed_keys=failed_keys,
+        )
+    assert ("dcim.site", ("hall-a",)) not in failed_keys
+
+
+def test_permanent_4xx_failure_is_cached() -> None:
+    """FEAT-45a: a 400 response stays cached so subsequent
+    look-aheads short-circuit instead of re-issuing the same
+    failing POST."""
+
+    from unittest.mock import MagicMock, patch
+    from nbsnap.import_.lookahead import resolve_or_create
+    from nbsnap.import_.nk_index import NKIndex
+    from nbsnap.import_.snapshot_index import SnapshotIndex
+    from nbsnap.import_.upsert import UpsertOutcome, UpsertResult
+
+    failed_keys: set = set()
+    fake_result = UpsertResult(
+        outcome=UpsertOutcome.FAILED,
+        content_type="dcim.site",
+        natural_key=("hall-a",),
+        destination_id=None,
+        message="POST failed: 400",
+        http_status=400,
+    )
+    snapshot_index = SnapshotIndex()
+    snapshot_index._by_key[("dcim.site", ("hall-a",))] = {"slug": "a"}
+
+    with patch("nbsnap.import_.upsert.upsert", return_value=fake_result):
+        resolve_or_create(
+            MagicMock(get_all=MagicMock(return_value=iter([]))),
+            snapshot_index,
+            NKIndex(),
+            MagicMock(),
+            content_type="dcim.site",
+            natural_key=("hall-a",),
+            processing_stack=set(),
+            deferred_queue=[],
+            failed_keys=failed_keys,
+        )
+    assert ("dcim.site", ("hall-a",)) in failed_keys

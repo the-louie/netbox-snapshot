@@ -34,6 +34,7 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "no_phase2_verify": False,
         "audit_fsync": False,
         "no_timestamps": True,
+        "no_lookahead_failure_cache": False,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

@@ -65,6 +65,11 @@ class ImportSummary:
     # non-empty list here points at hand-edited or truncated
     # snapshot files.
     parse_errors: list[dict[str, Any]] = field(default_factory=list)
+    # FEAT-45b: NKs the look-ahead attempted to create but the
+    # destination responded with 5xx. Parallel to failed_keys
+    # (which holds permanent 4xx) so the audit can render
+    # transient failures as UPSERT_FAILED_TRANSIENT.
+    transient_keys: set[tuple[str, tuple[Any, ...]]] = field(default_factory=set)
     # Per-run dedup for `_warn_dropped` (REFACTOR-08). Used to
     # be a module global; making it instance-scoped means two
     # `run_import` calls in the same process both surface
@@ -91,6 +96,7 @@ def run_import(
     progress_fsync: bool = False,
     progress_show_timestamps: bool = True,
     phase2_verify: bool = True,
+    cache_lookahead_failures: bool = True,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
 
@@ -142,7 +148,13 @@ def run_import(
     # references to the same parent short-circuit instead of
     # re-issuing the failing POST, converting a per-child
     # retry storm into a single attempt per failed parent.
-    failed_keys: set[tuple[str, tuple[Any, ...]]] = set()
+    # FEAT-45b: callers can disable the cache entirely with
+    # `cache_lookahead_failures=False` (--no-lookahead-failure-cache),
+    # which means every look-ahead retries. Useful when the
+    # destination is going through a transient bad patch.
+    failed_keys: set[tuple[str, tuple[Any, ...]]] | None = (
+        set() if cache_lookahead_failures else None
+    )
     # Index of `content_type -> set[field_name]` for the
     # planner-deferred edges in the manifest. Phase-1 strips
     # these fields from every POST body so NetBox's validators
@@ -220,6 +232,7 @@ def run_import(
                 failed_keys=failed_keys,
                 deferred_fields_by_ct=deferred_fields_by_ct,
                 warn_dedup=summary._warned_missing_fk,
+                transient_keys=summary.transient_keys,
             )
             result = upsert(
                 http,
@@ -346,6 +359,7 @@ def _resolve_body(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> dict[str, Any]:
     """Resolve every FK NK in `body` back to a destination id.
 
@@ -505,6 +519,7 @@ def _resolve_body(
                 auditor=auditor,
                 failed_keys=failed_keys,
                 deferred_fields_by_ct=deferred_fields_by_ct,
+                transient_keys=transient_keys,
             )
             if recovered is not None:
                 resolved[field_name] = recovered
@@ -519,6 +534,7 @@ def _resolve_body(
                 field_name=field_name,
                 target_ct=spec.fk_target,
                 failed_keys=failed_keys,
+                transient_keys=transient_keys,
                 was_deferred=was_deferred,
             )
             # Suppress the per-row warning when the audit
@@ -998,6 +1014,7 @@ def _record_drop(
     field_name: str,
     target_ct: str,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     was_deferred: bool | None = None,
 ) -> DropCategory | None:
     """Classify an FK that the resolver could not place, record it.
@@ -1046,6 +1063,14 @@ def _record_drop(
     if deferred_grew:
         category = DropCategory.DEFERRED_TO_PHASE2
     elif (
+        transient_keys is not None
+        and (target_ct, target_nk) in transient_keys
+    ):
+        # FEAT-45b: 5xx from the destination at the look-ahead
+        # site. Distinct bucket so the operator sees this is
+        # environment, not data quality.
+        category = DropCategory.UPSERT_FAILED_TRANSIENT
+    elif (
         failed_keys is not None
         and (target_ct, target_nk) in failed_keys
     ):
@@ -1086,6 +1111,7 @@ def _try_lookahead(
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
 ) -> tuple[int | None, bool]:
     """Attempt the FEAT-36b look-ahead path.
 
@@ -1137,6 +1163,7 @@ def _try_lookahead(
         auditor=auditor,
         failed_keys=failed_keys,
         deferred_fields_by_ct=deferred_fields_by_ct,
+        transient_keys=transient_keys,
     )
     if rid is not None:
         return rid, False

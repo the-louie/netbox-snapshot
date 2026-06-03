@@ -53,6 +53,13 @@ class DropCategory(Enum):
     # inflates the operator's data-quality concern when the
     # real issue is destination policy or a tool gap.
     UPSERT_FAILED = "upsert_failed"
+    # Variant of UPSERT_FAILED for HTTP 5xx (transient) refusals.
+    # The destination's POST failed for an environment reason
+    # (database under load, restart in progress), not a data
+    # problem. Operators usually rerun the import; nbsnap does
+    # not cache 5xx failures so a rerun will retry the parent
+    # before dropping. See FEAT-45b.
+    UPSERT_FAILED_TRANSIENT = "upsert_failed_transient"
     # A field was rewritten by the import-side `_collapse_enum_dict`
     # coerce because the snapshot carries the legacy
     # `{value, label}` shape. The record imported successfully,

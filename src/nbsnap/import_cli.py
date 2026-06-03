@@ -144,6 +144,15 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "Default on; useful for log aggregators that add "
              "their own timestamps.",
     )
+    parser.add_argument(
+        "--no-lookahead-failure-cache",
+        action="store_true",
+        help="disable the cache that short-circuits a look-ahead "
+             "after the destination has refused a parent's "
+             "create. Useful when the destination's refusal is "
+             "transient and the operator wants every sibling to "
+             "retry. See FEAT-45b.",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -209,6 +218,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
             progress_fsync=args.audit_fsync,
             progress_show_timestamps=not args.no_timestamps,
             phase2_verify=not args.no_phase2_verify,
+            cache_lookahead_failures=not args.no_lookahead_failure_cache,
         )
     except requests.exceptions.SSLError as exc:
         sys.stderr.write(

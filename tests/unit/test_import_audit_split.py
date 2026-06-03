@@ -452,3 +452,28 @@ def test_sibling_field_defer_does_not_misclassify_dropped_field() -> None:
         target_ct="dcim.region",
     )
     assert cat is DropCategory.MISSING_FROM_SOURCE
+
+
+def test_record_drop_classifies_transient_failure() -> None:
+    """FEAT-45b: when the target NK is in the transient_keys
+    set (populated by resolve_or_create on a 5xx outcome), the
+    audit category is UPSERT_FAILED_TRANSIENT instead of
+    UPSERT_FAILED or MISSING_FROM_SOURCE."""
+
+    from nbsnap.import_.driver import _record_drop
+
+    transient = {("dcim.site", ("hall-a",))}
+    auditor = Auditor()
+    cat = _record_drop(
+        auditor=auditor,
+        snapshot_index=SnapshotIndex(),
+        deferred_queue=None,
+        value=["hall-a"],
+        child_ct="dcim.device",
+        child_nk=(("h",), "d"),
+        field_name="site",
+        target_ct="dcim.site",
+        failed_keys=set(),
+        transient_keys=transient,
+    )
+    assert cat is DropCategory.UPSERT_FAILED_TRANSIENT

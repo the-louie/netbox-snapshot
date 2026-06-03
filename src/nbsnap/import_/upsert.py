@@ -55,13 +55,21 @@ class UpsertOutcome(Enum):
 
 @dataclass(frozen=True)
 class UpsertResult:
-    """Structured result of one upsert."""
+    """Structured result of one upsert.
+
+    `http_status` is None when no HTTP call fired (SKIPPED) or
+    when the upsert encountered a non-HTTP failure (e.g. a bad
+    body shape rejected client-side). FEAT-45a uses this field
+    to distinguish transient 5xx failures (which should not be
+    cached in `failed_keys`) from permanent 4xx rejections.
+    """
 
     outcome: UpsertOutcome
     content_type: str
     natural_key: NaturalKey
     destination_id: int | None
     message: str = ""
+    http_status: int | None = None
 
 
 # Cache of `content_type -> set[custom_field_name]`,
@@ -421,6 +429,7 @@ def upsert(
                 natural_key=natural_key,
                 destination_id=None,
                 message=f"POST failed: {exc!s}",
+                http_status=getattr(exc, "status", None),
             )
         new_id = int((created or {}).get("id") or 0) or None
         if new_id is not None:
@@ -467,6 +476,7 @@ def upsert(
             natural_key=natural_key,
             destination_id=existing_id,
             message=f"PATCH failed: {exc!s}",
+            http_status=getattr(exc, "status", None),
         )
     return UpsertResult(
         outcome=UpsertOutcome.UPDATED,

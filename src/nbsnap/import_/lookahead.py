@@ -110,6 +110,7 @@ def resolve_or_create(
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, NaturalKey]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
+    transient_keys: set[tuple[str, NaturalKey]] | None = None,
 ) -> int | None:
     """Resolve a target NK to a destination id, creating it on demand.
 
@@ -273,8 +274,23 @@ def resolve_or_create(
     if result.outcome is UpsertOutcome.FAILED:
         # Cache the failure so siblings that reference the
         # same parent do not re-issue the same failing POST.
-        if failed_keys is not None:
+        # FEAT-45a: do NOT cache 5xx outcomes. NetBox returning
+        # 503/504 is typically a transient state (database
+        # contention, restart in progress), and caching the key
+        # turns every subsequent reference into a phantom
+        # MISSING_FROM_SOURCE drop. Caller can also disable
+        # caching outright via failed_keys=None
+        # (--no-lookahead-failure-cache, FEAT-45b).
+        status = getattr(result, "http_status", None)
+        is_transient = status is not None and 500 <= status < 600
+        if failed_keys is not None and not is_transient:
             failed_keys.add(key)
+        # FEAT-45b: track transient failures in a parallel set
+        # so the audit categoriser can render them as
+        # UPSERT_FAILED_TRANSIENT instead of mis-labelling as
+        # MISSING_FROM_SOURCE.
+        if is_transient and transient_keys is not None:
+            transient_keys.add(key)
         # Log at DEBUG, not WARNING. A look-ahead upsert
         # failure here is expected operator-quiet behaviour
         # when the parent's own FK chain was unresolvable
