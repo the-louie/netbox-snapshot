@@ -755,6 +755,8 @@ def _resolve_polymorphic_id_pairs(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    ctx: Any = None,
 ) -> dict[str, Any]:
     """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
 
@@ -916,6 +918,8 @@ def _resolve_termination_lists(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    ctx: Any = None,
 ) -> dict[str, Any]:
     """Convert termination dicts from snapshot to NetBox shape.
 

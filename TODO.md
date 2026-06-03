@@ -90,38 +90,6 @@ assertion lists the missing endpoints.
 ## Open, Phase 5, Import engine
 
 
-### [REFACTOR-01c] Migrate the two pre-passes onto `ResolveContext` and remove the transition adapter
-
-**Context:** sub-ticket of REFACTOR-01. 01b left a
-transition adapter so the pre-passes could keep the old
-kwarg shape. This sub-ticket finishes the migration so the
-adapter can be deleted.
-
-**Requirements:**
-
-- Change `_resolve_polymorphic_id_pairs` to take
-  `ctx: ResolveContext, owner_ct: str`. Read shared state
-  from `ctx`; remove the old explicit kwargs.
-- Same migration for `_resolve_termination_lists`.
-- Update the two pre-pass call sites in `_resolve_body` to
-  pass `ctx`.
-- Remove the transition adapter from `_try_lookahead`.
-- Grep `src/` for the old parameter names to confirm no
-  caller remains on the legacy shape.
-
-**Testing:**
-
-- Update tests that drive the pre-passes directly:
-  `tests/unit/test_import_polymorphic_id_pairs.py`,
-  `tests/unit/test_import_cable_terminations.py`,
-  `tests/unit/test_import_deferred_fields_strip.py`.
-- Run the full unit suite, confirm green.
-- End-to-end: re-run the rescue-10 import and confirm exit 0
-  and identical record counts to the postfix8 baseline.
-
-**Estimated Effort:** 1-2h.
-
-
 ### [REFACTOR-02] Unified drop-recording helper
 
 **Context:** `src/nbsnap/import_/driver.py` has three sites
