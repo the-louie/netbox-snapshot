@@ -256,3 +256,52 @@ def test_driver_constructs_reporter_with_live_auditor(tmp_path: Path) -> None:
         assert summary.auditor is not None
     finally:
         driver_mod.run_preflight = original_preflight
+
+
+def test_audit_flushes_at_5s_cadence(tmp_path: Path) -> None:
+    """FEAT-43: the flush cadence is 5 seconds, not 30. A tick
+    that lands 6 seconds after construction flushes the
+    pending audit events to disk."""
+
+    from nbsnap.import_.progress import _AUDIT_FLUSH_INTERVAL_SECONDS
+    assert _AUDIT_FLUSH_INTERVAL_SECONDS == 5.0
+
+    audit_path = tmp_path / "audit.jsonl"
+    auditor = Auditor()
+    auditor.record(_drop())
+
+    clock_now = [0.0]
+    p = ProgressReporter(
+        stream=None, auditor=auditor, audit_path=audit_path,
+        clock=lambda: clock_now[0],
+    )
+    p.start_phase("dcim.site", total=1)
+    # Advance the clock past the 5s window and emit one tick.
+    clock_now[0] = 6.0
+    p.tick("dcim.site", row_index=1)
+    assert audit_path.exists()
+    text = audit_path.read_text()
+    assert "out_of_scope" in text
+
+
+def test_progress_reporter_fsync_opt_in(tmp_path: Path) -> None:
+    """FEAT-43: passing fsync=True causes the reporter to call
+    os.fsync after each flush. We mock os.fsync to assert the
+    call without depending on filesystem semantics."""
+
+    from unittest.mock import patch
+
+    audit_path = tmp_path / "audit.jsonl"
+    auditor = Auditor()
+    auditor.record(_drop())
+
+    clock_now = [0.0]
+    p = ProgressReporter(
+        stream=None, auditor=auditor, audit_path=audit_path,
+        clock=lambda: clock_now[0], fsync=True,
+    )
+    p.start_phase("dcim.site", total=1)
+    clock_now[0] = 6.0
+    with patch("os.fsync") as fake_fsync:
+        p.tick("dcim.site", row_index=1)
+    assert fake_fsync.called

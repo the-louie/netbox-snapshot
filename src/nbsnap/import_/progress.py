@@ -52,7 +52,11 @@ _TARGET_TICK_COUNT = 100
 # trade-off is the size of the diagnostic gap on a crash. 30
 # seconds is short enough to keep the gap small and long enough
 # to avoid hammering the disk on large imports.
-_AUDIT_FLUSH_INTERVAL_SECONDS = 30.0
+# FEAT-43: cadence lowered from 30s -> 5s so a hard kill
+# (OOMKill, deploy restart, SIGTERM) loses at most ~5s of audit
+# events. Append-only JSONL writes are cheap enough that the
+# tighter cadence does not noticeably affect throughput.
+_AUDIT_FLUSH_INTERVAL_SECONDS = 5.0
 
 
 class ProgressReporter:
@@ -84,6 +88,7 @@ class ProgressReporter:
         auditor: Auditor | None = None,
         audit_path: Path | None = None,
         clock: Callable[[], float] = time.monotonic,
+        fsync: bool = False,
     ) -> None:
         # `stream is None` -> progress lines suppressed entirely.
         # This lets the driver pass `progress=None` to existing
@@ -92,6 +97,13 @@ class ProgressReporter:
         self._auditor = auditor
         self._audit_path = audit_path
         self._clock = clock
+        # FEAT-43: opt-in os.fsync() after every write so the
+        # audit JSONL survives a kernel-level kill (e.g.
+        # OOMKill, machine reset). The default is False because
+        # fsync adds a measurable per-write cost on container
+        # filesystems and the 5s flush cadence is usually
+        # enough on its own.
+        self._fsync = fsync
 
         # Per-phase state. Reset at start_phase().
         self._current_total = 0
@@ -182,7 +194,23 @@ class ProgressReporter:
         if now - self._last_flush_at < _AUDIT_FLUSH_INTERVAL_SECONDS:
             return
         self._auditor.write_jsonl(self._audit_path)
+        if self._fsync:
+            self._fsync_audit_path()
         self._last_flush_at = now
+
+    def _fsync_audit_path(self) -> None:
+        """Force the JSONL bytes onto stable storage.
+
+        Opens the file read-only, fsyncs the fd, closes. Cheap
+        enough at the 5s cadence; the operator opts into this
+        when their host filesystem cannot be trusted to flush
+        on its own before a hard kill.
+        """
+        import os
+        if self._audit_path is None or not self._audit_path.exists():
+            return
+        with self._audit_path.open("rb") as fp:
+            os.fsync(fp.fileno())
 
 
     def close(self) -> None:

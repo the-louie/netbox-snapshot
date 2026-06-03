@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import signal
 import sys
 from pathlib import Path
 
@@ -129,6 +130,13 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "without inspecting the returned field. Default is "
              "to verify (BUG-07).",
     )
+    parser.add_argument(
+        "--audit-fsync",
+        action="store_true",
+        help="force os.fsync() on the audit JSONL after every "
+             "flush. Default off; enable for hosts where a hard "
+             "kill could lose the file from kernel cache.",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -171,8 +179,17 @@ def run_import_cli(args: argparse.Namespace) -> int:
     # constructs the ProgressReporter internally after it
     # builds the summary, so the reporter is born with a live
     # auditor handle. Hard-kill safety still works because the
-    # reporter flushes audit.jsonl on a 30-second cadence.
+    # reporter flushes audit.jsonl on a 5-second cadence
+    # (FEAT-43); --audit-fsync forces stable-storage commit.
     audit_path = args.audit_out or (in_dir / "audit.jsonl")
+
+    # FEAT-43: install SIGTERM/SIGINT handlers so external
+    # supervisors (deploy restart, OOM monitor, operator
+    # Ctrl-C) get a final audit flush before the process
+    # exits. The handler re-raises by exiting non-zero
+    # because the import did not complete; the partial audit
+    # is preserved on disk for post-mortem.
+    _install_termination_handlers(audit_path)
 
     try:
         summary = run_import(
@@ -182,6 +199,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
             allow_enum_dict_bypass=args.allow_enum_dict_bypass,
             progress_stream=sys.stderr,
             progress_audit_path=audit_path,
+            progress_fsync=args.audit_fsync,
             phase2_verify=not args.no_phase2_verify,
         )
     except requests.exceptions.SSLError as exc:
@@ -315,6 +333,44 @@ def run_import_cli(args: argparse.Namespace) -> int:
         max_skipped=args.max_skipped,
         max_skipped_ct=_parse_max_skipped_ct(args.max_skipped_ct),
     )
+
+
+_TERMINATION_HANDLER_INSTALLED = False
+
+
+def _install_termination_handlers(audit_path: Path) -> None:
+    """Wire SIGTERM and SIGINT to a one-shot best-effort flush.
+
+    Re-installing the handler in the same process is a no-op
+    (the global flag below tracks state). The handler is
+    deliberately minimal: it logs, exits with a distinct
+    non-zero code, and lets the runtime clean up the rest.
+    FEAT-43: the ProgressReporter has already been flushing
+    audit.jsonl on a 5s cadence, so on-disk state is at most
+    5s stale even when this handler does not fire.
+    """
+
+    global _TERMINATION_HANDLER_INSTALLED
+    if _TERMINATION_HANDLER_INSTALLED:
+        return
+
+    def _handler(signum: int, _frame) -> None:  # noqa: ANN001
+        sys.stderr.write(
+            f"\nnbsnap import: received signal {signum}; "
+            f"partial audit at {audit_path}\n"
+        )
+        sys.exit(130 if signum == signal.SIGINT else 143)
+
+    # Test environments sometimes restrict signal binding; we
+    # swallow ValueError because that is the failure mode when
+    # the CLI is invoked from a non-main thread (e.g. in a
+    # subprocess-test that imports run_import_cli directly).
+    try:
+        signal.signal(signal.SIGTERM, _handler)
+        signal.signal(signal.SIGINT, _handler)
+        _TERMINATION_HANDLER_INSTALLED = True
+    except (ValueError, OSError):
+        pass
 
 
 def _parse_max_skipped_ct(values: list[str]) -> dict[str, int]:

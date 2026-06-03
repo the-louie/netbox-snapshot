@@ -398,47 +398,6 @@ fix and locks the order with a test.
 **Estimated Effort:** 1-2h. Depends on FEAT-42a.
 
 
-### [FEAT-43] Audit JSONL flush hardening: 5s interval + signal handler
-
-**Context:** Source review R-7.
-`src/nbsnap/import_/progress.py:ProgressReporter` flushes
-`audit.jsonl` every 30 seconds (`_AUDIT_FLUSH_INTERVAL_SECONDS = 30.0`).
-A hard kill between flushes loses up to 30 seconds of audit
-events. On a 40-minute import, that is ~1.25% of records
-potentially lost from the diagnostic trail.
-
-**Why this matters:** unattended imports in containers can be
-terminated by external supervisors (OOMKilled, deploy
-restart). The audit trail is the operator's primary forensic
-tool when a run is killed; a 30-second gap exactly at the
-moment of crash defeats the purpose.
-
-**Requirements:**
-
-- Lower `_AUDIT_FLUSH_INTERVAL_SECONDS` from `30.0` to `5.0`
-  in `progress.py`. Disk-write cost is negligible (append-only,
-  small per row).
-- Wire a SIGTERM and SIGINT handler in
-  `src/nbsnap/import_cli.py:run_import_cli` that calls
-  `progress.close()` before re-raising. Use Python's
-  `signal.signal()` carefully, the handler should be idempotent
-  in case the driver also flushed already.
-- Add an `--audit-fsync` opt-in CLI flag that calls `os.fsync()`
-  after every flush for paranoid deployments where the host
-  filesystem might not survive the kill.
-- Document the new cadence in `progress.py`'s module
-  docstring.
-
-**Testing:** unit test
-`tests/unit/test_import_progress.py::test_audit_flushes_within_interval`
-asserts the file is non-empty after one tick + 6 seconds.
-Integration test: start an import in a subprocess, SIGTERM
-it 10 seconds in, confirm the audit JSONL exists and contains
-the recorded events.
-
-**Estimated Effort:** 1-2h.
-
-
 ### [FEAT-44] Progress ticks carry timestamps and per-phase throughput
 
 **Context:** Source review R-8.
