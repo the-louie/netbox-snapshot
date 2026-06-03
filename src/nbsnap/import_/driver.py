@@ -1311,6 +1311,66 @@ def _safe_resolve_m2m(
     return out
 
 
+def resolve_with_audit(
+    *,
+    ctx: Any,
+    value: Any,
+    target_ct: str,
+    child_ct: str,
+    child_nk: tuple[Any, ...],
+    field_name: str,
+) -> tuple[int | None, "DropCategory | None"]:
+    """One-call wrapper around `_try_lookahead` + `_record_drop`.
+
+    REFACTOR-02 unifies the three near-identical sites in
+    `_resolve_body`, `_resolve_polymorphic_id_pairs`, and
+    `_resolve_termination_lists`. Returns `(rid, category)`:
+
+    * `(int, None)` -> the look-ahead resolved or recovered
+      the FK.
+    * `(None, DropCategory)` -> the FK was dropped; the audit
+      already carries the event.
+
+    The helper consumes a `ResolveContext` so callers do not
+    have to thread 10+ kwargs through.
+    """
+
+    rid, was_deferred = _try_lookahead(
+        value=value,
+        target_ct=target_ct,
+        http=ctx.http,
+        index=ctx.index,
+        registry=ctx.registry,
+        snapshot_index=ctx.snapshot_index,
+        processing_stack=ctx.processing_stack,
+        deferred_queue=ctx.deferred_queue,
+        child_ct=child_ct,
+        child_nk=child_nk,
+        field_name=field_name,
+        openapi=ctx.openapi,
+        auditor=ctx.auditor,
+        failed_keys=ctx.failed_keys,
+        deferred_fields_by_ct=ctx.deferred_fields_by_ct,
+        transient_keys=ctx.transient_keys,
+    )
+    if rid is not None:
+        return rid, None
+    category = _record_drop(
+        auditor=ctx.auditor,
+        snapshot_index=ctx.snapshot_index,
+        deferred_queue=ctx.deferred_queue,
+        value=value,
+        child_ct=child_ct,
+        child_nk=child_nk,
+        field_name=field_name,
+        target_ct=target_ct,
+        failed_keys=ctx.failed_keys,
+        transient_keys=ctx.transient_keys,
+        was_deferred=was_deferred,
+    )
+    return None, category
+
+
 def _skip_reason_group(message: str) -> str:
     """Compress an upsert SKIPPED message to a short reason key.
 

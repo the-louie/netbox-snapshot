@@ -90,41 +90,6 @@ assertion lists the missing endpoints.
 ## Open, Phase 5, Import engine
 
 
-### [REFACTOR-02] Unified drop-recording helper
-
-**Context:** `src/nbsnap/import_/driver.py` has three sites
-that follow the pattern `queue_size_before = len(deferred_queue) if deferred_queue is not None else 0`,
-then call the resolver, then call `_record_drop(...)`. The
-boilerplate adds noise to the resolver pre-passes and risks
-divergence when one site updates and the others do not.
-Depends on REFACTOR-01 landing.
-
-**Requirements:**
-
-- Add a method `resolve_with_audit(value, target_ct, child_ct,
-  child_nk, field_name) -> tuple[int | None, DropCategory | None]`
-  to `ResolveContext` (or a free function taking ctx). The
-  method captures `queue_size_before`, calls `_try_lookahead`,
-  then calls `_record_drop` if the look-ahead returned None.
-- Update the three call sites in `_resolve_body`'s simple-FK
-  branch, `_resolve_polymorphic_id_pairs`, and
-  `_resolve_termination_lists` to use the new helper.
-- Remove the inlined `queue_size_before` boilerplate at each
-  site.
-
-**Testing:**
-
-- Add `tests/unit/test_resolve_with_audit.py` exercising the
-  helper directly with mocks for the three outcomes: hit
-  (rid set, no category), miss-then-drop (rid None, category
-  set), miss-then-deferred (rid None, category
-  DEFERRED_TO_PHASE2).
-- Run the full unit suite, confirm green; the three migrated
-  sites now share the helper.
-
-**Estimated Effort:** 1-2h. Depends on REFACTOR-01.
-
-
 ### [REFACTOR-03a] Introduce `BodyPreparer` skeleton with enum-dict and None-drop chains
 
 **Context:** write-time body coercion is scattered across
