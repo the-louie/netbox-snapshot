@@ -231,3 +231,38 @@ def test_strict_schema_blocks_when_drift_present() -> None:
         s, VersionSkew.MINOR, strict_schema=True,
     )
     assert code == EXIT_PREFLIGHT_BLOCKED
+
+
+def test_bypass_used_exit_code() -> None:
+    """FEAT-49: a clean run that consumed the enum-dict bypass
+    AND recorded at least one BYPASS_COERCED event surfaces
+    EXIT_BYPASS_USED instead of EXIT_OK."""
+
+    from nbsnap.import_cli import EXIT_BYPASS_USED
+    s = _summary(audit_events=[
+        DropEvent(
+            category=DropCategory.BYPASS_COERCED,
+            child_content_type="dcim.site",
+            child_nk=("hall-a",),
+            field_name="status",
+            target_content_type="dcim.site",
+            target_nk=("hall-a",),
+            message="coerced",
+        ),
+    ])
+    assert (
+        _compute_exit_code(s, VersionSkew.MINOR, allow_enum_dict_bypass=True)
+        == EXIT_BYPASS_USED
+    )
+
+
+def test_no_bypass_event_returns_ok_even_with_flag() -> None:
+    """The exit code only flips to BYPASS_USED when the audit
+    actually carries a BYPASS_COERCED event. A clean snapshot
+    run with the flag set but no coercions returns OK."""
+
+    s = _summary()
+    assert (
+        _compute_exit_code(s, VersionSkew.MINOR, allow_enum_dict_bypass=True)
+        == EXIT_OK
+    )

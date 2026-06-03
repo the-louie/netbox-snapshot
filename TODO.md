@@ -320,45 +320,6 @@ so `upsert` has no body-coercion responsibility.
 
 
 
-### [FEAT-49] Exit-code bitmask reflecting SKIPPED granularity and bypass
-
-**Context:** Source review R-17.
-`src/nbsnap/import_cli.py:_compute_exit_code` returns 0 or
-2 today. SKIPPED outcomes are treated as success even though
-they represent data loss. Operators cannot apply per-condition
-policy without parsing the audit log.
-
-**Why this matters:** CI/CD pipelines need granular exit
-codes to differentiate "clean import" from "import with
-known-policy skips" from "import with row failures".
-
-**Requirements:**
-
-- Choose between two approaches:
-  (a) Add discrete exit codes:
-      - 0 OK
-      - 1 EXIT_PREFLIGHT_BLOCKED (existing)
-      - 2 EXIT_ROW_FAILURES (existing)
-      - 3 EXIT_SKIPPED_OVER_THRESHOLD (proposed, see FEAT-41)
-      - 4 EXIT_BLOCKED_BY_SOURCE_GUARD (existing in reset_cli)
-      - 5 EXIT_UNEXPECTED (existing)
-      - 6 EXIT_SCHEMA_DRIFT_BLOCKED (proposed, see FEAT-46)
-      - 7 EXIT_BYPASS_USED (proposed)
-  (b) Bitmask: bit 0 failure, bit 1 skip, bit 2 preflight
-      bypass, bit 3 schema drift. Combinations expressible.
-- Pick (a) for simplicity; document in CLI help and runbook.
-- Update `_compute_exit_code` to compute the new codes from
-  `ImportSummary` fields.
-- Update DOC-01 runbooks once exit codes stabilise.
-
-**Testing:** extend
-`tests/unit/test_import_cli_exit_codes.py` with cases for
-each new code. Document the matrix in the test docstring.
-
-**Estimated Effort:** 1h after FEAT-41, FEAT-46, FEAT-47
-land.
-
-
 ---
 
 

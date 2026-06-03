@@ -52,6 +52,12 @@ EXIT_UNEXPECTED = 5
 # from EXIT_ROW_FAILURES because SKIPPED is "data did not
 # replicate" while FAILED is "data was rejected on write".
 EXIT_SKIPPED_OVER_THRESHOLD = 6
+# FEAT-49: the run completed but used --allow-enum-dict-bypass.
+# CI gates can use this to flag a "rescued via coerce" status
+# without treating it as a failure. The bypass-used exit takes
+# precedence over EXIT_OK only; row failures and skip-threshold
+# breaches still win.
+EXIT_BYPASS_USED = 7
 
 logger = logging.getLogger(__name__)
 
@@ -553,6 +559,15 @@ def _compute_exit_code(
     over_global = max_skipped >= 0 and total_skipped > max_skipped
     if over_per_ct or over_global:
         return EXIT_SKIPPED_OVER_THRESHOLD
+    # FEAT-49: distinct exit when the run completed via the
+    # enum-dict bypass. The operator opted in but the audit
+    # log shows BYPASS_COERCED events; the exit code keeps the
+    # signal visible to a CI gate without parsing logs.
+    if allow_enum_dict_bypass and any(
+        ev.category.value == "bypass_coerced"
+        for ev in summary.auditor.events
+    ):
+        return EXIT_BYPASS_USED
     return EXIT_OK
 
 
