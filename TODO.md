@@ -479,45 +479,6 @@ durations.
 **Estimated Effort:** 2h.
 
 
-### [BUG-04] `deferred_grew` proxy in `_record_drop` is racy across sibling fields
-
-**Context:** Source review R-9.
-`src/nbsnap/import_/driver.py:_record_drop` decides DEFERRED_TO_PHASE2
-when `len(deferred_queue) > queue_size_before`. The queue can
-grow for OTHER reasons in the same `_resolve_body` invocation
-(e.g. a different field on the same record pushed a
-DeferredFK earlier in the loop). The proxy attributes that
-growth to the current field, potentially mis-classifying a
-real MISSING_FROM_SOURCE or UPSERT_FAILED drop.
-
-**Why this matters:** today's audit shows 0 events of those
-categories, so the mis-classification has no observable
-effect. As the resolver evolves (more deferred fields per
-record), the false-positive rate grows. Operators relying on
-the audit categorisation could misread a real data gap.
-
-**Requirements:**
-
-- Change `_try_lookahead` to return a tuple
-  `(rid: int | None, was_deferred: bool)` instead of just
-  `int | None`. `was_deferred` is True only when the helper
-  pushed a DeferredFK for THIS specific field.
-- Update the three callers (`_resolve_body` simple-FK branch,
-  `_resolve_polymorphic_id_pairs`, `_resolve_termination_lists`)
-  to capture both halves of the return.
-- Pass `was_deferred` explicitly to `_record_drop` instead of
-  computing the queue-size delta. Remove `queue_size_before`
-  from `_record_drop`'s signature.
-- Add a unit test that exercises a record with two FK fields
-  where one defers and the other drops as MISSING_FROM_SOURCE,
-  asserting the audit shows one event of each category.
-
-**Testing:** unit test in
-`tests/unit/test_import_audit_split.py::test_sibling_field_defer_does_not_misclassify_dropped_field`.
-
-**Estimated Effort:** 2h.
-
-
 ### [FEAT-45a] Tag `UpsertResult` with HTTP status and skip caching transient (5xx) failures
 
 **Context:** sub-ticket of FEAT-45. Source review R-10.

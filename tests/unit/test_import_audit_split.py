@@ -416,3 +416,39 @@ def test_bypass_coerced_emits_one_event_per_field() -> None:
     assert len(bypass) == 1
     assert bypass[0].field_name == "status"
     assert bypass[0].child_content_type == "dcim.site"
+
+
+def test_sibling_field_defer_does_not_misclassify_dropped_field() -> None:
+    """BUG-04 regression: when one FK field on a record defers
+    onto Phase-2 and a SECOND FK field on the same record is
+    truly missing from source, the audit must show one
+    DEFERRED_TO_PHASE2 plus one MISSING_FROM_SOURCE, not two
+    DEFERRED entries (the old proxy attributed the queue
+    growth to whichever field looked second)."""
+
+    from nbsnap.import_.driver import _record_drop
+
+    # Pretend field A already deferred earlier in the same
+    # _resolve_body. The shared queue has grown.
+    deferred_queue: list = [object()]  # one sentinel from field A
+
+    # Field B is truly missing from source. Call _record_drop
+    # with `was_deferred=False` (the new BUG-04 signal) and
+    # `queue_size_before` matching the pre-call queue size.
+    # The classifier must NOT attribute the queue growth to
+    # field B.
+    snapshot_index = SnapshotIndex()
+    snapshot_index._by_key[("dcim.region", ("other",))] = {}
+    auditor = Auditor()
+    cat = _record_drop(
+        auditor=auditor,
+        snapshot_index=snapshot_index,
+        deferred_queue=deferred_queue,
+        was_deferred=False,
+        value=["ghost"],
+        child_ct="dcim.site",
+        child_nk=("hall-d",),
+        field_name="region",
+        target_ct="dcim.region",
+    )
+    assert cat is DropCategory.MISSING_FROM_SOURCE

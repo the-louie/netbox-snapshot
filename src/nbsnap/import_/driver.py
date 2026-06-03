@@ -483,7 +483,7 @@ def _resolve_body(
             queue_size_before = (
                 len(deferred_queue) if deferred_queue is not None else 0
             )
-            recovered = _try_lookahead(
+            recovered, was_deferred = _try_lookahead(
                 value=value,
                 target_ct=spec.fk_target,
                 http=http,
@@ -507,13 +507,13 @@ def _resolve_body(
                 auditor=auditor,
                 snapshot_index=snapshot_index,
                 deferred_queue=deferred_queue,
-                queue_size_before=queue_size_before,
                 value=value,
                 child_ct=content_type,
                 child_nk=current_nk,
                 field_name=field_name,
                 target_ct=spec.fk_target,
                 failed_keys=failed_keys,
+                was_deferred=was_deferred,
             )
             # Suppress the per-row warning when the audit
             # classified this as OUT_OF_SCOPE (documented
@@ -784,7 +784,7 @@ def _resolve_polymorphic_id_pairs(
             )
             # Try the look-ahead path so the parent can be
             # created on demand from the snapshot.
-            recovered = _try_lookahead(
+            recovered, was_deferred = _try_lookahead(
                 value=raw_id,
                 target_ct=target_ct,
                 http=http,
@@ -811,7 +811,7 @@ def _resolve_polymorphic_id_pairs(
                 auditor=auditor,
                 snapshot_index=snapshot_index,
                 deferred_queue=deferred_queue,
-                queue_size_before=queue_size_before,
+                was_deferred=was_deferred,
                 value=raw_id,
                 child_ct=owner_ct,
                 child_nk=current_nk,
@@ -925,7 +925,7 @@ def _resolve_termination_lists(
                 )
                 # Look-ahead path so the target interface can be
                 # created from the snapshot if it is in scope.
-                recovered = _try_lookahead(
+                recovered, was_deferred = _try_lookahead(
                     value=raw_nk,
                     target_ct=target_ct,
                     http=http,
@@ -952,7 +952,7 @@ def _resolve_termination_lists(
                     auditor=auditor,
                     snapshot_index=snapshot_index,
                     deferred_queue=deferred_queue,
-                    queue_size_before=queue_size_before,
+                    was_deferred=was_deferred,
                     value=raw_nk,
                     child_ct=owner_ct,
                     child_nk=current_nk,
@@ -985,13 +985,14 @@ def _record_drop(
     auditor: Auditor | None,
     snapshot_index: _SnapshotIndexType | None,
     deferred_queue: list[Any] | None,
-    queue_size_before: int,
+    queue_size_before: int = 0,
     value: Any,
     child_ct: str,
     child_nk: tuple[Any, ...],
     field_name: str,
     target_ct: str,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    was_deferred: bool | None = None,
 ) -> DropCategory | None:
     """Classify an FK that the resolver could not place, record it.
 
@@ -1025,9 +1026,17 @@ def _record_drop(
 
     target_nk = normalise_nk(value)
 
-    deferred_grew = (
-        deferred_queue is not None and len(deferred_queue) > queue_size_before
-    )
+    # BUG-04: prefer the explicit `was_deferred` signal from
+    # `_try_lookahead` over the queue-size-delta proxy, which
+    # mis-attributed sibling-field deferrals to the current
+    # field. The proxy is kept as a fallback for callers that
+    # have not been threaded yet.
+    if was_deferred is None:
+        deferred_grew = (
+            deferred_queue is not None and len(deferred_queue) > queue_size_before
+        )
+    else:
+        deferred_grew = was_deferred
     if deferred_grew:
         category = DropCategory.DEFERRED_TO_PHASE2
     elif (
@@ -1071,13 +1080,20 @@ def _try_lookahead(
     auditor: Auditor | None = None,
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
-) -> int | None:
+) -> tuple[int | None, bool]:
     """Attempt the FEAT-36b look-ahead path.
 
+    Returns `(rid, was_deferred)`. `was_deferred` is True iff
+    this call (rather than a recursive sibling) pushed a
+    `DeferredFK` for the current field; BUG-04 replaced the
+    earlier queue-size-delta proxy with an explicit signal so
+    sibling deferrals can no longer cause cross-field
+    mis-classification.
+
     When the look-ahead arguments are missing the helper returns
-    None so the caller falls through to the original warn-and-
-    drop behaviour. Keeps backwards compatibility with callers
-    that have not been threaded yet.
+    `(None, False)` so the caller falls through to the original
+    warn-and-drop behaviour. Keeps backwards compatibility with
+    callers that have not been threaded yet.
 
     `openapi` and `auditor` flow into `resolve_or_create` so the
     recursive upsert can route the snapshot body through
@@ -1091,7 +1107,7 @@ def _try_lookahead(
         or processing_stack is None
         or deferred_queue is None
     ):
-        return None
+        return None, False
 
     # The snapshot stores NKs as lists; the resolver wants
     # tuples. Convert here so the look-ahead module does not
@@ -1117,13 +1133,13 @@ def _try_lookahead(
         deferred_fields_by_ct=deferred_fields_by_ct,
     )
     if rid is not None:
-        return rid
+        return rid, False
 
     # rid is None: either out of scope, or a cycle. If a cycle,
-    # the caller can use the queue-size delta to know we need
-    # to push a DeferredFK so Phase-2 picks it up. The
-    # resolve_or_create helper does not push the entry itself
-    # because only the caller knows the child fields.
+    # push a DeferredFK so Phase-2 picks it up; tag the return
+    # so the caller knows this specific field deferred (not a
+    # sibling earlier in the same record).
+    was_deferred = False
     if len(deferred_queue) == queue_size_before and (target_ct, target_nk) in processing_stack:
         deferred_queue.append(
             DeferredFK(
@@ -1134,7 +1150,8 @@ def _try_lookahead(
                 target_nk=target_nk,
             )
         )
-    return None
+        was_deferred = True
+    return None, was_deferred
 
 
 def _safe_resolve_m2m(
