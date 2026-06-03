@@ -62,12 +62,17 @@ class PreflightReport:
     # BUG-01a moved this from raw strings to structured dicts;
     # the CLI renders them back to strings for the operator.
     snapshot_format_issues: list[dict[str, Any]] = field(default_factory=list)
+    # FEAT-46b: per-(content_type, field) drift between the
+    # snapshot's OpenAPI and the destination's. Populated by
+    # `run_preflight` when both schemas are available.
+    schema_drift: list[Any] = field(default_factory=list)
 
     def is_blocking(
         self,
         max_skew: VersionSkew,
         *,
         allow_enum_dict_bypass: bool = False,
+        strict_schema: bool = False,
     ) -> bool:
         """True iff any check found a blocking condition.
 
@@ -76,11 +81,17 @@ class PreflightReport:
         The import-side `_collapse_enum_dict` coerce should
         still rescue most fields, but the round-trip guarantee
         is gone, so the bypass is documented but not advertised.
+
+        `strict_schema` (FEAT-46c) makes any non-empty
+        `schema_drift` block the import. Off by default; the
+        diff is informational unless the operator opts in.
         """
 
         if self.missing_content_types:
             return True
         if self.snapshot_format_issues and not allow_enum_dict_bypass:
+            return True
+        if strict_schema and self.schema_drift:
             return True
         return not self.version_skew.allowed_by(max_skew)
 
@@ -146,18 +157,43 @@ def run_preflight(
     *,
     custom_field_names: set[str] | None = None,
     snapshot_dir: Path | None = None,
+    snapshot_openapi: Any = None,
 ) -> PreflightReport:
-    """Execute the four pre-flight checks against the destination.
+    """Execute the pre-flight checks against the destination.
 
     `snapshot_dir`, when provided, enables the FEAT-36h
     enum-dict shape scan. The driver always passes it; callers
     that only want the destination-side checks can omit it.
+
+    `snapshot_openapi`, when provided alongside a reachable
+    destination, drives the FEAT-46b schema-drift check.
+    Skipped silently if either side is missing.
     """
 
     report = PreflightReport(snapshot_format_version=manifest.version)
 
     if snapshot_dir is not None:
         report.snapshot_format_issues = sample_enum_dict_check(snapshot_dir)
+
+    # FEAT-46b: schema-drift comparison between the snapshot's
+    # OpenAPI and the destination's. The fetch is best-effort;
+    # a destination that refuses /api/schema/ stays silent so
+    # the diff does not turn the preflight into an outage.
+    if snapshot_openapi is not None:
+        try:
+            from nbsnap.schema.diff import diff_schemas
+            from nbsnap.schema.openapi import OpenAPI as _OpenAPI
+            dest_schema = _OpenAPI.fetch(http)
+            scope = {ct for ct in manifest.counts if isinstance(ct, str)}
+            report.schema_drift = diff_schemas(
+                snapshot_openapi, dest_schema, scope,
+            )
+        except Exception:  # noqa: BLE001 - best effort, log only
+            import logging
+            logging.getLogger(__name__).info(
+                "schema-drift check skipped: destination /api/schema/ "
+                "unavailable or unreadable"
+            )
 
     # ------------------------------------------------------------------
     # Version skew

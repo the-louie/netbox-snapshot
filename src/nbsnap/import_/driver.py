@@ -97,6 +97,8 @@ def run_import(
     progress_show_timestamps: bool = True,
     phase2_verify: bool = True,
     cache_lookahead_failures: bool = True,
+    strict_schema: bool = False,
+    use_destination_schema: bool = False,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
 
@@ -120,17 +122,36 @@ def run_import(
 
     snapshot_dir = Path(snapshot_dir)
     manifest = Manifest.load(snapshot_dir / MANIFEST_FILENAME)
-    preflight = run_preflight(http, manifest, snapshot_dir=snapshot_dir)
+    # Load the snapshot's OpenAPI early so preflight can use it
+    # for the FEAT-46b schema-drift comparison.
+    snapshot_openapi = OpenAPI.load(snapshot_dir / SCHEMA_PATH)
+    preflight = run_preflight(
+        http, manifest,
+        snapshot_dir=snapshot_dir,
+        snapshot_openapi=snapshot_openapi,
+    )
     summary = ImportSummary(preflight=preflight)
 
     if preflight.is_blocking(
-        max_skew, allow_enum_dict_bypass=allow_enum_dict_bypass
+        max_skew,
+        allow_enum_dict_bypass=allow_enum_dict_bypass,
+        strict_schema=strict_schema,
     ):
         return summary
 
     registry = default_registry()
     index = NKIndex()
-    openapi = OpenAPI.load(snapshot_dir / SCHEMA_PATH)
+    # FEAT-46c: an opt-in lets the driver use the destination's
+    # OpenAPI for body resolution instead of the snapshot's.
+    # When the destination has drifted, this avoids resolving
+    # against shapes the destination no longer expects.
+    if use_destination_schema:
+        try:
+            openapi = OpenAPI.fetch(http)
+        except Exception:  # noqa: BLE001
+            openapi = snapshot_openapi
+    else:
+        openapi = snapshot_openapi
 
     # Look-ahead state for FEAT-36b. Built once and threaded
     # through every _resolve_body call so the demand-driven

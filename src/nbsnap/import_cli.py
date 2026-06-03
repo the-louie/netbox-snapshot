@@ -153,6 +153,23 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "transient and the operator wants every sibling to "
              "retry. See FEAT-45b.",
     )
+    parser.add_argument(
+        "--strict-schema",
+        action="store_true",
+        help="exit EXIT_PREFLIGHT_BLOCKED when the destination's "
+             "OpenAPI schema differs from the snapshot's at any "
+             "in-scope (content_type, field) FK shape. Default "
+             "is informational. See FEAT-46c.",
+    )
+    parser.add_argument(
+        "--use-destination-schema",
+        action="store_true",
+        help="resolve FKs against the destination's OpenAPI "
+             "(fetched at preflight) instead of the snapshot's. "
+             "Useful when the destination has drifted to a "
+             "newer NetBox and the snapshot's schema is stale. "
+             "See FEAT-46c.",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -219,6 +236,8 @@ def run_import_cli(args: argparse.Namespace) -> int:
             progress_show_timestamps=not args.no_timestamps,
             phase2_verify=not args.no_phase2_verify,
             cache_lookahead_failures=not args.no_lookahead_failure_cache,
+            strict_schema=args.strict_schema,
+            use_destination_schema=args.use_destination_schema,
         )
     except requests.exceptions.SSLError as exc:
         sys.stderr.write(
@@ -294,6 +313,23 @@ def run_import_cli(args: argparse.Namespace) -> int:
                 "or pass --allow-enum-dict-bypass to proceed via "
                 "the import-side coerce.\n"
             )
+    if summary.preflight.schema_drift:
+        # FEAT-46b: render the drift list compactly. The
+        # operator should see the first ten lines and a
+        # trailer for the rest.
+        sys.stderr.write(
+            f"  schema drift: {len(summary.preflight.schema_drift)} "
+            "field(s) differ between snapshot and destination\n"
+        )
+        for entry in summary.preflight.schema_drift[:10]:
+            sys.stderr.write(
+                f"    {entry.content_type}.{entry.field} "
+                f"snapshot={entry.snapshot_shape} "
+                f"destination={entry.destination_shape}\n"
+            )
+        if len(summary.preflight.schema_drift) > 10:
+            remaining = len(summary.preflight.schema_drift) - 10
+            sys.stderr.write(f"    ... and {remaining} more\n")
     for outcome in (
         UpsertOutcome.CREATED,
         UpsertOutcome.UPDATED,
@@ -350,6 +386,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
         max_parse_errors=args.max_parse_errors,
         max_skipped=args.max_skipped,
         max_skipped_ct=_parse_max_skipped_ct(args.max_skipped_ct),
+        strict_schema=args.strict_schema,
     )
 
 
@@ -442,6 +479,7 @@ def _compute_exit_code(
     max_parse_errors: int = 0,
     max_skipped: int = -1,
     max_skipped_ct: dict[str, int] | None = None,
+    strict_schema: bool = False,
 ) -> int:
     """Map a fully-categorised ImportSummary to a CLI exit code.
 
@@ -466,7 +504,9 @@ def _compute_exit_code(
     because the import never actually ran in that case.
     """
     if summary.preflight.is_blocking(
-        max_skew, allow_enum_dict_bypass=allow_enum_dict_bypass
+        max_skew,
+        allow_enum_dict_bypass=allow_enum_dict_bypass,
+        strict_schema=strict_schema,
     ):
         return EXIT_PREFLIGHT_BLOCKED
 

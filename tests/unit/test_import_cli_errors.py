@@ -85,6 +85,8 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "audit_fsync": False,
         "no_timestamps": True,
         "no_lookahead_failure_cache": False,
+        "strict_schema": False,
+        "use_destination_schema": False,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

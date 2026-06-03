@@ -214,3 +214,20 @@ def test_max_skipped_per_ct_under_threshold_is_ok() -> None:
         max_skipped_ct={"dcim.cable": 10},
     )
     assert code == EXIT_OK
+
+
+def test_strict_schema_blocks_when_drift_present() -> None:
+    """FEAT-46c: --strict-schema turns any non-empty
+    schema_drift into EXIT_PREFLIGHT_BLOCKED. Without the
+    flag the drift is informational and the run completes."""
+
+    from nbsnap.schema.diff import FieldDrift
+    s = _summary()
+    s.preflight.is_blocking.return_value = True  # mock to honour strict_schema
+    s.preflight.schema_drift = [
+        FieldDrift("dcim.site", "region", "dcim.region", "dcim.area"),
+    ]
+    code = _compute_exit_code(
+        s, VersionSkew.MINOR, strict_schema=True,
+    )
+    assert code == EXIT_PREFLIGHT_BLOCKED
