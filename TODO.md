@@ -90,44 +90,6 @@ assertion lists the missing endpoints.
 ## Open, Phase 5, Import engine
 
 
-### [REFACTOR-01b] Migrate `_try_lookahead` and `resolve_or_create` to accept `ResolveContext`
-
-**Context:** sub-ticket of REFACTOR-01. With the dataclass
-landed by 01a, migrate the two main consumer call sites:
-`src/nbsnap/import_/driver.py:_try_lookahead` and
-`src/nbsnap/import_/lookahead.py:resolve_or_create`.
-
-**Requirements:**
-
-- Change `_try_lookahead` to take `ctx: ResolveContext` plus
-  the four task-specific args (`value`, `target_ct`,
-  `child_ct`, `child_nk`, `field_name`). Read all shared
-  state from `ctx`.
-- Change `resolve_or_create` to take `ctx: ResolveContext`
-  plus `(content_type, natural_key, depth)`. Update the
-  inner `_resolve_body` recursive call to forward `ctx`.
-- Update the call site in `_resolve_body`'s simple-FK branch
-  to build / forward `ctx`.
-- Leave the pre-pass call sites (`_resolve_polymorphic_id_pairs`,
-  `_resolve_termination_lists`) on the OLD signature by
-  having `_try_lookahead` accept BOTH shapes during transition.
-  The adapter goes away in 01c.
-
-**Testing:**
-
-- Update tests that drive these functions directly:
-  `tests/unit/test_import_lookahead_resolver.py`,
-  `tests/unit/test_import_driver_lookahead.py`,
-  `tests/unit/test_import_lookahead_failed_cache.py`,
-  `tests/unit/test_import_lookahead_body_resolution.py`.
-- Run the entire unit-test suite, confirm green.
-- Add one regression test asserting a `ResolveContext` built
-  with all 10 fields drives a round-trip through
-  `_try_lookahead` -> `resolve_or_create` end-to-end.
-
-**Estimated Effort:** 1-2h.
-
-
 ### [REFACTOR-01c] Migrate the two pre-passes onto `ResolveContext` and remove the transition adapter
 
 **Context:** sub-ticket of REFACTOR-01. 01b left a

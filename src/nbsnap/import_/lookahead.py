@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # NaturalKey is the shared tuple-of-tuples alias used by every
 # NK consumer. It lives in snapshot_index because the loader is
@@ -111,6 +111,7 @@ def resolve_or_create(
     failed_keys: set[tuple[str, NaturalKey]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     transient_keys: set[tuple[str, NaturalKey]] | None = None,
+    ctx: Any = None,
 ) -> int | None:
     """Resolve a target NK to a destination id, creating it on demand.
 
@@ -155,6 +156,23 @@ def resolve_or_create(
        is added to `failed_keys` (if provided) so subsequent
        attempts short-circuit via step 3a above.
     """
+
+    # REFACTOR-01b: when a ResolveContext is supplied, prefer
+    # its fields over the explicit kwargs. The legacy kwarg
+    # shape stays supported during the migration window so
+    # existing callers (and tests) keep working.
+    if ctx is not None:
+        snapshot_index = snapshot_index or ctx.snapshot_index
+        dest_index = dest_index or ctx.index
+        registry = registry or ctx.registry
+        openapi = openapi if openapi is not None else ctx.openapi
+        auditor = auditor if auditor is not None else ctx.auditor
+        if failed_keys is None:
+            failed_keys = ctx.failed_keys
+        if transient_keys is None:
+            transient_keys = ctx.transient_keys
+        if deferred_fields_by_ct is None:
+            deferred_fields_by_ct = ctx.deferred_fields_by_ct
 
     # Runtime import of upsert so the module graph stays
     # acyclic: lookahead is consumed by driver.py, driver

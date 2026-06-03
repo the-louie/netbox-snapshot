@@ -1160,6 +1160,7 @@ def _try_lookahead(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
+    ctx: Any = None,
 ) -> tuple[int | None, bool]:
     """Attempt the FEAT-36b look-ahead path.
 
@@ -1181,6 +1182,22 @@ def _try_lookahead(
     the look-ahead would POST raw NK-shaped FKs and NetBox would
     reject the create with HTTP 400.
     """
+
+    # REFACTOR-01b: ctx-based unwrap. The legacy kwarg shape
+    # stays supported so existing callers (and tests) work
+    # unchanged.
+    if ctx is not None:
+        snapshot_index = snapshot_index if snapshot_index is not None else ctx.snapshot_index
+        processing_stack = processing_stack if processing_stack is not None else ctx.processing_stack
+        deferred_queue = deferred_queue if deferred_queue is not None else ctx.deferred_queue
+        openapi = openapi if openapi is not None else ctx.openapi
+        auditor = auditor if auditor is not None else ctx.auditor
+        if failed_keys is None:
+            failed_keys = ctx.failed_keys
+        if transient_keys is None:
+            transient_keys = ctx.transient_keys
+        if deferred_fields_by_ct is None:
+            deferred_fields_by_ct = ctx.deferred_fields_by_ct
 
     if (
         snapshot_index is None
