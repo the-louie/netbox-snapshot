@@ -135,3 +135,41 @@ def test_hints_table_only_references_netbox_4_6_verified_entries() -> None:
     for hint in POLYMORPHIC_HINTS:
         assert "verified_against" in hint
         assert "netbox" in hint["verified_against"].lower()
+
+
+def test_cable_orders_after_interface() -> None:
+    """FEAT-42b regression: with the picker preferring real
+    schema edges over `__hint` edges in the same nullable/m2m
+    tier, the planner respects the cable -> interface
+    synthetic edge instead of deferring it. Result: interface
+    must land at a smaller plan-order index than cable.
+    """
+
+    from pathlib import Path
+
+    from nbsnap.graph.algo import plan
+    from nbsnap.graph.build import from_openapi as build_graph
+    from nbsnap.schema.openapi import OpenAPI
+
+    schema_path = Path("/workspace/snapshot-source-frozen/schema/openapi.json")
+    if not schema_path.exists():
+        import pytest
+        pytest.skip("frozen snapshot schema not available in this sandbox")
+
+    schema = OpenAPI.load(schema_path)
+    # Use the renderer-minimum scope so the SCC is non-trivial.
+    scope = {
+        "dcim.site", "dcim.location", "dcim.rack",
+        "dcim.manufacturer", "dcim.devicetype", "dcim.devicerole",
+        "dcim.platform", "dcim.device", "dcim.interface",
+        "dcim.cable",
+        "ipam.vlan", "ipam.prefix", "ipam.ipaddress", "ipam.iprange",
+    }
+    graph = build_graph(schema, scope)
+    p = plan(graph)
+    iface_idx = p.order.index("dcim.interface")
+    cable_idx = p.order.index("dcim.cable")
+    assert iface_idx < cable_idx, (
+        f"expected dcim.interface ({iface_idx}) to precede "
+        f"dcim.cable ({cable_idx}) in plan order"
+    )

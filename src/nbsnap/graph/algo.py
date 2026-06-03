@@ -161,10 +161,21 @@ def pick_deferred_edges(graph: Graph, scc: list[Node]) -> list[Edge]:
 
     if not candidates:
         return []
-    # Stable sort by (nullable, m2m, alphabetical) so the choice
-    # does not flip across runs.
+    # Stable sort by (nullable, m2m, hint-last, alphabetical) so
+    # the choice does not flip across runs. FEAT-42b: synthetic
+    # polymorphic-hint edges (field suffix `__hint`) sort AFTER
+    # real schema edges in the same nullable/m2m tier, so the
+    # picker prefers to defer a real nullable schema edge over
+    # a hint edge. The hint edge survives the SCC break and the
+    # planner respects the cable -> interface ordering it
+    # encodes.
     candidates.sort(
-        key=lambda e: (not e.nullable, not e.is_m2m, e.child, e.field, e.parent)
+        key=lambda e: (
+            not e.nullable,
+            e.field.endswith("__hint"),
+            not e.is_m2m,
+            e.child, e.field, e.parent,
+        )
     )
     return [candidates[0]]
 
@@ -261,10 +272,16 @@ def plan(graph: Graph) -> Plan:
 def _pick_one_back_edge_in_cycle(
     graph: Graph, cycle_nodes: list[str], already_deferred: list[Edge]
 ) -> Edge | None:
-    """Find a nullable/m2m edge between any pair of nodes in the cycle."""
+    """Find a nullable/m2m edge between any pair of nodes in the cycle.
+
+    FEAT-42b: real schema edges win over synthetic `__hint`
+    edges, so the polymorphic-hint ordering survives the
+    cycle-break retry pass.
+    """
 
     deferred_keys = {(e.child, e.parent, e.field) for e in already_deferred}
     cycle_set = set(cycle_nodes)
+    candidates: list[Edge] = []
     for node_name in sorted(cycle_set):
         for edge in graph.out_edges(Node(node_name)):
             if edge.parent not in cycle_set:
@@ -273,5 +290,15 @@ def _pick_one_back_edge_in_cycle(
             if key in deferred_keys:
                 continue
             if edge.nullable or edge.is_m2m:
-                return edge
-    return None
+                candidates.append(edge)
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda e: (
+            e.field.endswith("__hint"),
+            not e.nullable,
+            not e.is_m2m,
+            e.child, e.field, e.parent,
+        )
+    )
+    return candidates[0]
