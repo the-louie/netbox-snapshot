@@ -137,6 +137,13 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "flush. Default off; enable for hosts where a hard "
              "kill could lose the file from kernel cache.",
     )
+    parser.add_argument(
+        "--no-timestamps",
+        action="store_true",
+        help="omit HH:MM:SS prefixes from progress output. "
+             "Default on; useful for log aggregators that add "
+             "their own timestamps.",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -200,6 +207,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
             progress_stream=sys.stderr,
             progress_audit_path=audit_path,
             progress_fsync=args.audit_fsync,
+            progress_show_timestamps=not args.no_timestamps,
             phase2_verify=not args.no_phase2_verify,
         )
     except requests.exceptions.SSLError as exc:

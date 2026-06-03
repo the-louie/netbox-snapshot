@@ -33,6 +33,7 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "max_skipped_ct": [],
         "no_phase2_verify": False,
         "audit_fsync": False,
+        "no_timestamps": True,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

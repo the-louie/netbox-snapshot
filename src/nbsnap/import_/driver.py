@@ -89,6 +89,7 @@ def run_import(
     progress_stream: Any = None,
     progress_audit_path: Path | None = None,
     progress_fsync: bool = False,
+    progress_show_timestamps: bool = True,
     phase2_verify: bool = True,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
@@ -181,6 +182,7 @@ def run_import(
             auditor=auditor,
             audit_path=progress_audit_path,
             fsync=progress_fsync,
+            show_timestamps=progress_show_timestamps,
         )
 
     # Phase-1: per content type, in the order recorded in the

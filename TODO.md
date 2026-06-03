@@ -398,45 +398,6 @@ fix and locks the order with a test.
 **Estimated Effort:** 1-2h. Depends on FEAT-42a.
 
 
-### [FEAT-44] Progress ticks carry timestamps and per-phase throughput
-
-**Context:** Source review R-8.
-`src/nbsnap/import_/progress.py:ProgressReporter.tick` and
-`start_phase`/`end_phase` emit content without any timestamp
-or throughput indicator. An operator watching a long-running
-import cannot detect rate degradation that would otherwise
-signal a NetBox-side issue.
-
-**Why this matters:** A NetBox instance gradually exhausting
-memory will slow imports asymptotically. Without per-phase
-throughput numbers, the operator sees the same progress
-output as a healthy run and misses the warning sign.
-
-**Requirements:**
-
-- Prepend each tick line with an ISO-8601 timestamp:
-  `[14:35:17] #   dcim.interface 100/3582`. Use
-  `datetime.now().isoformat(timespec="seconds")` or just
-  `datetime.now().strftime("%H:%M:%S")` for compactness.
-- Track `phase_start_at` in `ProgressReporter` and emit a
-  per-phase trailer on `end_phase`:
-  `# Phase dcim.interface complete: 3582 records in 23m17s (2.55/s)`.
-- Add rate-degradation detection: keep a rolling-60s record
-  counter; on each tick after the first minute, compare the
-  current rate to the phase's overall rate. If below 50%,
-  emit one WARNING `# Phase dcim.interface rate degraded:
-  X/s (was Y/s)`. Suppress further warnings for the same
-  phase to avoid noise.
-- Add an `--no-timestamps` opt-out for log aggregators that
-  apply their own timestamps.
-
-**Testing:** unit tests with a swappable clock pinning the
-tick format and the rate-degradation threshold. Manual: run
-rescue-10 and confirm the per-phase trailer shows expected
-durations.
-
-**Estimated Effort:** 2h.
-
 
 ### [FEAT-45a] Tag `UpsertResult` with HTTP status and skip caching transient (5xx) failures
 

@@ -52,7 +52,7 @@ def test_phase_header_lands_with_total_count() -> None:
     `start_phase` with the row count baked in."""
 
     stream = io.StringIO()
-    p = ProgressReporter(stream=stream)
+    p = ProgressReporter(stream=stream, show_timestamps=False)
     p.start_phase("dcim.site", total=10)
     output = stream.getvalue()
     assert "# Importing dcim.site (10 records)" in output
@@ -63,7 +63,7 @@ def test_low_cardinality_phase_ticks_every_row() -> None:
     row. Operators want full visibility on the small phases."""
 
     stream = io.StringIO()
-    p = ProgressReporter(stream=stream)
+    p = ProgressReporter(stream=stream, show_timestamps=False)
     p.start_phase("dcim.site", total=3)
     for i in range(1, 4):
         p.tick("dcim.site", i)
@@ -80,7 +80,7 @@ def test_high_cardinality_phase_samples_at_stride() -> None:
     should be roughly _TARGET_TICK_COUNT, plus first and last."""
 
     stream = io.StringIO()
-    p = ProgressReporter(stream=stream)
+    p = ProgressReporter(stream=stream, show_timestamps=False)
     p.start_phase("dcim.interface", total=3582)
     for i in range(1, 3583):
         p.tick("dcim.interface", i)
@@ -102,7 +102,7 @@ def test_last_row_always_ticks_even_when_not_on_stride() -> None:
     look stuck."""
 
     stream = io.StringIO()
-    p = ProgressReporter(stream=stream)
+    p = ProgressReporter(stream=stream, show_timestamps=False)
     p.start_phase("dcim.interface", total=3501)  # 3501/100 stride = 36
     for i in range(1, 3502):
         p.tick("dcim.interface", i)
@@ -201,7 +201,7 @@ def test_zero_total_phase_still_emits_header() -> None:
     operator sees we are not stuck on the previous phase."""
 
     stream = io.StringIO()
-    p = ProgressReporter(stream=stream)
+    p = ProgressReporter(stream=stream, show_timestamps=False)
     p.start_phase("ipam.fhrpgroup", total=0)
     assert "# Importing ipam.fhrpgroup (0 records)" in stream.getvalue()
 
@@ -305,3 +305,42 @@ def test_progress_reporter_fsync_opt_in(tmp_path: Path) -> None:
     with patch("os.fsync") as fake_fsync:
         p.tick("dcim.site", row_index=1)
     assert fake_fsync.called
+
+
+def test_timestamps_prefix_tick_lines() -> None:
+    """FEAT-44: when show_timestamps=True (default), each
+    output line carries an HH:MM:SS prefix."""
+
+    from datetime import datetime
+
+    stream = io.StringIO()
+    fixed = datetime(2026, 6, 16, 14, 35, 17)
+    p = ProgressReporter(
+        stream=stream,
+        wallclock=lambda: fixed,
+    )
+    p.start_phase("dcim.site", total=2)
+    p.tick("dcim.site", 1)
+    text = stream.getvalue()
+    assert "[14:35:17]" in text
+
+
+def test_end_phase_emits_throughput_trailer() -> None:
+    """FEAT-44: end_phase prints `# Phase X complete: N records
+    in <duration> (rate/s)`. We use a swappable monotonic clock
+    so the test is deterministic."""
+
+    fake_time = [0.0]
+    stream = io.StringIO()
+    p = ProgressReporter(
+        stream=stream,
+        clock=lambda: fake_time[0],
+        show_timestamps=False,
+    )
+    p.start_phase("dcim.interface", total=100)
+    # Pretend 20 seconds elapse.
+    fake_time[0] = 20.0
+    p.end_phase("dcim.interface")
+    text = stream.getvalue()
+    assert "Phase dcim.interface complete: 100 records in 20s" in text
+    assert "5.00/s" in text

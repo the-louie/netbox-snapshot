@@ -34,6 +34,7 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
@@ -89,6 +90,8 @@ class ProgressReporter:
         audit_path: Path | None = None,
         clock: Callable[[], float] = time.monotonic,
         fsync: bool = False,
+        wallclock: Callable[[], datetime] | None = None,
+        show_timestamps: bool = True,
     ) -> None:
         # `stream is None` -> progress lines suppressed entirely.
         # This lets the driver pass `progress=None` to existing
@@ -111,6 +114,21 @@ class ProgressReporter:
 
         # Audit-flush timer.
         self._last_flush_at = self._clock()
+
+        # FEAT-44: per-phase timing state. Reset on
+        # `start_phase`. `_phase_started_at` carries the
+        # monotonic timestamp at the start; `_phase_warned_rate`
+        # prevents the rate-degradation warning from firing
+        # more than once per phase.
+        self._phase_started_at: float = 0.0
+        self._phase_warned_rate: bool = False
+        # Wall-clock provider used for prefix timestamps. The
+        # default is `datetime.now`; tests substitute a fixed
+        # clock via the constructor.
+        self._wallclock: Callable[[], datetime] = datetime.now
+        if wallclock is not None:
+            self._wallclock = wallclock
+        self._show_timestamps = show_timestamps
 
     # ------------------------------------------------------------------
     # Phase boundaries
@@ -135,16 +153,35 @@ class ProgressReporter:
         self._current_tick_every = max(
             1, math.ceil(total / _TARGET_TICK_COUNT)
         )
+        self._phase_started_at = self._clock()
+        self._phase_warned_rate = False
         self._write(f"# Importing {content_type} ({total} records)\n")
 
     def end_phase(self, content_type: str) -> None:
-        """Mark the end of a phase. Currently a no-op for output,
-        kept on the surface so the driver call sites stay
-        symmetric and a future "phase done in X seconds" line
-        has a place to land."""
+        """Emit the FEAT-44 per-phase trailer with elapsed time
+        and average throughput. Skipped when total is zero (no
+        records means no meaningful rate)."""
 
-        # Reserved for future per-phase timing. No-op today.
-        _ = content_type
+        if self._current_total <= 0:
+            return
+        elapsed = max(0.0, self._clock() - self._phase_started_at)
+        rate = (
+            self._current_total / elapsed if elapsed > 0 else 0.0
+        )
+        # Compact human duration. Prefer Hh Mm Ss, then Mm Ss,
+        # then Ss for short phases.
+        secs = int(elapsed)
+        if secs >= 3600:
+            duration = f"{secs // 3600}h{(secs % 3600) // 60:02d}m{secs % 60:02d}s"
+        elif secs >= 60:
+            duration = f"{secs // 60}m{secs % 60:02d}s"
+        else:
+            duration = f"{secs}s"
+        self._write(
+            f"# Phase {content_type} complete: "
+            f"{self._current_total} records in {duration} "
+            f"({rate:.2f}/s)\n"
+        )
 
     # ------------------------------------------------------------------
     # Per-row tick
@@ -230,10 +267,22 @@ class ProgressReporter:
 
     def _write(self, line: str) -> None:
         """Emit one line to the configured stream, flushing
-        immediately so a tee pipe does not buffer the output."""
+        immediately so a tee pipe does not buffer the output.
+
+        FEAT-44: prepend an HH:MM:SS timestamp when timestamps
+        are enabled. Lines that start with `# ` (phase markers)
+        get the timestamp inside the marker so the operator's
+        eye still finds the `#` quickly.
+        """
 
         if self._stream is None:
             return
+        if self._show_timestamps:
+            stamp = self._wallclock().strftime("%H:%M:%S")
+            if line.startswith("#"):
+                line = f"# [{stamp}]{line[1:]}"
+            else:
+                line = f"[{stamp}] {line}"
         self._stream.write(line)
         self._stream.flush()
 
