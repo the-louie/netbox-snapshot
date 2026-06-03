@@ -188,6 +188,11 @@ class NetboxHTTP:
         # slate without ceremony.
         self._cf_cache: dict[str, set[str]] | None = None
         self._cf_cache_failed: bool = False
+        # BUG-03: signals that the destination's customfield
+        # phase has run. While False, the CF filter does not
+        # strip keys; an empty cache could just mean the
+        # customfield definitions have not landed yet.
+        self._cf_phase_complete: bool = False
 
     def clear_cf_cache(self) -> None:
         """Drop the per-instance custom-field cache.
@@ -198,6 +203,20 @@ class NetboxHTTP:
         """
         self._cf_cache = None
         self._cf_cache_failed = False
+
+    def mark_cf_phase_complete(self) -> None:
+        """Signal that the customfield phase finished.
+
+        Subsequent calls to `_known_custom_fields_for` will
+        return concrete sets (possibly empty) instead of the
+        "do not filter" None sentinel. The driver calls this
+        after the `extras.customfield` content type phase
+        finishes, see BUG-03.
+        """
+        self._cf_phase_complete = True
+        # Force a re-read so the next lookup sees the
+        # definitions the phase just landed.
+        self.clear_cf_cache()
 
     # ------------------------------------------------------------------
     # Public diagnostics

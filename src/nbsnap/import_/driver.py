@@ -248,6 +248,14 @@ def run_import(
         if progress is not None:
             progress.end_phase(ct)
 
+        # BUG-03: once the extras.customfield phase has run, the
+        # destination customfield registry is authoritative and
+        # the CF filter can safely strip unknown keys. Bust the
+        # cache so the next lookup re-reads the definitions
+        # this phase just landed.
+        if ct == "extras.customfield" and hasattr(http, "mark_cf_phase_complete"):
+            http.mark_cf_phase_complete()
+
     # Surface the deferred queue from Phase-1 on the summary
     # so the CLI audit and integration tests can see it.
     summary.deferred_queue = deferred_queue

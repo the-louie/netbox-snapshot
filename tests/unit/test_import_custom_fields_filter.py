@@ -52,6 +52,11 @@ def _fake_http(rows: list, *, base_url: str = "https://dest.example/") -> MagicM
     http.base_url = base_url
     http._cf_cache = None
     http._cf_cache_failed = False
+    # Tests look at the post-CF-phase steady state, so the
+    # filter is allowed to strip unknown keys. BUG-03 added
+    # the gate to suppress filtering during the pre-phase
+    # window; see test_filter_passes_body_before_cf_phase below.
+    http._cf_phase_complete = True
     http.get_all.side_effect = lambda endpoint: iter(
         rows if "custom-fields" in endpoint else []
     )
@@ -110,6 +115,9 @@ def test_registry_returns_none_on_fetch_failure() -> None:
 
     http = MagicMock()
     http.base_url = "https://dest.example/"
+    http._cf_cache = None
+    http._cf_cache_failed = False
+    http._cf_phase_complete = True
     http.get_all.side_effect = RuntimeError("offline")
     assert _known_custom_fields_for(http, "dcim.rack") is None
 
@@ -122,6 +130,9 @@ def test_filter_passes_body_unchanged_when_registry_failed() -> None:
 
     http = MagicMock()
     http.base_url = "https://dest.example/"
+    http._cf_cache = None
+    http._cf_cache_failed = False
+    http._cf_phase_complete = True
     http.get_all.side_effect = RuntimeError("offline")
     body = {"custom_fields": {"keep_me": 1}}
     out = _filter_custom_fields(body, http, "dcim.site")
@@ -209,3 +220,21 @@ def test_two_instances_keep_separate_caches() -> None:
     )
     assert _known_custom_fields_for(http_a, "dcim.site") == {"field_a"}
     assert _known_custom_fields_for(http_b, "dcim.site") == {"field_b"}
+
+
+def test_filter_passes_body_before_cf_phase() -> None:
+    """BUG-03: before the destination's customfield phase has
+    run, the filter must NOT strip keys. An empty registry at
+    that point just means definitions have not landed yet, not
+    that every key is unknown."""
+
+    rows = [{"name": "switch_count", "object_types": ["dcim.rack"]}]
+    http = _fake_http(rows)
+    # Override the steady-state default with the pre-phase
+    # state. _known_custom_fields_for must return None so the
+    # filter is a no-op.
+    http._cf_phase_complete = False
+    assert _known_custom_fields_for(http, "dcim.rack") is None
+    body = {"custom_fields": {"switch_count": 4, "other": 1}}
+    out = _filter_custom_fields(body, http, "dcim.rack")
+    assert out is body  # untouched

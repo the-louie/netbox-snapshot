@@ -319,55 +319,6 @@ so `upsert` has no body-coercion responsibility.
 **Estimated Effort:** 1-2h. Depends on REFACTOR-03a.
 
 
-### [BUG-03] `_known_custom_fields_for` empty-set vs not-loaded ambiguity
-
-**Context:** Source review R-5.
-`src/nbsnap/import_/upsert.py:_known_custom_fields_for`
-returns `set()` when the destination's customfield list does
-not include any entry for the target content type. The caller
-`_filter_custom_fields` then strips every key from the
-record's `custom_fields` dict. There is no signal to
-distinguish "destination has zero CFs registered for this CT
-right now" from "registry not loaded".
-
-**Why this matters:** a destination that legitimately has no
-CFs at the moment of look-ahead (because the
-`extras.customfield` phase has not run yet) silently has
-every CF key stripped from rack and device records created
-via look-ahead. The main Phase-1 phase for those content
-types later PATCHes the CF values back ONLY when the upsert
-diff surfaces a CF mismatch; NOOP rows never get a second
-chance to set the CF.
-
-**Requirements:**
-
-- Distinguish three states in `_known_custom_fields_for`:
-  1. Registry not loaded (no fetch attempted yet) - return
-     None, caller leaves body alone.
-  2. Registry loaded but destination has no CFs for this CT -
-     return `set()`, current behaviour, caller filters.
-  3. Registry load failed - return None (current behaviour),
-     caller leaves body alone.
-- The current code conflates (1) and (3). Add an explicit
-  `_REGISTRY_LOADED_SENTINEL` so the cache distinguishes "load
-  attempted, no entries" from "no load attempted".
-- Add a cache-bust hook: after the `extras.customfield` main
-  phase completes (Phase-1 driver), call `clear_cf_cache()` so
-  the next CF filter call re-fetches the destination. Document
-  this in the driver's plan-order comment.
-- Add an audit category `CF_FILTERED` (or extend an existing
-  category) so silent CF drops surface to the operator. Track
-  per-record per-field tuples.
-
-**Testing:** unit test in
-`tests/unit/test_import_custom_fields_filter.py` exercising
-the three states. End-to-end: import a snapshot against a
-fresh destination, confirm rack and device CF values land
-correctly after the customfield phase imports the definitions.
-
-**Estimated Effort:** 2h.
-
-
 ### [FEAT-42a] Investigate why dcim.cable plans before dcim.interface and document findings
 
 **Context:** sub-ticket of FEAT-42. Source review R-6.

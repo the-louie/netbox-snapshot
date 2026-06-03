@@ -123,6 +123,13 @@ def _known_custom_fields_for(http: NetboxHTTP, content_type: str) -> set[str] | 
 
     if getattr(http, "_cf_cache_failed", False):
         return None
+    # BUG-03: before the customfield phase finishes, an empty
+    # destination registry is the expected state, not a signal
+    # to strip every key. Return None (do not filter) so the
+    # look-ahead path does not silently nuke CF values that the
+    # main phase will land moments later.
+    if not getattr(http, "_cf_phase_complete", False):
+        return None
     cached = getattr(http, "_cf_cache", None)
     if cached is not None:
         return cached.get(content_type, set())
