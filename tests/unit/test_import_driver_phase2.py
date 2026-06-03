@@ -69,7 +69,7 @@ def test_driver_calls_phase2_when_queue_nonempty(
     # patching `run_phase2` directly and asserting the call.
     captured: dict = {}
 
-    def fake_phase2(http, queue, *, dest_index, registry):  # noqa: ARG001
+    def fake_phase2(http, queue, *, dest_index, registry, verify=True):  # noqa: ARG001
         captured["queue"] = list(queue)
         return Phase2Summary()
 

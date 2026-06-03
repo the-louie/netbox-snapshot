@@ -52,6 +52,12 @@ class Phase2Outcome(Enum):
     PATCHED = "patched"
     SKIPPED = "skipped"
     FAILED = "failed"
+    # BUG-07: NetBox returned 2xx but the field is not the
+    # value we sent (e.g. silent rejection by the serializer).
+    # Surfaced as a failure-class outcome with a different
+    # name so operators can distinguish a transport failure
+    # from a verification mismatch.
+    VERIFIED_MISMATCH = "verified_mismatch"
 
 
 @dataclass
@@ -62,8 +68,12 @@ class Phase2Summary:
     failures: list[tuple[DeferredFK, str]] = field(default_factory=list)
 
     def is_clean(self) -> bool:
-        """True iff the run completed without any per-PATCH failure."""
-        return self.counts.get(Phase2Outcome.FAILED, 0) == 0
+        """True iff the run completed without any per-PATCH failure
+        OR verification mismatch (BUG-07)."""
+        return (
+            self.counts.get(Phase2Outcome.FAILED, 0) == 0
+            and self.counts.get(Phase2Outcome.VERIFIED_MISMATCH, 0) == 0
+        )
 
 
 def run_phase2(
@@ -72,6 +82,7 @@ def run_phase2(
     *,
     dest_index: NKIndex,
     registry: NKRegistry,
+    verify: bool = True,
 ) -> Phase2Summary:
     """Walk the deferred queue, PATCH each cycle-closing FK.
 
@@ -130,7 +141,9 @@ def run_phase2(
             continue
 
         try:
-            http.patch(f"{endpoint}{child_id}/", {entry.field_name: target_id})
+            response = http.patch(
+                f"{endpoint}{child_id}/", {entry.field_name: target_id}
+            )
         except NetboxHTTPError as exc:
             logger.warning(
                 "Phase-2 PATCH failed for %s id=%d field=%s: HTTP %d %s",
@@ -140,6 +153,37 @@ def run_phase2(
             summary.counts[Phase2Outcome.FAILED] += 1
             summary.failures.append((entry, str(exc)))
             continue
+
+        # BUG-07: confirm the field actually changed. NetBox's
+        # PATCH returns the updated record; we look at the
+        # response body's field value. If it does not match the
+        # id we just submitted, the patch was silently dropped.
+        # A response body that does not carry the field at all
+        # (no key OR key present but the field is None) is also
+        # a mismatch, because we asked to set a non-None id.
+        if verify and isinstance(response, dict) and entry.field_name in response:
+            value = response.get(entry.field_name)
+            # NetBox may return the field as `{"id": <int>}`
+            # (nested representation) or a bare int.
+            if isinstance(value, dict):
+                actual = value.get("id")
+            else:
+                actual = value
+            if actual != target_id:
+                logger.warning(
+                    "Phase-2 PATCH for %s id=%d field=%s returned 2xx "
+                    "but field value is %r, expected %d. NetBox may "
+                    "have silently rejected the update.",
+                    entry.child_content_type, child_id,
+                    entry.field_name, actual, target_id,
+                )
+                summary.counts[Phase2Outcome.VERIFIED_MISMATCH] += 1
+                summary.failures.append((
+                    entry,
+                    f"verified mismatch: field={entry.field_name} "
+                    f"expected={target_id} actual={actual}",
+                ))
+                continue
 
         summary.counts[Phase2Outcome.PATCHED] += 1
         logger.info(

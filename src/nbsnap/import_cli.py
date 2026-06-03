@@ -122,6 +122,13 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "Triggers EXIT_SKIPPED_OVER_THRESHOLD (6) when any "
              "listed content type's SKIPPED count exceeds its N.",
     )
+    parser.add_argument(
+        "--no-phase2-verify",
+        action="store_true",
+        help="trust the 2xx response of every Phase-2 PATCH "
+             "without inspecting the returned field. Default is "
+             "to verify (BUG-07).",
+    )
 
 
 def run_import_cli(args: argparse.Namespace) -> int:
@@ -175,6 +182,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
             allow_enum_dict_bypass=args.allow_enum_dict_bypass,
             progress_stream=sys.stderr,
             progress_audit_path=audit_path,
+            phase2_verify=not args.no_phase2_verify,
         )
     except requests.exceptions.SSLError as exc:
         sys.stderr.write(
@@ -287,7 +295,8 @@ def run_import_cli(args: argparse.Namespace) -> int:
         sys.stderr.write(
             f"  phase2: patched={summary.phase2.counts.get(Phase2Outcome.PATCHED, 0)} "
             f"skipped={summary.phase2.counts.get(Phase2Outcome.SKIPPED, 0)} "
-            f"failed={summary.phase2.counts.get(Phase2Outcome.FAILED, 0)}\n"
+            f"failed={summary.phase2.counts.get(Phase2Outcome.FAILED, 0)} "
+            f"verified_mismatch={summary.phase2.counts.get(Phase2Outcome.VERIFIED_MISMATCH, 0)}\n"
         )
     sys.stderr.write(
         f"  snapshot parse errors: {len(summary.parse_errors)}\n"
@@ -391,6 +400,7 @@ def _compute_exit_code(
 
     phase2_failures = (
         summary.phase2.counts.get(Phase2Outcome.FAILED, 0)
+        + summary.phase2.counts.get(Phase2Outcome.VERIFIED_MISMATCH, 0)
         if summary.phase2 is not None
         else 0
     )

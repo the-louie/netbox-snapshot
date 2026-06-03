@@ -88,6 +88,7 @@ def run_import(
     progress: Any = None,
     progress_stream: Any = None,
     progress_audit_path: Path | None = None,
+    phase2_verify: bool = True,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
 
@@ -273,6 +274,7 @@ def run_import(
             deferred_queue,
             dest_index=index,
             registry=registry,
+            verify=phase2_verify,
         )
         # Phase-2 failures honour the same on_error semantics as
         # Phase-1: under "stop" any failed PATCH aborts; under

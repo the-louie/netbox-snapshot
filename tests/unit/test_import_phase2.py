@@ -257,3 +257,64 @@ def test_phase2summary_is_clean_only_when_zero_failures() -> None:
     assert s.is_clean()
     s.counts[Phase2Outcome.FAILED] = 1
     assert not s.is_clean()
+
+
+def test_run_phase2_verifies_field_changed(dest_index, registry) -> None:
+    """BUG-07: a 2xx response whose body shows the field
+    unchanged is classified as VERIFIED_MISMATCH, not patched.
+    """
+
+    dest_index.insert("dcim.device", (("hall-d",), "d39a"), 99)
+    dest_index.insert("ipam.ipaddress", ("172.16.1.10/24",), 7)
+
+    http = MagicMock()
+    http.get_all.return_value = iter([])
+    # PATCH returns 2xx but the field value did not change
+    # (NetBox silently dropped the update).
+    http.patch.return_value = {"primary_ip4": None}
+
+    queue = [_entry()]
+    summary = run_phase2(http, queue, dest_index=dest_index, registry=registry)
+
+    assert summary.counts[Phase2Outcome.VERIFIED_MISMATCH] == 1
+    assert summary.counts.get(Phase2Outcome.PATCHED, 0) == 0
+    assert not summary.is_clean()
+
+
+def test_run_phase2_verify_false_skips_check(dest_index, registry) -> None:
+    """With `verify=False` the helper trusts the 2xx response
+    even when the body would have flagged a mismatch. Matches
+    the `--no-phase2-verify` CLI escape hatch."""
+
+    dest_index.insert("dcim.device", (("hall-d",), "d39a"), 99)
+    dest_index.insert("ipam.ipaddress", ("172.16.1.10/24",), 7)
+
+    http = MagicMock()
+    http.get_all.return_value = iter([])
+    http.patch.return_value = {"primary_ip4": None}
+
+    queue = [_entry()]
+    summary = run_phase2(
+        http, queue,
+        dest_index=dest_index, registry=registry,
+        verify=False,
+    )
+    assert summary.counts[Phase2Outcome.PATCHED] == 1
+    assert summary.is_clean()
+
+
+def test_run_phase2_accepts_nested_field_value(dest_index, registry) -> None:
+    """NetBox's PATCH response may carry the field as a nested
+    `{"id": <int>, ...}` representation; the verifier should
+    treat that as a match against the submitted id."""
+
+    dest_index.insert("dcim.device", (("hall-d",), "d39a"), 99)
+    dest_index.insert("ipam.ipaddress", ("172.16.1.10/24",), 7)
+
+    http = MagicMock()
+    http.get_all.return_value = iter([])
+    http.patch.return_value = {"primary_ip4": {"id": 7, "display": "x"}}
+
+    queue = [_entry()]
+    summary = run_phase2(http, queue, dest_index=dest_index, registry=registry)
+    assert summary.counts[Phase2Outcome.PATCHED] == 1

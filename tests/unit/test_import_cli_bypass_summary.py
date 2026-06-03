@@ -31,6 +31,7 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "audit_summary_limit": 10,
         "max_skipped": -1,
         "max_skipped_ct": [],
+        "no_phase2_verify": False,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

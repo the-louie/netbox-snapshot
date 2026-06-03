@@ -644,46 +644,6 @@ control over how the tool reacts.
 **Estimated Effort:** 1-2h. Depends on FEAT-46b.
 
 
-### [BUG-07] Phase-2 PATCH treats 2xx as success without verifying field update
-
-**Context:** Source review R-14.
-`src/nbsnap/import_/phase2.py:run_phase2` issues
-`http.patch(f"{endpoint}{child_id}/", {entry.field_name: target_id})`
-and counts any 2xx as `patched`. NetBox can return 200 OK on
-a PATCH that did not change a field (e.g. silently ignored
-because the target_id exists but is not a legal value for
-that field type, depending on NetBox's serializer
-behaviour). The audit then reports false confidence.
-
-**Why this matters:** the audit's "phase2: patched=242"
-becomes unreliable as a signal. An operator who trusts the
-counter as authoritative proof of cycle-closure will be
-misled.
-
-**Requirements:**
-
-- After PATCH, GET the record back and confirm the response
-  body's `<field_name>` matches the submitted `target_id`.
-  NetBox returns the updated record body in the PATCH response
-  itself, inspect that first; fall back to a GET if the body
-  is empty or stripped.
-- Add a new `Phase2Outcome.VERIFIED_MISMATCH` (depends on
-  REFACTOR-04) for cases where 2xx came back but the field did
-  not actually change.
-- Treat VERIFIED_MISMATCH as a non-zero exit code trigger;
-  log at WARNING and surface in the summary.
-- Add an opt-out `--no-phase2-verify` flag for operators
-  willing to trust the 2xx response (matches REST optimism).
-
-**Testing:** unit test in `tests/unit/test_import_phase2.py`
-with a fake http that returns 200 OK but the response body
-shows the field unchanged. Assert the outcome is
-VERIFIED_MISMATCH.
-
-**Estimated Effort:** 2h. Depends on REFACTOR-04 for the
-enum.
-
-
 ### [FEAT-49] Exit-code bitmask reflecting SKIPPED granularity and bypass
 
 **Context:** Source review R-17.
