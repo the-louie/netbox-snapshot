@@ -47,6 +47,8 @@ for the full implementation history.
 
 ### BUG-09 — Frozen snapshot pre-dates enum-dict elimination (FEAT-36-blocker)
 
+**Status.** DEFERRED — operator-domain. Resolution depends on `NB_SOURCE_URL` becoming reachable so the frozen snapshot can be re-exported via the `/nbsnap-export` skill. No code change blocks closure; the loop's invariant ("the frozen snapshot is read-only on disk") prevents an in-place rewrite.
+
 **Context.** `/workspace/snapshot-source-frozen/`. The pinned snapshot was exported before the import-side enum-dict elimination landed. Running `nbsnap import` against the lab destination without `--allow-enum-dict-bypass` aborts on the preflight; with the bypass, 12 files / 11 distinct fields coerce 5736 rows on the way in (see `tmp/nbsnap-rescue-11/import-attempt-2.log` summary block, `enum-dict bypass active: 12 files used the import-side coerce`).
 
 Affected fields (file → field):
@@ -65,6 +67,8 @@ Affected fields (file → field):
 **Estimated effort.** 0 hours coding; one explicit operator gate when source returns.
 
 ### BUG-10 — 14 `ipam.ipaddress` rows refused by destination `ENFORCE_GLOBAL_UNIQUE`
+
+**Status.** DEFERRED — operator-domain. The code-side visibility piece is delivered by BUG-13 (per-row SKIPPED audit lines now in `audit.jsonl` carry every refused NK + reason). What remains is the operator decision: either set `ENFORCE_GLOBAL_UNIQUE = False` on the destination NetBox's `configuration.py` to accept the duplicates, or de-duplicate the source data once the source is reachable. Both options are outside this codebase. The next rescue iteration's `audit.jsonl` will list the 14 refused NKs for the operator to act on.
 
 **Context.** `src/nbsnap/import_/` upsert path for `ipam.ipaddress`. See `tmp/nbsnap-rescue-11/import-attempt-2.log` skipped block: `ipam.ipaddress: 14 (ip-address refused due to a duplicate already on the destination …)`. The source NetBox allowed duplicate IPs; the destination's `ENFORCE_GLOBAL_UNIQUE = True` refuses them. A direct consequence is six `dcim.device.primary_ip4` Phase-2 patches that skip because the target IP never landed:
 
@@ -92,6 +96,8 @@ These are all `/32` loopbacks on `lo0.0` for d-region access switches, which str
 
 ### BUG-11 — 86 `ipam.iprange` rows refused as overlap by destination `ENFORCE_GLOBAL_UNIQUE`
 
+**Status.** DEFERRED — operator-domain. Same shape as BUG-10. BUG-13 delivers the per-row visibility in `audit.jsonl`; the remaining decision (relax `ENFORCE_GLOBAL_UNIQUE` on the destination vs. remove overlapping rows at the source) is outside this codebase.
+
 **Context.** `src/nbsnap/import_/` upsert path for `ipam.iprange`. See `tmp/nbsnap-rescue-11/import-attempt-2.log`: `ipam.iprange: 86 (iprange refused due to overlap with an existing range. The source NetBox allowed this overlap; the destination's ENFORCE_GLOBAL_UNIQUE policy refuses it.)`. Same root cause as BUG-10 (destination policy mismatch), but the count is much higher (86 vs 14), so the source almost certainly has *intentional* overlapping ranges (kea-participant pools that overlap kea-dist-mgmt ranges by design — that's how the renderers in `__reference/nb2kea/` build pool allocations).
 
 **Why this matters.** If the destination refuses 86/101 iprange rows, every renderer that walks `ipam/ip-ranges/` for the `kea-*` roles will produce empty allocations. That breaks the `kea-participant` and `kea-dist-mgmt` flows end-to-end on the destination.
@@ -107,6 +113,8 @@ These are all `/32` loopbacks on `lo0.0` for d-region access switches, which str
 **Estimated effort.** 1 hour for the summary side (shared with BUG-10). Operator-side config change is out-of-band.
 
 ### BUG-12 — 4 `dcim.cable` rows skipped: at least one termination did not import
+
+**Status.** DEFERRED — operator-domain. The per-row visibility piece is delivered by BUG-13 (`audit.jsonl` now lists every skipped cable's NK). The existing regression coverage (`tests/unit/test_import_skipped_incomplete.py`, `tests/unit/test_import_cable_terminations.py`) already pins the skip behaviour at the upsert layer, so there is no remaining code change. What remains is operator-side: walk the four NKs in `audit.jsonl`, check whether each cable's missing termination is genuinely absent from `dcim/interfaces.jsonl` (stale source row → remove at source) or whether the import refused the interface (file a fresh ticket against the import path with the specific NK). This is one-off triage, not a recurring bug.
 
 **Context.** `src/nbsnap/import_/` upsert path for `dcim.cable`. See `tmp/nbsnap-rescue-11/import-attempt-2.log`: `dcim.cable: 4 (cable body has no resolvable terminations on at least one side, skipping; the source row's interface endpoints did not import successfully)`. The cable section ran *after* `dcim.interface` (which completed cleanly — 3582 interfaces, 0 failed in the per-section line). So the four "unresolved terminations" cables either (a) reference interfaces that legitimately don't exist on the source — a snapshot data integrity issue, or (b) reference interfaces whose parent device was skipped further upstream — cascade from BUG-10's missing devices.
 
