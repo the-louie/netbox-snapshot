@@ -68,6 +68,16 @@ class DropCategory(Enum):
     # coerced field so an operator can verify which records
     # the bypass touched (BUG-01b).
     BYPASS_COERCED = "bypass_coerced"
+    # The upsert short-circuited a row whose POST would have been
+    # refused by destination policy (e.g. ENFORCE_GLOBAL_UNIQUE)
+    # or whose body is structurally incomplete (e.g. a cable
+    # with no resolvable terminations). The row did not land on
+    # the destination, but the failure is not nbsnap's bug; it
+    # reflects either operator-domain configuration or a
+    # source-side data issue. One audit line per skipped row so
+    # the operator can attribute the count back to specific NKs
+    # (BUG-13).
+    SKIPPED = "skipped"
 
 
 @dataclass
@@ -119,6 +129,11 @@ class Auditor:
       `(child_ct, child_nk, field)` triple, mirroring the
       `_strip_deferred_fields_and_queue` work-queue key so the
       audit count and the Phase-2 patched count compare cleanly.
+    * For `SKIPPED` the key is the `(child_ct, child_nk)` pair,
+      because a skipped row is a specific source record (not a
+      class of FK drop). Two distinct rows that share a reason
+      each get their own audit line; the same row processed
+      twice collapses (BUG-13).
     """
 
     events: list[DropEvent] = field(default_factory=list)
@@ -139,6 +154,10 @@ class Auditor:
         applies to the Phase-2 work queue, so the audit count
         and the Phase-2 patched count compare cleanly.
 
+        For `SKIPPED` the key is `(child_ct, child_nk)` because
+        the event identifies a specific source row that did not
+        land, not a field reference.
+
         The first occurrence wins; later occurrences are
         silently dropped. We log at INFO level so the operator
         can crank verbosity up if they want every duplicate to
@@ -151,6 +170,18 @@ class Auditor:
                 event.child_content_type,
                 event.child_nk,
                 event.field_name,
+            )
+        elif event.category is DropCategory.SKIPPED:
+            # Per-row: a skipped row is not a class of FK drop,
+            # it is a specific source record that did not land.
+            # Dedup on (child_ct, child_nk) so re-processing the
+            # same row (e.g. via look-ahead then main phase)
+            # collapses, while two distinct rows skipped for the
+            # same reason each get their own audit line.
+            key = (
+                "skipped",
+                event.child_content_type,
+                event.child_nk,
             )
         else:
             key = (

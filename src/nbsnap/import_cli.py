@@ -35,6 +35,7 @@ import requests
 
 from nbsnap.export.manifest import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
+from nbsnap.import_.audit import DropCategory
 from nbsnap.import_.driver import ImportSummary, run_import
 from nbsnap.import_.phase2 import Phase2Outcome
 from nbsnap.import_.upsert import UpsertOutcome
@@ -366,6 +367,21 @@ def run_import_cli(args: argparse.Namespace) -> int:
     sys.stderr.write(
         summary.auditor.render_summary(limit=args.audit_summary_limit)
     )
+    # BUG-13 cross-check: the SKIPPED upsert count and the
+    # number of `category=skipped` audit events must agree.
+    # They diverge only on an emission bug; surface that to the
+    # operator instead of silently miscounting.
+    skipped_count = summary.counts.get(UpsertOutcome.SKIPPED, 0)
+    audit_skipped_count = sum(
+        1 for ev in summary.auditor.events
+        if ev.category is DropCategory.SKIPPED
+    )
+    if skipped_count != audit_skipped_count:
+        sys.stderr.write(
+            f"  WARNING: skipped summary count ({skipped_count}) "
+            f"diverges from audit skipped events "
+            f"({audit_skipped_count})\n"
+        )
     audit_path = args.audit_out or (in_dir / "audit.jsonl")
     summary.auditor.write_jsonl(audit_path)
     sys.stderr.write(f"  audit log: {audit_path}\n")

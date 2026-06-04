@@ -302,6 +302,19 @@ def run_import(
                 bucket = summary.skipped_by_ct.setdefault(ct, {})
                 reason = _skip_reason_group(result.message or "")
                 bucket[reason] = bucket.get(reason, 0) + 1
+                # BUG-13: emit one audit line per skipped row so the
+                # rescue loop's Phase-3 mining can attribute the
+                # SKIPPED count back to specific NKs. Summary count
+                # and audit count are cross-checked at end-of-run.
+                auditor.record(DropEvent(
+                    category=DropCategory.SKIPPED,
+                    child_content_type=ct,
+                    child_nk=tuple(nk) if nk else (),
+                    field_name="",
+                    target_content_type="",
+                    target_nk=(),
+                    message=result.message or "",
+                ))
             if progress is not None:
                 progress.tick(ct, row_index)
             if result.outcome is UpsertOutcome.FAILED:
