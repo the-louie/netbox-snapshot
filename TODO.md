@@ -116,6 +116,17 @@ These are all `/32` loopbacks on `lo0.0` for d-region access switches, which str
 
 **Status.** DEFERRED — operator-domain. The per-row visibility piece is delivered by BUG-13 (`audit.jsonl` now lists every skipped cable's NK). The existing regression coverage (`tests/unit/test_import_skipped_incomplete.py`, `tests/unit/test_import_cable_terminations.py`) already pins the skip behaviour at the upsert layer, so there is no remaining code change. What remains is operator-side: walk the four NKs in `audit.jsonl`, check whether each cable's missing termination is genuinely absent from `dcim/interfaces.jsonl` (stale source row → remove at source) or whether the import refused the interface (file a fresh ticket against the import path with the specific NK). This is one-off triage, not a recurring bug.
 
+**Concrete NKs (from rescue-12 audit).** All four skipped cables have an **empty `a_terminations`** side and a B-termination on `C-ESPORTS-CITY-2-SW`:
+
+| Cable A side | Cable B side |
+| :--- | :--- |
+| (empty) | `dcim.interface` `((('c',), 'C-ESPORTS-CITY-2-SW'), 'ge-0/0/8')` |
+| (empty) | `dcim.interface` `((('c',), 'C-ESPORTS-CITY-2-SW'), 'ge-0/0/9')` |
+| (empty) | `dcim.interface` `((('c',), 'C-ESPORTS-CITY-2-SW'), 'ge-0/0/10')` |
+| (empty) | `dcim.interface` `((('c',), 'C-ESPORTS-CITY-2-SW'), 'ge-0/0/11')` |
+
+Pattern strongly suggests a partial cable-delete on the source: B side intact, A side cleared but the cable row itself was not removed. Operator action: in the source NetBox, decide whether to fully delete these four cable rows or restore their A-termination. Either way, the next snapshot refresh will land cleanly.
+
 **Context.** `src/nbsnap/import_/` upsert path for `dcim.cable`. See `tmp/nbsnap-rescue-11/import-attempt-2.log`: `dcim.cable: 4 (cable body has no resolvable terminations on at least one side, skipping; the source row's interface endpoints did not import successfully)`. The cable section ran *after* `dcim.interface` (which completed cleanly — 3582 interfaces, 0 failed in the per-section line). So the four "unresolved terminations" cables either (a) reference interfaces that legitimately don't exist on the source — a snapshot data integrity issue, or (b) reference interfaces whose parent device was skipped further upstream — cascade from BUG-10's missing devices.
 
 The six d-region switches with skipped `primary_ip4` (BUG-10) are still imported as devices, so their interfaces should exist. That makes (a) more likely: stale cable rows in the source pointing at interfaces that were deleted.
