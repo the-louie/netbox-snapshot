@@ -240,10 +240,14 @@ _POST_FAILURE_SKIP_PATTERNS: list[dict[str, Any]] = [
         "keywords": ("addresses", "overlap", "range"),
         "verified_against": "NetBox 4.6.2",
         "explanation": (
-            "iprange refused due to overlap with an existing range. "
-            "The source NetBox allowed this overlap; the destination's "
-            "ENFORCE_GLOBAL_UNIQUE policy refuses it. Either relax the "
-            "destination policy or remove the overlapping snapshot row."
+            "iprange refused due to overlap with an existing range in "
+            "the same VRF / global table. NetBox enforces this in the "
+            "always-on IPRange.clean() validator; it is NOT governed by "
+            "ENFORCE_GLOBAL_UNIQUE (that setting only covers prefixes "
+            "and IP addresses). The only viable remediations are "
+            "source-side: remove the overlapping row from the source "
+            "NetBox, or assign one of the ranges to a different VRF "
+            "so they no longer share an address space."
         ),
     },
     {

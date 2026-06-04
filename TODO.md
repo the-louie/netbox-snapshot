@@ -66,37 +66,11 @@ Affected fields (file → field):
 
 **Estimated effort.** 0 hours coding; one explicit operator gate when source returns.
 
-### BUG-10 — 14 `ipam.ipaddress` rows refused by destination `ENFORCE_GLOBAL_UNIQUE`
+### BUG-11 — 86 `ipam.iprange` rows refused as overlap
 
-**Status.** DEFERRED — operator-domain. The code-side visibility piece is delivered by BUG-13 (per-row SKIPPED audit lines now in `audit.jsonl` carry every refused NK + reason). What remains is the operator decision: either set `ENFORCE_GLOBAL_UNIQUE = False` on the destination NetBox's `configuration.py` to accept the duplicates, or de-duplicate the source data once the source is reachable. Both options are outside this codebase. The next rescue iteration's `audit.jsonl` will list the 14 refused NKs for the operator to act on.
+**Status.** DEFERRED — source-domain only. Rescue-13 (with destination `ENFORCE_GLOBAL_UNIQUE = False`) **still** refuses all 86 ipranges with the same overlap text. Root cause confirmed: NetBox's IPRange model carries an always-on overlap check in `IPRange.clean()` that is **not** gated by `ENFORCE_GLOBAL_UNIQUE` (the doc names only "prefixes and IP addresses"). There is no destination-side toggle that clears these. Resolution requires either (a) remove the overlapping rows at the source NetBox once reachable, or (b) accept the loss on the destination — these 86 rows model intentionally-overlapping kea-participant pools and removing them at source breaks the renderer contract. Decision is purely source-side data design; outside this codebase.
 
-**Context.** `src/nbsnap/import_/` upsert path for `ipam.ipaddress`. See `tmp/nbsnap-rescue-11/import-attempt-2.log` skipped block: `ipam.ipaddress: 14 (ip-address refused due to a duplicate already on the destination …)`. The source NetBox allowed duplicate IPs; the destination's `ENFORCE_GLOBAL_UNIQUE = True` refuses them. A direct consequence is six `dcim.device.primary_ip4` Phase-2 patches that skip because the target IP never landed:
-
-```
-Phase-2: target ipam.ipaddress NK=('172.16.255.5/32', 'dcim.interface', ((('d',), 'D-MIRAGE-PALACE-SW'), 'lo0.0')) still missing, skipping dcim.device.primary_ip4
-…and 5 more (172.16.255.4/32, .6/32, .7/32, .8/32, .9/32, all on the d-region access switches' lo0.0)
-```
-
-These are all `/32` loopbacks on `lo0.0` for d-region access switches, which strongly suggests the destination already has the same loopback addresses from a previous partial import that wasn't fully wiped, OR the source genuinely has duplicate global IPs across two devices (legitimate in some lab/management contexts).
-
-**Why this matters.** Without these primary_ip4 patches landing, the six d-region switches end up with no `primary_ip4` set on the destination, which breaks the renderer contract (`netbox2kea.py` reads `device.primary_ip4`).
-
-**Requirements.**
-
-1. Pull the audit log for the 14 refused IPs by re-running `nbsnap import` with `--audit-out` and a fresh wipe, then jsonl-grep for `ipam.ipaddress` SKIPPED entries — *blocked by BUG-13 below; today the audit log does not carry SKIPPED rows*. Workaround for this ticket: parse them out of the textual `import-attempt-2.log` summary plus the six explicit Phase-2 skip lines.
-2. For each refused IP, decide: (a) is this a genuine source-side duplicate the operator wants? — if yes, the only path is to set `ENFORCE_GLOBAL_UNIQUE = False` on the destination via `configuration.py` (operator-domain change, not a code change here) and re-run; (b) if not, the source row is stale and should be removed at the source (when reachable) — until then, document the loss in the rescue-iteration README.
-3. Update the import side so the SKIPPED summary line includes the NK of every refused row (today the summary only carries the count and the reason). Append to `src/nbsnap/summary.py`.
-
-**Testing.**
-
-- Extend `tests/unit/test_import_skip_enforcement.py` (create if absent) with a stub HTTP client that returns `HTTP 400 {"address": ["Duplicate IP address found in global table: …"]}` for an `ipam.ipaddress` POST. Assert (i) the row counts as SKIPPED, (ii) the per-row NK appears in the SKIPPED summary line, (iii) downstream Phase-2 patches that depend on the row skip cleanly without raising.
-- Run `pytest tests/unit/ --ignore=tests/unit/test_pack.py --ignore=tests/unit/test_cli.py --ignore=tests/unit/test_reset_cli_skeleton.py -q`.
-
-**Estimated effort.** 1–2 hours for the summary change + test. The operator decision in step 2 is out-of-band.
-
-### BUG-11 — 86 `ipam.iprange` rows refused as overlap by destination `ENFORCE_GLOBAL_UNIQUE`
-
-**Status.** DEFERRED — operator-domain. Same shape as BUG-10. BUG-13 delivers the per-row visibility in `audit.jsonl`; the remaining decision (relax `ENFORCE_GLOBAL_UNIQUE` on the destination vs. remove overlapping rows at the source) is outside this codebase.
+The misleading skip-reason text that blamed `ENFORCE_GLOBAL_UNIQUE` is fixed by BUG-14 below.
 
 **Context.** `src/nbsnap/import_/` upsert path for `ipam.iprange`. See `tmp/nbsnap-rescue-11/import-attempt-2.log`: `ipam.iprange: 86 (iprange refused due to overlap with an existing range. The source NetBox allowed this overlap; the destination's ENFORCE_GLOBAL_UNIQUE policy refuses it.)`. Same root cause as BUG-10 (destination policy mismatch), but the count is much higher (86 vs 14), so the source almost certainly has *intentional* overlapping ranges (kea-participant pools that overlap kea-dist-mgmt ranges by design — that's how the renderers in `__reference/nb2kea/` build pool allocations).
 
