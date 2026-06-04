@@ -45,30 +45,6 @@ for the full implementation history.
 
 ## Open
 
-### FEAT-50 — Progress indicator for `reset-destination`
-
-**Context.** `src/nbsnap/reset_cli.py`. `nbsnap reset-destination --apply` currently prints one `deleting N records` line per content-type section and then goes silent until that section completes. On the lab destination, `dcim.cable` and `dcim.interface` sections take long enough that the operator cannot tell whether the run is progressing or stalled (see `tmp/nbsnap-rescue-11/reset.log` for an example — the run sat on `dcim.interface: deleting 3582 records` with no further output for minutes).
-
-`src/nbsnap/progress_ui.py` already exports the spinner / progress primitives used by the import side; reuse those, do not introduce a new progress framework.
-
-**Why this matters.** The rescue loop's Phase 1 is destructive and blocking. Operators currently cannot distinguish "slow but progressing" from "wedged on a single HTTP retry storm", and the only signal today is the section header. A coarse-grained progress trail (every 10%) is enough to discriminate the two without spamming the log.
-
-**Requirements.**
-
-1. At the start of each content-type section, print one line with the exact count discovered: `dcim.interface: 3582 records to delete`.
-2. As deletes progress, emit a progress line every time the cumulative deleted count crosses a 10% boundary (10%, 20%, …, 100%). Format: `dcim.interface: 1432/3582 (40%)`. Always print 100% even if it coincides with the final batch boundary.
-3. Sections with fewer than 10 records emit only the start line and a single `dcim.frontport: 0/0 (done)` (or equivalent) — do not divide-by-zero, do not print 10 redundant lines for a 3-record section.
-4. Progress output goes to stderr (same stream as the existing section header), so `tee` in the rescue-loop captures it without polluting structured stdout consumers.
-5. Respect `--quiet`: when set, suppress per-percentage lines but keep the start and end-of-section lines.
-
-**Testing.**
-
-- Add `tests/unit/test_reset_progress.py` that drives `reset_cli` with a stub HTTP client returning a known number of records per content type and asserts the exact progress lines on stderr (start line, 10/20/…/100% lines, no extras).
-- Cover the small-N edge case (N=0 and N=3) explicitly.
-- Run the full unit suite: `pytest tests/unit/ --ignore=tests/unit/test_pack.py --ignore=tests/unit/test_cli.py --ignore=tests/unit/test_reset_cli_skeleton.py -q`.
-
-**Estimated effort.** 1–2 hours.
-
 ### BUG-09 — Frozen snapshot pre-dates enum-dict elimination (FEAT-36-blocker)
 
 **Context.** `/workspace/snapshot-source-frozen/`. The pinned snapshot was exported before the import-side enum-dict elimination landed. Running `nbsnap import` against the lab destination without `--allow-enum-dict-bypass` aborts on the preflight; with the bypass, 12 files / 11 distinct fields coerce 5736 rows on the way in (see `tmp/nbsnap-rescue-11/import-attempt-2.log` summary block, `enum-dict bypass active: 12 files used the import-side coerce`).

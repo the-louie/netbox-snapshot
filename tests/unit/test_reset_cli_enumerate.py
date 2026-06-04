@@ -182,8 +182,9 @@ def test_dry_run_emits_would_delete_count_per_content_type(
 def test_apply_mode_emits_deleting_count_per_content_type(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The apply-and-confirmed path swaps the verb. Real DELETE
-    issuance lands in FEAT-37d."""
+    """The apply-and-confirmed path uses the progress-paired
+    opening line `<ct>: N records to delete` (FEAT-50). Dry-run
+    keeps the legacy `would delete` phrasing."""
 
     client = _fake_client(**{
         "dcim/sites/": [{"id": 1, "name": "Hall-A"}],
@@ -195,7 +196,7 @@ def test_apply_mode_emits_deleting_count_per_content_type(
 
     assert rc == EXIT_OK
     err = capsys.readouterr().err
-    assert "dcim.site: deleting 1 records" in err
+    assert "dcim.site: 1 records to delete" in err
 
 
 def test_keep_excludes_named_row_in_run_reset_cli(

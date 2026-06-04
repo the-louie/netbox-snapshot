@@ -32,7 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from nbsnap.export.driver import DEFAULT_SCOPE
@@ -195,6 +195,7 @@ def run_reset_cli(args: argparse.Namespace) -> int:
         + ("(apply)" if args.apply and args.confirmed else "(dry-run)")
         + "\n"
     )
+    quiet = bool(getattr(args, "quiet", False))
     failures: list[tuple[str, int, str]] = []
     audit_lines: list[str] = []
     for ct in delete_order:
@@ -206,11 +207,22 @@ def run_reset_cli(args: argparse.Namespace) -> int:
             # do not know how to enumerate.
             continue
         ids = list(_enumerate_ids(http, endpoint, keep_names))
-        verb = "deleting" if args.apply and args.confirmed else "would delete"
-        sys.stderr.write(f"  {ct}: {verb} {len(ids)} records\n")
-        if not (args.apply and args.confirmed):
+        total = len(ids)
+        if args.apply and args.confirmed:
+            # FEAT-50: progress lines need a stable opening
+            # phrase so an operator skimming the log can pair
+            # "N records to delete" with subsequent "k/N (p%)"
+            # lines. Dry-run keeps the legacy "would delete"
+            # phrasing so prior CI scripts continue to match.
+            sys.stderr.write(f"  {ct}: {total} records to delete\n")
+        else:
+            sys.stderr.write(f"  {ct}: would delete {total} records\n")
             continue
-        ct_failures, ct_audit = _delete_ids_with_audit(http, endpoint, ids, ct)
+        progress = _ResetProgress(ct, total, quiet=quiet)
+        ct_failures, ct_audit = _delete_ids_with_audit(
+            http, endpoint, ids, ct, on_batch=progress.tick,
+        )
+        progress.finish()
         audit_lines.extend(ct_audit)
         for rid, msg in ct_failures:
             failures.append((ct, rid, msg))
@@ -282,7 +294,11 @@ def _reverse_topological_order(http: NetboxHTTP, scope: set[str]) -> list[str]:
 
 
 def _delete_ids_with_audit(
-    http: NetboxHTTP, endpoint: str, ids: list[int], content_type: str
+    http: NetboxHTTP,
+    endpoint: str,
+    ids: list[int],
+    content_type: str,
+    on_batch: "Callable[[int], None] | None" = None,
 ) -> tuple[list[tuple[int, str]], list[str]]:
     """Delete every id, return `(failures, audit_lines)`.
 
@@ -298,6 +314,12 @@ def _delete_ids_with_audit(
     the per-id rescue path, `failed` for rows that did not
     delete cleanly. The line shape stays stable so downstream
     tooling can parse audit.jsonl reliably.
+
+    `on_batch` (FEAT-50) is called with the number of ids the
+    current batch attempted to process, regardless of whether
+    every id succeeded. The caller uses that to drive the
+    progress emitter; a None call site keeps the helper usable
+    in tests that do not care about progress.
 
     Note: this helper does NOT dedupe. Calling it twice for the
     same content type with overlapping ids would write the same
@@ -318,6 +340,8 @@ def _delete_ids_with_audit(
                     {"content_type": content_type, "id": rid, "outcome": "deleted"},
                     sort_keys=True,
                 ))
+            if on_batch is not None:
+                on_batch(len(batch))
             continue
         except NetboxHTTPError as exc:
             if 500 <= exc.status < 600:
@@ -328,6 +352,8 @@ def _delete_ids_with_audit(
                         "content_type": content_type, "id": rid,
                         "outcome": "failed", "message": msg,
                     }, sort_keys=True))
+                if on_batch is not None:
+                    on_batch(len(batch))
                 continue
             # 4xx: per-id fallback.
             for rid in batch:
@@ -344,7 +370,105 @@ def _delete_ids_with_audit(
                         "content_type": content_type, "id": rid,
                         "outcome": "deleted-fallback",
                     }, sort_keys=True))
+            if on_batch is not None:
+                on_batch(len(batch))
     return failures, audit
+
+
+class _ResetProgress:
+    """Emit 10%-boundary progress lines for one content type.
+
+    The reset's per-content-type loop deletes in batches of
+    `BATCH` ids. After every batch the caller hands the number
+    of ids the batch covered to `tick`, and the emitter prints
+    one `<ct>: <k>/<N> (<p>%)` line each time `k/N` crosses a
+    new 10% boundary. `finish` always emits a closing 100% line
+    (or a `done` line for empty content types) so an operator
+    can pair the opening "to delete" line with a closing
+    boundary.
+
+    `quiet=True` suppresses per-percentage lines but keeps the
+    closing line. The opening "<ct>: N records to delete" line
+    lives in the caller because it is also printed in dry-run.
+    """
+
+    # Below this size, 10%-boundary granularity would print N
+    # redundant lines for a section the operator can read in
+    # one glance. The opening "N records to delete" line in the
+    # caller and the closing `finish` line carry enough signal.
+    _SMALL_N = 10
+
+    def __init__(self, content_type: str, total: int, *, quiet: bool = False) -> None:
+        self.ct = content_type
+        self.total = total
+        self.quiet = quiet
+        self.done = 0
+        self.next_boundary = 10  # next 10%-boundary to announce
+
+    def tick(self, processed: int) -> None:
+        """Advance the counter by `processed` and emit progress
+        lines for every 10% boundary crossed.
+
+        A single tick that crosses several boundaries (e.g. a
+        big batch on a small content type) emits every crossed
+        boundary, not just the final one, so the log stays
+        deterministic regardless of batch size.
+
+        Suppresses output when `total < _SMALL_N` (the section
+        is too small for per-percentage granularity to add
+        information) or when `quiet` is set.
+        """
+
+        self.done = min(self.done + processed, self.total)
+        if self.total < self._SMALL_N or self.quiet:
+            return
+        while self.next_boundary <= 100:
+            threshold = (self.total * self.next_boundary + 99) // 100
+            # Ceiling division: at N=10, the 10% boundary lands
+            # exactly on the 1st row (`(10*10+99)//100 = 1`), so
+            # a 1-id tick announces 10%. Without ceil, 0.99
+            # would round down to 0 and announce too early.
+            if self.done < threshold:
+                break
+            if self.next_boundary == 100:
+                # The closing 100% line is owned by `finish`
+                # so a content type whose final batch exactly
+                # hits N does not double-print 100%.
+                break
+            sys.stderr.write(
+                f"  {self.ct}: {self.done}/{self.total} "
+                f"({self.next_boundary}%)\n"
+            )
+            self.next_boundary += 10
+
+    def finish(self) -> None:
+        """Emit the closing line for the content type.
+
+        Three cases:
+
+        * `total == 0`: print `0/0 (done)` so the operator sees
+          an explicit end of the section instead of silence.
+        * `total < _SMALL_N`: print `N/N (done)` — per-percentage
+          lines were suppressed in `tick`, but the section still
+          needs a paired closing line so the log structure stays
+          consistent.
+        * Otherwise: print one `100%` line. We do this here
+          (not in `tick`) so the boundary is announced exactly
+          once, even when the final tick coincides with the
+          100% threshold.
+        """
+
+        if self.total <= 0:
+            sys.stderr.write(f"  {self.ct}: 0/0 (done)\n")
+            return
+        if self.total < self._SMALL_N:
+            sys.stderr.write(
+                f"  {self.ct}: {self.total}/{self.total} (done)\n"
+            )
+            return
+        sys.stderr.write(
+            f"  {self.ct}: {self.total}/{self.total} (100%)\n"
+        )
 
 
 def _flush_audit(path: Path | None, lines: list[str]) -> None:
