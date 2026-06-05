@@ -13,17 +13,20 @@ def test_snapshot_package_is_importable() -> None:
     import nbsnap.snapshot  # noqa: F401, side-effect-free import is the assertion
 
 
-def test_snapshot_public_surface_starts_empty() -> None:
-    """ARCH-01a baseline: the public surface is empty.
+def test_snapshot_public_surface_contains_manifest() -> None:
+    """ARCH-01b: ``Manifest`` and friends are re-exported at package root.
 
-    ARCH-01b/c/d will append entries to ``__all__`` as they migrate
-    contracts in. Each of those sub-tickets is expected to update
-    this assertion (or replace it with one that asserts the now-
-    populated set). The assertion is here so the *initial* scaffold
-    cannot ship with an accidental dependency on
-    :mod:`nbsnap.export` leaking through.
+    Tracks the contract that the package owns. ARCH-01c/d will
+    append further entries (``CONTENT_TYPE_FILES``, ``relative_path``,
+    ``collapse_enum_dict``); update this set then.
     """
 
     import nbsnap.snapshot
 
-    assert nbsnap.snapshot.__all__ == []
+    expected = {
+        "MANIFEST_FILENAME",
+        "Manifest",
+        "SOURCE_URL_HASH_LENGTH",
+        "compute_source_url_hash",
+    }
+    assert set(nbsnap.snapshot.__all__) == expected

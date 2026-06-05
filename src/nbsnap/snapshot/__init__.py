@@ -31,4 +31,16 @@ private.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from nbsnap.snapshot.manifest import (
+    MANIFEST_FILENAME,
+    SOURCE_URL_HASH_LENGTH,
+    Manifest,
+    compute_source_url_hash,
+)
+
+__all__: list[str] = [
+    "MANIFEST_FILENAME",
+    "Manifest",
+    "SOURCE_URL_HASH_LENGTH",
+    "compute_source_url_hash",
+]

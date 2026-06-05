@@ -59,16 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01b: Move `Manifest` and `MANIFEST_FILENAME` into `snapshot/manifest.py`
-
-* **Context.** `Manifest` and `MANIFEST_FILENAME` live in `src/nbsnap/export/manifest.py` and are imported by `import_/driver.py:25-26` and `import_/preflight.py:26`.
-* **Requirements.**
-  * Move the `Manifest` dataclass and `MANIFEST_FILENAME` constant to `src/nbsnap/snapshot/manifest.py`.
-  * Add re-exports in `src/nbsnap/export/manifest.py` (`from nbsnap.snapshot.manifest import Manifest, MANIFEST_FILENAME`) so existing call sites keep compiling during the migration window.
-  * Update `src/nbsnap/snapshot/__init__.py::__all__` to include `Manifest`, `MANIFEST_FILENAME`.
-* **Testing.** Copy `tests/unit/test_manifest.py` (or the existing test file covering `Manifest`) into `tests/unit/snapshot/test_manifest.py` and switch the import path. Run both old and new test files to confirm parity.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-01c: Move `CONTENT_TYPE_FILES` and `relative_path` into `snapshot/layout.py`
 
 * **Context.** `CONTENT_TYPE_FILES` is defined in `src/nbsnap/export/writer.py:26-47` with a silent fallback at line 52. Three importers in `import_/` re-import it.
