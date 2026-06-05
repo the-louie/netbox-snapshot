@@ -24,6 +24,21 @@ NBSNAP_EXTENSION = ".nbsnap.tar.zst"
 DEFAULT_LEVEL = 19
 
 
+class UnsafeTarMemberError(OSError):
+    """A tar member would write outside the destination directory.
+
+    Raised by :func:`unpack` before any byte is written when the
+    archive contains a member name that resolves outside the operator
+    supplied output directory (the classic ``../escape`` pattern) or
+    a symlink/hardlink whose target points outside that directory.
+
+    Inherits from :class:`OSError` so callers that already catch the
+    broad transport-layer error set (``OSError`` covers most
+    filesystem mishaps) keep working without a try/except update.
+    """
+
+
+
 def add_pack_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("snapshot_dir", type=Path, help="snapshot directory to pack")
     parser.add_argument(
@@ -65,8 +80,75 @@ def pack(snapshot_dir: Path, out: Path, level: int = DEFAULT_LEVEL) -> Path:
     return out
 
 
+def _refuse_unsafe_members(tf: tarfile.TarFile, out_root: Path) -> None:
+    """Reject any tar member whose extraction would escape ``out_root``.
+
+    Three classes of unsafe member are caught:
+
+    1. **Path traversal.** A member whose resolved path is not a
+       descendant of ``out_root`` (the classic ``../escape`` or
+       absolute ``/etc/passwd`` style). The walk uses
+       :meth:`pathlib.Path.resolve` then :meth:`relative_to` so
+       symbolic-link components and ``..`` segments cannot trick
+       the comparison.
+    2. **Escaping symlinks.** A member that is a symlink whose
+       ``linkname`` target resolves outside ``out_root``. We refuse
+       both absolute and relative targets that point out.
+    3. **Escaping hardlinks.** Same check as symlinks; tar's
+       hardlink semantics share the ``linkname`` attribute.
+
+    On Python 3.12+ (and 3.11.4+ with the PEP 706 backport)
+    :mod:`tarfile` provides the same protections via ``filter="data"``,
+    but our runtime floor is 3.11 which predates the backport. Doing
+    the check here keeps the security guarantee portable across the
+    full supported range and survives a future Python upgrade as a
+    redundant belt-and-braces.
+
+    Scope. This prepass is **path-only**. It does not refuse special
+    member types (devices, FIFOs, setuid bits) that PEP 706's
+    ``filter="data"`` would also strip. nbsnap's own producer
+    (:func:`pack`) only emits regular files from a real directory
+    tree, so a producer-side compromise is the only threat model
+    where those member types could appear, and that is out of scope
+    for the SEC-01 hardening. When the Python floor moves to 3.12,
+    delete this helper and switch to ``filter="data"``.
+    """
+
+    out_resolved = out_root.resolve()
+    for member in tf.getmembers():
+        candidate = (out_resolved / member.name).resolve()
+        try:
+            candidate.relative_to(out_resolved)
+        except ValueError as exc:
+            msg = (
+                f"refusing tar member {member.name!r}: "
+                f"resolved path {candidate} escapes {out_resolved}"
+            )
+            raise UnsafeTarMemberError(msg) from exc
+
+        if member.issym() or member.islnk():
+            link_target = (candidate.parent / member.linkname).resolve()
+            try:
+                link_target.relative_to(out_resolved)
+            except ValueError as exc:
+                msg = (
+                    f"refusing tar link {member.name!r} -> {member.linkname!r}: "
+                    f"escapes {out_resolved}"
+                )
+                raise UnsafeTarMemberError(msg) from exc
+
+
 def unpack(artefact: Path, out: Path) -> Path:
-    """Decompress and untar the artefact into `out`, verify sha256."""
+    """Decompress and untar the artefact into `out`, verify sha256.
+
+    Before extraction every member is fed through
+    :func:`_refuse_unsafe_members`, which raises
+    :class:`UnsafeTarMemberError` if any member would write outside
+    ``out``. SEC-01 flagged the previous
+    ``tf.extractall(out)`` call as a hardening gap; snapshots can be
+    moved between operators by hand, so we cannot assume the tar
+    came from a fully trusted producer.
+    """
 
     artefact = Path(artefact)
     out = Path(out)
@@ -87,7 +169,8 @@ def unpack(artefact: Path, out: Path) -> Path:
 
     out.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as tf:
-        tf.extractall(out)  # noqa: S202 - paths come from trusted operator
+        _refuse_unsafe_members(tf, out)
+        tf.extractall(out)
     return out
 
 
