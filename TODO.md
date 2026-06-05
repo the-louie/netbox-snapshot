@@ -483,15 +483,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-07`.
 
-#### ARCH-07a: Define the nbsnap-domain exception hierarchy
-
-* **Context.** `http/` has `NetboxHTTPError`. The CLI and the graph builder catch `requests.exceptions` directly.
-* **Requirements.**
-  * Add `src/nbsnap/http/exceptions.py` with `SnapshotTransportError` (base), `SnapshotAuthError`, `SnapshotConnectivityError`.
-  * Re-export them from `nbsnap.http.__init__`.
-* **Testing.** Add `tests/unit/http/test_exceptions.py` covering hierarchy and message formatting.
-* **Estimated effort.** 1h.
-
 #### ARCH-07b: Translate `requests` exceptions inside the HTTP client
 
 * **Context.** `http/client.py::_request` is the right place to wrap.
