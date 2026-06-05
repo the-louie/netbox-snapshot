@@ -6,6 +6,7 @@ tells the importer (and the operator) what the snapshot contains.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from contextlib import contextmanager
@@ -15,13 +16,51 @@ from typing import Any
 
 MANIFEST_FILENAME = "manifest.json"
 
+# Length of the truncated sha256 we persist in the manifest as
+# ``source_url_hash``. Twelve hex chars = 48 bits of entropy, more than
+# enough to disambiguate the handful of NetBox instances any operator
+# tracks while staying short enough to read on a single transcript
+# line. Centralised here so the driver and the test agree.
+SOURCE_URL_HASH_LENGTH = 12
+
+
+def compute_source_url_hash(source_url: str) -> str:
+    """Derive the short, deterministic provenance hash for a source URL.
+
+    SEC-04a replaced the literal ``source_url`` field on
+    :class:`Manifest` with this hash. The hash is provenance only,
+    "this snapshot came from the same NetBox as that other snapshot",
+    not a reachable URL. Two snapshots from the same source produce
+    identical hashes; two snapshots from different sources do not.
+
+    UTF-8 encoding is hard-coded because URLs are required to be
+    ASCII at the wire level; any non-ASCII would be percent-encoded
+    before reaching us. We do not normalise (trailing slash, case)
+    because the same operator invokes the same CLI flag each time
+    and the URL string is already stable.
+    """
+
+    digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+    return digest[:SOURCE_URL_HASH_LENGTH]
+
 
 @dataclass
 class Manifest:
-    """Top-level snapshot description."""
+    """Top-level snapshot description.
+
+    The ``source_url_hash`` field carries a short, deterministic
+    fingerprint of the source NetBox's base URL (see
+    :func:`compute_source_url_hash`). Before SEC-04a we persisted the
+    literal URL; that contradicted the "no install-local data in the
+    snapshot" rule (see ``goals.md`` and the "scope" banner in
+    ``CLAUDE.md``) and gave anyone with read access to a leaked
+    snapshot the source's network coordinates. The hash gives us
+    provenance ("did these two snapshots come from the same source?")
+    without leaking the address.
+    """
 
     version: int = 1
-    source_url: str = ""
+    source_url_hash: str = ""
     netbox_version: str = "unknown"
     nbsnap_version: str = "0.0.1"
     created_at: str = ""

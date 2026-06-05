@@ -50,7 +50,7 @@ def _write_minimal_snapshot(root: Path) -> Path:
         json.dumps(
             {
                 "version": 1,
-                "source_url": "https://src.example/",
+                "source_url_hash": "abcd1234ef56",
                 "netbox_version": "4.6.2",
                 "counts": {"dcim.site": 1},
                 "perf": {},

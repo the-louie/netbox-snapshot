@@ -21,7 +21,12 @@ from typing import Any
 
 from nbsnap.export.extractor import ExtractedRow, extract
 from nbsnap.export.install_local import FlagWriter
-from nbsnap.export.manifest import MANIFEST_FILENAME, Manifest, PerfTimer
+from nbsnap.export.manifest import (
+    MANIFEST_FILENAME,
+    Manifest,
+    PerfTimer,
+    compute_source_url_hash,
+)
 from nbsnap.export.progress import PROGRESS_FILENAME, ProgressLog, resume_from
 from nbsnap.export.writer import write_content_type
 from nbsnap.graph import from_openapi
@@ -50,7 +55,7 @@ def run_export(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = Manifest(
-        source_url=http.base_url,
+        source_url_hash=compute_source_url_hash(http.base_url),
         created_at=dt.datetime.now(dt.UTC).isoformat(),
     )
     perf = PerfTimer(manifest.perf)

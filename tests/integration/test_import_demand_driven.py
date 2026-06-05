@@ -46,7 +46,7 @@ def _seed_misordered_snapshot(snap: Path) -> None:
 
     (snap / "manifest.json").write_text(json.dumps({
         "version": 1,
-        "source_url": "https://test-source/",
+        "source_url_hash": "abcd1234ef56",
         "netbox_version": "4.6.2",
         "nbsnap_version": "0.0.1",
         "created_at": "2026-06-15T00:00:00+00:00",

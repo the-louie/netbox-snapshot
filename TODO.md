@@ -707,16 +707,6 @@ Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-04`.
 
-#### SEC-04a: Replace `source_url` with `source_url_hash`
-
-* **Context.** `export/manifest.py:24` and `export/driver.py:53` write the literal URL.
-* **Requirements.**
-  * Rename the `Manifest` field to `source_url_hash` (sha256 hex of the base URL, first 12 characters).
-  * Update `export/driver.py:53` to write the hash, not the URL.
-  * Note in the dataclass docstring that the hash is for provenance, not for reaching the source again.
-* **Testing.** Add `tests/unit/snapshot/test_manifest_source_url_hash.py` covering: same URL produces the same hash; different URLs produce different hashes; the literal URL never appears in the dataclass `__repr__` or `to_dict()`.
-* **Estimated effort.** 1.5h.
-
 #### SEC-04b: Assert no URL leaks in the export reproducibility test
 
 * **Context.** Existing `tests/integration/test_export_reproducibility.py` asserts byte-for-byte parity; extend it to cover redaction.

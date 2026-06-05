@@ -10,10 +10,10 @@ from nbsnap.export.progress import ProgressLog, resume_from
 
 
 def test_manifest_roundtrip(tmp_path: Path) -> None:
-    m = Manifest(source_url="https://x", netbox_version="4.6.2", counts={"a": 1})
+    m = Manifest(source_url_hash="deadbeef0001", netbox_version="4.6.2", counts={"a": 1})
     m.write(tmp_path / "manifest.json")
     loaded = Manifest.load(tmp_path / "manifest.json")
-    assert loaded.source_url == "https://x"
+    assert loaded.source_url_hash == "deadbeef0001"
     assert loaded.counts == {"a": 1}
 
 
