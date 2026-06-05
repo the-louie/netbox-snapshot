@@ -686,15 +686,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-03`.
 
-#### SEC-03a: Disable redirect following in `_send`
-
-* **Context.** `_send` passes no `allow_redirects` so `requests` defaults to True.
-* **Requirements.**
-  * Pass `allow_redirects=False` in the `_session.request(...)` call at `http/client.py:335-342`.
-  * Surface 3xx responses to callers as `SnapshotTransportError(redirect_url=...)`.
-* **Testing.** Add `tests/unit/test_http_client_redirect.py::test_send_does_not_follow` with a mocked transport returning `302 Location: http://attacker.example/` and assert the second request is never issued.
-* **Estimated effort.** 1h.
-
 #### SEC-03b: One-hop redirect helper with host validation
 
 * **Context.** Some GET flows may legitimately need to follow a redirect.

@@ -35,6 +35,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 import requests
 
 from nbsnap.config import load_dotenv
+from nbsnap.http.exceptions import SnapshotTransportError
 from nbsnap.http.guard import READ_ONLY_VERBS, SourceWriteForbidden, is_source_url
 
 # Best-effort `.env` discovery so an import in test code finds the
@@ -342,14 +343,37 @@ class NetboxHTTP:
         headers = self._headers()
         if json is not None:
             headers["Content-Type"] = "application/json"
-        return self._session.request(
+        response = self._session.request(
             method.upper(),
             url,
             headers=headers,
             json=json,
             timeout=timeout if timeout is not None else self._timeout,
             verify=self._verify_tls,
+            # SEC-03a: never let `requests` silently follow a redirect.
+            # If we followed, the bearer token in `headers` would be
+            # replayed against whatever `Location:` pointed at. An
+            # attacker who can write a 3xx response from the destination
+            # could then exfiltrate the token to an external host.
+            allow_redirects=False,
         )
+        if 300 <= response.status_code < 400:
+            # 3xx responses are surfaced as a transport-level refusal,
+            # not as a successful body. The CLI translates this into
+            # a hint about the destination URL or an explicit operator
+            # override (see SEC-03b for a one-hop same-host helper).
+            redirect_url = response.headers.get("Location", "")
+            msg = (
+                f"{method.upper()} {url} -> HTTP {response.status_code} "
+                f"redirect to {redirect_url!r}; refusing to follow so the "
+                "Authorization token cannot leak across hosts"
+            )
+            raise SnapshotTransportError(
+                msg,
+                base_url=self._base_url,
+                redirect_url=redirect_url or None,
+            )
+        return response
 
     def _backoff_for(self, attempt_index: int) -> float:
         """Return the backoff delay for the Nth retry, clamped to the schedule."""
@@ -372,6 +396,10 @@ class NetboxHTTP:
         * Cap at `max_retries` total retries. The original attempt
           plus N retries means at most `1 + N` calls.
         * No retry on 4xx other than 429.
+        * No retry on 3xx, the leaf `_send` raises
+          `SnapshotTransportError` immediately (SEC-03a). A redirect is
+          a routing decision the operator should make, not a retryable
+          transport hiccup.
 
         The source-readonly guard lives on `_send`, so a write against
         a source-bound client raises before any retry budget is touched.
