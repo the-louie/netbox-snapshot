@@ -328,7 +328,17 @@ class NetboxHTTP:
 
         Kept separate from `_request` so the retry envelope wraps a
         thin atomic call.
+
+        The source-readonly guard runs here at the leaf, **not** in the
+        outer `_request` or `get_all`. SEC-02a moved the check down so
+        every code path that ends up calling the socket goes through
+        the same enforcement, including direct test calls and any
+        future helper that bypasses `_request` (e.g. bulk endpoints
+        from ARCH-03). The cost is one dict lookup per attempt; the
+        gain is that no future contributor can add a new send path
+        and accidentally skip the guard.
         """
+        self._enforce_readonly(method)
         headers = self._headers()
         if json is not None:
             headers["Content-Type"] = "application/json"
@@ -362,8 +372,11 @@ class NetboxHTTP:
         * Cap at `max_retries` total retries. The original attempt
           plus N retries means at most `1 + N` calls.
         * No retry on 4xx other than 429.
+
+        The source-readonly guard lives on `_send`, so a write against
+        a source-bound client raises before any retry budget is touched.
+        See SEC-02a.
         """
-        self._enforce_readonly(method)
         url = self._build_url(path)
 
         last_exc: Exception | None = None
@@ -477,8 +490,11 @@ class NetboxHTTP:
         until either success or the SHRINK_LADDER floor. The shrunk
         size is cached on the instance so the rest of the run uses
         the discovered upper bound.
+
+        The source-readonly guard runs inside ``_send`` (SEC-02a), so
+        the GET we issue here is checked on the same path as any other
+        verb. No explicit pre-check is needed.
         """
-        self._enforce_readonly("GET")
         url: str | None = self._append_limit(path, self._page_size)
         expected_total: int | None = None
         running_total = 0

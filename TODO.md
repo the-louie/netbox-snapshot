@@ -691,19 +691,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 * **Testing.** Run the new test.
 * **Estimated effort.** 1h.
 
-### SEC-02: Source-write guard at the socket boundary
-
-Severity medium, defence-in-depth. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-02`.
-
-#### SEC-02a: Push `_enforce_readonly` into `_send`
-
-* **Context.** `http/client.py:366` and `:481` call `_enforce_readonly`. The leaf `_send` at `:324` does not.
-* **Requirements.**
-  * Move the `_enforce_readonly(method)` call into `_send` at the top.
-  * Remove the two redundant outer calls.
-* **Testing.** Update `tests/unit/test_http_client_transport.py::test_source_post_raises_before_socket` to construct an `HTTPClient` against `NB_SOURCE_URL`, call `_send("POST", ...)` directly, and assert the guard fires. Add a second test that asserts `_send` is the only place that calls `_enforce_readonly` (use `ast` to count).
-* **Estimated effort.** 1h.
-
 ### SEC-03: Bearer token follows redirects across hosts
 
 Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-03`.

@@ -128,3 +128,91 @@ def test_source_get_passes_through(monkeypatch: pytest.MonkeyPatch) -> None:
     result = client.get_one("status/")
     assert result == {"ok": True}
     session.request.assert_called_once()
+
+
+def test_source_direct_send_post_raises_before_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEC-02a: even a direct ``_send`` POST is guarded.
+
+    Before SEC-02a, ``_send`` did not call ``_enforce_readonly``;
+    only the outer ``_request`` and ``get_all`` did. A new helper
+    that bypassed those (e.g. the bulk-POST path planned in ARCH-03)
+    could have inadvertently skipped the guard. The fix moved the
+    enforcement onto ``_send`` so every code path that reaches the
+    socket goes through the same check. This test exercises that
+    leaf path directly to lock the contract.
+    """
+
+    monkeypatch.setenv("NB_SOURCE_URL", "https://src.example/")
+    session = MagicMock()
+    client = NetboxHTTP("https://src.example/", "tok", session=session)
+
+    with pytest.raises(SourceWriteForbidden):
+        client._send("POST", "https://src.example/api/dcim/sites/", json={"name": "x"})
+
+    # The session must not have been touched; the guard fires before
+    # any socket I/O.
+    session.request.assert_not_called()
+
+
+def test_enforce_readonly_only_called_from_send() -> None:
+    """SEC-02a: ``_enforce_readonly`` lives at exactly one call site.
+
+    Walks the ``http/client.py`` AST and asserts that ``_enforce_readonly``
+    is called from ``_send`` and nowhere else. The intent is to lock
+    the leaf-only enforcement so a future contributor cannot reintroduce
+    redundant outer calls (which would mask the leaf's invariant).
+    """
+
+    import ast
+    import inspect
+
+    from nbsnap.http import client as client_module
+
+    source = inspect.getsource(client_module)
+    tree = ast.parse(source)
+
+    # Collect (caller_func_name, call_node) for every `self._enforce_readonly(...)`.
+    findings: list[tuple[str, int]] = []
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef):
+            continue
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Call):
+                continue
+            target = node.func
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "_enforce_readonly"
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                findings.append((func.name, node.lineno))
+
+    assert findings, "expected at least one call to self._enforce_readonly"
+    offending = [(caller, line) for caller, line in findings if caller != "_send"]
+    assert not offending, (
+        "_enforce_readonly must only be called from _send, found redundant "
+        f"call sites: {offending}"
+    )
+
+
+def test_source_get_all_iterates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SEC-02a positive control: ``get_all`` still works on a source client.
+
+    The guard now lives on ``_send`` and ``get_all`` no longer pre-checks.
+    A source-bound ``get_all`` must still iterate cleanly, otherwise the
+    leaf-only enforcement would have regressed the read path.
+    """
+
+    monkeypatch.setenv("NB_SOURCE_URL", "https://src.example/")
+    session = MagicMock()
+    session.request.return_value = _mock_response(
+        200, {"count": 2, "next": None, "results": [{"id": 1}, {"id": 2}]}
+    )
+    client = NetboxHTTP("https://src.example/", "tok", session=session)
+
+    rows = list(client.get_all("dcim/devices/"))
+    assert rows == [{"id": 1}, {"id": 2}]
+    session.request.assert_called_once()
