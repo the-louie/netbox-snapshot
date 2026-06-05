@@ -31,6 +31,7 @@ private.
 
 from __future__ import annotations
 
+from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path
 from nbsnap.snapshot.manifest import (
     MANIFEST_FILENAME,
     SOURCE_URL_HASH_LENGTH,
@@ -39,8 +40,10 @@ from nbsnap.snapshot.manifest import (
 )
 
 __all__: list[str] = [
+    "CONTENT_TYPE_FILES",
     "MANIFEST_FILENAME",
     "Manifest",
     "SOURCE_URL_HASH_LENGTH",
     "compute_source_url_hash",
+    "relative_path",
 ]

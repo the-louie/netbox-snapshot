@@ -21,35 +21,11 @@ from typing import Any
 
 from nbsnap.export.extractor import ExtractedRow
 
-# Content type to relative path inside the snapshot directory.
-# Mirrors RES-03 layout.
-CONTENT_TYPE_FILES: dict[str, str] = {
-    "dcim.site": "dcim/sites.jsonl",
-    "dcim.location": "dcim/locations.jsonl",
-    "dcim.rack": "dcim/racks.jsonl",
-    "dcim.devicerole": "dcim/device-roles.jsonl",
-    "dcim.devicetype": "dcim/device-types.jsonl",
-    "dcim.manufacturer": "dcim/manufacturers.jsonl",
-    "dcim.platform": "dcim/platforms.jsonl",
-    "dcim.device": "dcim/devices.jsonl",
-    "dcim.interface": "dcim/interfaces.jsonl",
-    "dcim.frontport": "dcim/front-ports.jsonl",
-    "dcim.rearport": "dcim/rear-ports.jsonl",
-    "dcim.cable": "dcim/cables.jsonl",
-    "ipam.role": "ipam/roles.jsonl",
-    "ipam.vlan": "ipam/vlans.jsonl",
-    "ipam.prefix": "ipam/prefixes.jsonl",
-    "ipam.iprange": "ipam/ip-ranges.jsonl",
-    "ipam.ipaddress": "ipam/ip-addresses.jsonl",
-    "extras.tag": "extras/tags.jsonl",
-    "extras.customfield": "extras/custom-fields.jsonl",
-    "extras.customfieldchoiceset": "extras/custom-field-choice-sets.jsonl",
-}
-
-
-def relative_path(content_type: str) -> str:
-    """Return the snapshot-relative path for a content type."""
-    return CONTENT_TYPE_FILES.get(content_type, f"{content_type.replace('.', '/')}.jsonl")
+# ARCH-01c moved CONTENT_TYPE_FILES and relative_path to
+# nbsnap.snapshot.layout. The re-exports below keep this module's
+# public surface backwards compatible for the ARCH-01e/f migration
+# window; they go away in ARCH-01f.
+from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path  # noqa: F401
 
 
 def write_content_type(

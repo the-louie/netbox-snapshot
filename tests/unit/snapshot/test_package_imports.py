@@ -24,9 +24,11 @@ def test_snapshot_public_surface_contains_manifest() -> None:
     import nbsnap.snapshot
 
     expected = {
+        "CONTENT_TYPE_FILES",
         "MANIFEST_FILENAME",
         "Manifest",
         "SOURCE_URL_HASH_LENGTH",
         "compute_source_url_hash",
+        "relative_path",
     }
     assert set(nbsnap.snapshot.__all__) == expected

@@ -1,0 +1,49 @@
+"""ARCH-01c: :mod:`nbsnap.snapshot.layout` behaviour tests.
+
+The layout map is a contract that both the export side and the
+import side rely on. Three behaviours need to be pinned:
+
+1. Every key follows the documented ``<app>/<plural>.jsonl`` shape.
+2. The known content types resolve through :func:`relative_path` to
+   the same string as a direct dict lookup (no silent normalisation).
+3. The legacy import path under :mod:`nbsnap.export.writer` resolves
+   to the same objects (re-export, not a copy).
+
+The silent fallback for an unknown content type is intentionally
+NOT pinned by an assertion in this file. It will be replaced by a
+hard failure (:class:`UnknownContentTypeError`) in ARCH-08a; pinning
+its current behaviour now would lock us into a regression test on
+the migration window.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path
+
+
+def test_every_path_has_jsonl_suffix_and_two_components() -> None:
+    for content_type, path in CONTENT_TYPE_FILES.items():
+        assert path.endswith(".jsonl"), (
+            f"{content_type!r} maps to {path!r}, expected .jsonl"
+        )
+        head, _, _ = path.partition("/")
+        assert head, f"{content_type!r} maps to {path!r}, expected app/<plural>"
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    sorted(CONTENT_TYPE_FILES.keys()),
+)
+def test_relative_path_matches_dict_for_known_content_types(content_type: str) -> None:
+    assert relative_path(content_type) == CONTENT_TYPE_FILES[content_type]
+
+
+def test_legacy_writer_re_exports_same_objects() -> None:
+    """The ``export.writer`` shim must point at the same objects."""
+
+    from nbsnap.export import writer as legacy
+
+    assert legacy.CONTENT_TYPE_FILES is CONTENT_TYPE_FILES
+    assert legacy.relative_path is relative_path

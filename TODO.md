@@ -59,17 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01c: Move `CONTENT_TYPE_FILES` and `relative_path` into `snapshot/layout.py`
-
-* **Context.** `CONTENT_TYPE_FILES` is defined in `src/nbsnap/export/writer.py:26-47` with a silent fallback at line 52. Three importers in `import_/` re-import it.
-* **Requirements.**
-  * Move `CONTENT_TYPE_FILES` and `relative_path` to `src/nbsnap/snapshot/layout.py`.
-  * Leave the silent fallback in place for this sub-ticket, ARCH-08a hardens it; do not break behaviour now.
-  * Add re-exports in `src/nbsnap/export/writer.py` so existing imports continue to work.
-  * Update `src/nbsnap/snapshot/__init__.py::__all__` to include `CONTENT_TYPE_FILES`, `relative_path`.
-* **Testing.** Add `tests/unit/snapshot/test_layout.py` covering the existing behaviour: every key in `CONTENT_TYPE_FILES` maps to a `.jsonl` path under the documented prefix, and `relative_path("dcim.device")` returns the same path as `relative_path` did before the move (use the legacy import path as the reference).
-* **Estimated effort.** 1.5h.
-
 #### ARCH-01d: Promote `_collapse_enum_dict` to `snapshot.coerce.collapse_enum_dict`
 
 * **Context.** `_collapse_enum_dict` lives in `src/nbsnap/export/extractor.py` and is re-imported by `import_/body_preparer.py:53` and `import_/upsert.py:575`. The leading underscore implies private but two packages depend on it.
