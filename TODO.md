@@ -59,16 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01d: Promote `_collapse_enum_dict` to `snapshot.coerce.collapse_enum_dict`
-
-* **Context.** `_collapse_enum_dict` lives in `src/nbsnap/export/extractor.py` and is re-imported by `import_/body_preparer.py:53` and `import_/upsert.py:575`. The leading underscore implies private but two packages depend on it.
-* **Requirements.**
-  * Move the function to `src/nbsnap/snapshot/coerce.py` as `collapse_enum_dict` (no underscore).
-  * Leave a thin `_collapse_enum_dict = collapse_enum_dict` alias in `export/extractor.py` so existing imports keep working during the transition.
-  * Update `src/nbsnap/snapshot/__init__.py::__all__` to include `collapse_enum_dict`.
-* **Testing.** Copy any existing enum-dict tests under `tests/unit/snapshot/test_coerce.py` with the new import path. Add one test asserting `nbsnap.snapshot.collapse_enum_dict` and the legacy `nbsnap.export.extractor._collapse_enum_dict` are the same object.
-* **Estimated effort.** 1h.
-
 #### ARCH-01e: Switch `import_/` to `snapshot/` imports
 
 * **Context.** Six imports point from `import_/` into `export/` today. Once the contracts live in `snapshot/`, every one of them moves over.

@@ -31,6 +31,7 @@ private.
 
 from __future__ import annotations
 
+from nbsnap.snapshot.coerce import ENUM_DICT_KEYS, collapse_enum_dict
 from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path
 from nbsnap.snapshot.manifest import (
     MANIFEST_FILENAME,
@@ -41,9 +42,11 @@ from nbsnap.snapshot.manifest import (
 
 __all__: list[str] = [
     "CONTENT_TYPE_FILES",
+    "ENUM_DICT_KEYS",
     "MANIFEST_FILENAME",
     "Manifest",
     "SOURCE_URL_HASH_LENGTH",
+    "collapse_enum_dict",
     "compute_source_url_hash",
     "relative_path",
 ]

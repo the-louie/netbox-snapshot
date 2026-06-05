@@ -98,43 +98,13 @@ def extract(
         yield ExtractedRow(content_type=content_type, natural_key=nk, body=body), None
 
 
-# NetBox 4.x serialises every enum field with a `{value, label}`
-# wrapper on the GET response, but the matching POST/PATCH endpoint
-# accepts only the bare value string. This set is the exact key
-# shape we collapse; checking for equality (not subset) guards
-# against accidentally collapsing a payload dict that happens to
-# carry a `value` field alongside other keys.
-_ENUM_DICT_KEYS = frozenset({"value", "label"})
-
-
-def _collapse_enum_dict(value: Any) -> Any:
-    """Return the `value` slot when `value` is a NetBox enum-dict.
-
-    NetBox returns choice fields like `status` as
-    `{"value": "active", "label": "Active"}` when you read them
-    via GET. The same field on POST/PATCH must be the bare string
-    `"active"`. Without this collapse the import side gets
-
-        HTTP 400 {"status": ["Value must be passed directly..."]}
-
-    on every record that carries a choice field, which in
-    practice means every Site, Device, IPAddress, Prefix, etc.
-
-    We only collapse when the dict has EXACTLY the two keys we
-    expect. Any extra key suggests a real payload dict rather
-    than the enum wrapper, so we leave it alone.
-    """
-
-    if isinstance(value, Mapping) and frozenset(value.keys()) == _ENUM_DICT_KEYS:
-        inner = value["value"]
-        # NetBox's enum values are strings in every observed
-        # case, but we allow int / bool / None for safety so a
-        # future choice type does not silently get mangled. The
-        # `X | Y` union syntax requires Python 3.10+ and the
-        # project floor is 3.11 (see pyproject.toml).
-        if isinstance(inner, str | int | bool) or inner is None:
-            return inner
-    return value
+# ARCH-01d moved the helper and the enum-key constant to
+# nbsnap.snapshot.coerce. The aliases below preserve the legacy
+# leading-underscore names so existing call sites in import_/ keep
+# working during the ARCH-01e migration window; ARCH-01f drops
+# the aliases once every caller imports from nbsnap.snapshot.
+from nbsnap.snapshot.coerce import ENUM_DICT_KEYS as _ENUM_DICT_KEYS  # noqa: F401
+from nbsnap.snapshot.coerce import collapse_enum_dict as _collapse_enum_dict
 
 
 def _apply_allowlist(

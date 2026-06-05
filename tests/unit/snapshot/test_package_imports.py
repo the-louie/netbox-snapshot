@@ -25,9 +25,11 @@ def test_snapshot_public_surface_contains_manifest() -> None:
 
     expected = {
         "CONTENT_TYPE_FILES",
+        "ENUM_DICT_KEYS",
         "MANIFEST_FILENAME",
         "Manifest",
         "SOURCE_URL_HASH_LENGTH",
+        "collapse_enum_dict",
         "compute_source_url_hash",
         "relative_path",
     }
