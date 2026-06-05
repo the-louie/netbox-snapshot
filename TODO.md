@@ -59,16 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01a: Scaffold the `snapshot/` package
-
-* **Context.** Today there is no `src/nbsnap/snapshot/`. The package needs to land with its tests directory before any code moves.
-* **Requirements.**
-  * Create `src/nbsnap/snapshot/__init__.py` with an empty body and an `__all__ = []` line.
-  * Create `tests/unit/snapshot/__init__.py`.
-  * Add an entry in `pyproject.toml` under `tool.coverage.run.source` if the project pins a per-package source list.
-* **Testing.** Add `tests/unit/snapshot/test_package_imports.py` that imports `nbsnap.snapshot` and asserts `nbsnap.snapshot.__all__ == []`. Run `pytest tests/unit/snapshot/test_package_imports.py`.
-* **Estimated effort.** 1h.
-
 #### ARCH-01b: Move `Manifest` and `MANIFEST_FILENAME` into `snapshot/manifest.py`
 
 * **Context.** `Manifest` and `MANIFEST_FILENAME` live in `src/nbsnap/export/manifest.py` and are imported by `import_/driver.py:25-26` and `import_/preflight.py:26`.
