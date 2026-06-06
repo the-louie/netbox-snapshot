@@ -445,15 +445,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-08`. Depends on ARCH-01.
 
-#### ARCH-08b: Preflight check in `import_/preflight.py`
-
-* **Context.** A snapshot whose manifest carries an unknown content type should be rejected before any HTTP call.
-* **Requirements.**
-  * In `import_/preflight.py`, walk `manifest.content_types` and call `relative_path` on each.
-  * Aggregate failures and report all unknown types in one error.
-* **Testing.** Add `tests/unit/import_/test_preflight_unknown_ct.py` with a manifest carrying `dcim.devic` and assert the preflight refuses before reaching upsert.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-08c: End-to-end test
 
 * **Context.** Confirm the new error path renders sanely to the operator.

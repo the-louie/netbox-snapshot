@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from nbsnap.snapshot import Manifest
+from nbsnap.snapshot.layout import UnknownContentTypeError, relative_path
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.schema.content_types import ContentTypeCache
 from nbsnap.schema.status import Status, VersionSkew
@@ -54,6 +55,13 @@ class PreflightReport:
 
     version_skew: VersionSkew = VersionSkew.NONE
     missing_content_types: set[str] = field(default_factory=set)
+    # ARCH-08b: content types in the manifest that nbsnap itself does
+    # not recognise (i.e. not present in CONTENT_TYPE_FILES). Unlike
+    # ``missing_content_types`` (which asks the *destination* whether
+    # the type exists), this is a snapshot-side defect: a typo at
+    # export time, a corrupted manifest, or a plugin content type
+    # that the operator forgot to register.
+    unknown_content_types: set[str] = field(default_factory=set)
     missing_custom_fields: set[str] = field(default_factory=set)
     snapshot_format_version: int = 1
     # FEAT-36h: list of `path: field` strings, one per jsonl
@@ -87,6 +95,8 @@ class PreflightReport:
         diff is informational unless the operator opts in.
         """
 
+        if self.unknown_content_types:
+            return True
         if self.missing_content_types:
             return True
         if self.snapshot_format_issues and not allow_enum_dict_bypass:
@@ -171,6 +181,23 @@ def run_preflight(
     """
 
     report = PreflightReport(snapshot_format_version=manifest.version)
+
+    # ARCH-08b: hard-fail on unknown content types BEFORE touching
+    # the network. Walking manifest.counts and calling relative_path
+    # lets us collect every unknown content type in a single pass,
+    # so the operator gets one consolidated error message rather
+    # than discovering them one at a time as the importer crashes
+    # on each. Returning early also means a misconfigured manifest
+    # cannot waste API calls against the destination.
+    unknown: set[str] = set()
+    for content_type in manifest.counts:
+        try:
+            relative_path(content_type)
+        except UnknownContentTypeError:
+            unknown.add(content_type)
+    if unknown:
+        report.unknown_content_types = unknown
+        return report
 
     if snapshot_dir is not None:
         report.snapshot_format_issues = sample_enum_dict_check(snapshot_dir)
