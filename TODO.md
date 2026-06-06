@@ -560,15 +560,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
 
-#### ARCH-11a: Re-export from `export/__init__.py`
-
-* **Context.** `run_export` and `Manifest` are not re-exported.
-* **Requirements.**
-  * Add `from .driver import run_export` and `from nbsnap.snapshot.manifest import Manifest` to `src/nbsnap/export/__init__.py`.
-  * Define `__all__ = ["run_export", "Manifest"]`.
-* **Testing.** Add `tests/unit/export/test_public_api.py` asserting `from nbsnap.export import run_export, Manifest` resolves.
-* **Estimated effort.** 1h.
-
 #### ARCH-11b: Re-export from `import_/__init__.py`
 
 * **Context.** Import currently exports only `ResolveContext`.
