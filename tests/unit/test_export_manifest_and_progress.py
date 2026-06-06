@@ -5,7 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from nbsnap.export.manifest import Manifest, PerfTimer
+from nbsnap.export.manifest import PerfTimer
+from nbsnap.snapshot import Manifest
 from nbsnap.export.progress import ProgressLog, resume_from
 
 

@@ -203,11 +203,11 @@ def test_collapse_preserves_nested_value() -> None:
     enum-dict invariant says `value` is a scalar; anything else
     is a real payload dict that happens to share the key shape."""
 
-    from nbsnap.export.extractor import _collapse_enum_dict
+    from nbsnap.snapshot.coerce import collapse_enum_dict
 
     nested = {"value": {"nested": 1}, "label": "x"}
     # The collapse helper must leave this alone, not silently
     # promote the inner dict.
-    assert _collapse_enum_dict(nested) is nested
+    assert collapse_enum_dict(nested) is nested
     listed = {"value": [1, 2, 3], "label": "x"}
-    assert _collapse_enum_dict(listed) is listed
+    assert collapse_enum_dict(listed) is listed

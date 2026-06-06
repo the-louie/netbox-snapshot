@@ -6,15 +6,18 @@ field on POST/PATCH must be the bare string `"active"`. Without
 the collapse the import side gets HTTP 400 on every record that
 carries a choice field.
 
-The fix lives in `_collapse_enum_dict` and is invoked from
-`_apply_allowlist`. This test file pins both the helper's exact
-behaviour AND the inline-via-allowlist path so a future
-refactor cannot regress the import path silently.
+The helper lives in :func:`nbsnap.snapshot.coerce.collapse_enum_dict`
+since ARCH-01d; this file pins both its exact behaviour AND the
+inline-via-allowlist path through ``_apply_allowlist`` so a future
+refactor cannot regress the export path silently. The
+snapshot-side test under :mod:`tests/unit/snapshot.test_coerce`
+covers the same helper from the import side.
 """
 
 from __future__ import annotations
 
-from nbsnap.export.extractor import _apply_allowlist, _collapse_enum_dict
+from nbsnap.export.extractor import _apply_allowlist
+from nbsnap.snapshot.coerce import collapse_enum_dict as _collapse_enum_dict
 
 # ---------------------------------------------------------------------------
 # _collapse_enum_dict, the helper itself

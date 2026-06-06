@@ -98,13 +98,7 @@ def extract(
         yield ExtractedRow(content_type=content_type, natural_key=nk, body=body), None
 
 
-# ARCH-01d moved the helper and the enum-key constant to
-# nbsnap.snapshot.coerce. The aliases below preserve the legacy
-# leading-underscore names so existing call sites in import_/ keep
-# working during the ARCH-01e migration window; ARCH-01f drops
-# the aliases once every caller imports from nbsnap.snapshot.
-from nbsnap.snapshot.coerce import ENUM_DICT_KEYS as _ENUM_DICT_KEYS  # noqa: F401
-from nbsnap.snapshot.coerce import collapse_enum_dict as _collapse_enum_dict
+from nbsnap.snapshot.coerce import collapse_enum_dict
 
 
 def _apply_allowlist(
@@ -120,9 +114,9 @@ def _apply_allowlist(
        the OpenAPI request-body schema.
     2. Enum-dict collapse: NetBox sends choice values as
        `{value, label}` dicts on GET but requires the bare
-       value on write, see `_collapse_enum_dict`.
+       value on write, see :func:`nbsnap.snapshot.coerce.collapse_enum_dict`.
     """
-    return {k: _collapse_enum_dict(v) for k, v in record.items() if k in allowlist}
+    return {k: collapse_enum_dict(v) for k, v in record.items() if k in allowlist}
 
 
 def _rewrite_fks(

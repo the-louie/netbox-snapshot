@@ -21,10 +21,10 @@ from typing import Any
 
 from nbsnap.export.extractor import ExtractedRow, extract
 from nbsnap.export.install_local import FlagWriter
-from nbsnap.export.manifest import (
+from nbsnap.export.manifest import PerfTimer
+from nbsnap.snapshot import (
     MANIFEST_FILENAME,
     Manifest,
-    PerfTimer,
     compute_source_url_hash,
 )
 from nbsnap.export.progress import PROGRESS_FILENAME, ProgressLog, resume_from

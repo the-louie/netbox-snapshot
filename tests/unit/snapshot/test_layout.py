@@ -40,10 +40,16 @@ def test_relative_path_matches_dict_for_known_content_types(content_type: str) -
     assert relative_path(content_type) == CONTENT_TYPE_FILES[content_type]
 
 
-def test_legacy_writer_re_exports_same_objects() -> None:
-    """The ``export.writer`` shim must point at the same objects."""
+def test_legacy_writer_no_longer_re_exports_content_type_files() -> None:
+    """ARCH-01f removed the ``CONTENT_TYPE_FILES`` re-export.
+
+    The writer module still uses :func:`relative_path` internally
+    (imported from ``nbsnap.snapshot.layout``), so the name is
+    still resolvable as a module attribute, but the bigger map is
+    not exported any more. Pin the deletion so the shim cannot
+    creep back.
+    """
 
     from nbsnap.export import writer as legacy
 
-    assert legacy.CONTENT_TYPE_FILES is CONTENT_TYPE_FILES
-    assert legacy.relative_path is relative_path
+    assert not hasattr(legacy, "CONTENT_TYPE_FILES")

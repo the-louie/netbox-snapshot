@@ -60,7 +60,7 @@ def test_renderer_minimum_endpoints_are_hit(tmp_path: Path) -> None:
     )
 
     missing: set[str] = set()
-    from nbsnap.export.writer import CONTENT_TYPE_FILES
+    from nbsnap.snapshot import CONTENT_TYPE_FILES
     rel_paths = {
         CONTENT_TYPE_FILES.get(ct.replace("/", ".").rstrip("."), ct)
         for ct in RENDERER_MINIMUM_ENDPOINTS

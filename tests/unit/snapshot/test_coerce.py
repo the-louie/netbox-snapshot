@@ -46,14 +46,15 @@ def test_enum_dict_keys_constant_is_exact() -> None:
     assert ENUM_DICT_KEYS == frozenset({"value", "label"})
 
 
-def test_legacy_alias_points_at_same_object() -> None:
-    """The leading-underscore alias in ``export.extractor`` must still work.
+def test_legacy_extractor_alias_no_longer_exists() -> None:
+    """ARCH-01f removed the leading-underscore alias.
 
-    Pinning object identity guarantees that callers under
-    ``import_/`` still hit the same function during the ARCH-01e
-    migration window. ARCH-01f deletes the alias.
+    The canonical name is :func:`nbsnap.snapshot.coerce.collapse_enum_dict`.
+    Pin the deletion so a future contributor cannot accidentally
+    re-introduce ``_collapse_enum_dict`` at the legacy location.
     """
 
-    from nbsnap.export.extractor import _collapse_enum_dict
+    from nbsnap.export import extractor
 
-    assert _collapse_enum_dict is collapse_enum_dict
+    assert not hasattr(extractor, "_collapse_enum_dict")
+    assert not hasattr(extractor, "_ENUM_DICT_KEYS")

@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 from nbsnap.export.extractor import ExtractedRow
-from nbsnap.export.writer import relative_path, write_content_type
+from nbsnap.export.writer import write_content_type
+from nbsnap.snapshot import relative_path
 
 
 def test_relative_path_for_known_content_type() -> None:

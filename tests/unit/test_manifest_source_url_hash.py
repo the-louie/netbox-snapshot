@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from nbsnap.export.manifest import (
+from nbsnap.snapshot import (
     SOURCE_URL_HASH_LENGTH,
     Manifest,
     compute_source_url_hash,

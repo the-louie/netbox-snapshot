@@ -33,7 +33,7 @@ from pathlib import Path
 
 import requests
 
-from nbsnap.export.manifest import MANIFEST_FILENAME
+from nbsnap.snapshot import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
 from nbsnap.import_.audit import DropCategory
 from nbsnap.import_.driver import ImportSummary, run_import

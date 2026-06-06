@@ -20,12 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from nbsnap.export.extractor import ExtractedRow
-
-# ARCH-01c moved CONTENT_TYPE_FILES and relative_path to
-# nbsnap.snapshot.layout. The re-exports below keep this module's
-# public surface backwards compatible for the ARCH-01e/f migration
-# window; they go away in ARCH-01f.
-from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path  # noqa: F401
+from nbsnap.snapshot.layout import relative_path
 
 
 def write_content_type(

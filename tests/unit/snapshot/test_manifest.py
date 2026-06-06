@@ -34,18 +34,21 @@ def test_compute_source_url_hash_length() -> None:
     assert len(compute_source_url_hash("https://x/")) == SOURCE_URL_HASH_LENGTH
 
 
-def test_legacy_export_manifest_re_exports_same_objects() -> None:
-    """The ``export.manifest`` shim must point at the same objects.
+def test_legacy_export_manifest_no_longer_re_exports() -> None:
+    """ARCH-01f removed the back-compat re-exports.
 
-    If any of the re-exports ever drifted to copies we would get two
-    distinct definitions and ``isinstance`` checks (or ``is``
-    comparisons) across the migration window would fail subtly. Pin
-    object identity on every member of the contract here.
+    After ARCH-01f the legacy module ``nbsnap.export.manifest``
+    exposes only :class:`PerfTimer` (export-side instrumentation).
+    The contract symbols (``Manifest``, ``MANIFEST_FILENAME``, and
+    the SEC-04a hash helpers) live exclusively at
+    :mod:`nbsnap.snapshot.manifest`. This test pins the deletion so
+    a future contributor cannot accidentally re-introduce the shim.
     """
 
     from nbsnap.export import manifest as legacy
 
-    assert legacy.Manifest is Manifest
-    assert legacy.MANIFEST_FILENAME is MANIFEST_FILENAME
-    assert legacy.compute_source_url_hash is compute_source_url_hash
-    assert legacy.SOURCE_URL_HASH_LENGTH is SOURCE_URL_HASH_LENGTH
+    assert not hasattr(legacy, "Manifest")
+    assert not hasattr(legacy, "MANIFEST_FILENAME")
+    assert not hasattr(legacy, "compute_source_url_hash")
+    # PerfTimer stays where it was, it is export-only instrumentation.
+    assert hasattr(legacy, "PerfTimer")

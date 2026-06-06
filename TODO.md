@@ -59,15 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01f: Switch `export/` to `snapshot/` imports and remove the back-compat aliases
-
-* **Context.** With `import_/` migrated, the temporary re-exports in `export/manifest.py`, `export/writer.py`, and `export/extractor.py` (added in ARCH-01b/c/d) are no longer needed.
-* **Requirements.**
-  * Update `export/driver.py`, `export/writer.py`, `export/manifest.py`, `export/extractor.py` to import from `nbsnap.snapshot` directly.
-  * Remove the back-compat re-exports introduced in ARCH-01b/c/d.
-* **Testing.** Run the full test suite, `pytest`. Confirm no test imports the removed legacy symbols.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-01g: Enforce the layering invariant with a test
 
 * **Context.** Once the migration is complete, a regression test prevents the layering violation from creeping back.
