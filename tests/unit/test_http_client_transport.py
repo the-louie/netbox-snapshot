@@ -5,8 +5,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
+from nbsnap.http.exceptions import SnapshotAuthError, SnapshotConnectivityError
 from nbsnap.http.guard import SourceWriteForbidden
 
 
@@ -196,6 +198,69 @@ def test_enforce_readonly_only_called_from_send() -> None:
         "_enforce_readonly must only be called from _send, found redundant "
         f"call sites: {offending}"
     )
+
+
+def _client_with_no_retries(session: MagicMock) -> NetboxHTTP:
+    """Build a client whose retry budget is zero, so the first failure exits."""
+
+    return NetboxHTTP(
+        "https://dest.example/",
+        "tok",
+        session=session,
+        max_retries=0,
+        backoff=(0.0,),
+    )
+
+
+def test_request_translates_ssl_error_to_tls_connectivity_error() -> None:
+    """ARCH-07b: ``requests.exceptions.SSLError`` becomes ``reason='tls'``."""
+
+    session = MagicMock()
+    session.request.side_effect = requests.exceptions.SSLError("bad cert")
+    client = _client_with_no_retries(session)
+
+    with pytest.raises(SnapshotConnectivityError) as exc:
+        client.get_one("status/")
+    assert exc.value.reason == "tls"
+    assert exc.value.base_url == "https://dest.example/"
+
+
+def test_request_translates_connection_error_to_connection_connectivity_error() -> None:
+    """A bare connection error becomes ``reason='connection'``."""
+
+    session = MagicMock()
+    session.request.side_effect = requests.exceptions.ConnectionError("refused")
+    client = _client_with_no_retries(session)
+
+    with pytest.raises(SnapshotConnectivityError) as exc:
+        client.get_one("status/")
+    assert exc.value.reason == "connection"
+
+
+def test_request_translates_timeout_to_timeout_connectivity_error() -> None:
+    """A timeout becomes ``reason='timeout'`` so the CLI can hint at it precisely."""
+
+    session = MagicMock()
+    session.request.side_effect = requests.exceptions.Timeout("slow")
+    client = _client_with_no_retries(session)
+
+    with pytest.raises(SnapshotConnectivityError) as exc:
+        client.get_one("status/")
+    assert exc.value.reason == "timeout"
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_request_translates_auth_status_to_snapshot_auth_error(status: int) -> None:
+    """ARCH-07b: 401 and 403 raise SnapshotAuthError carrying the status."""
+
+    session = MagicMock()
+    session.request.return_value = _mock_response(status, text="forbidden")
+    client = _client_with_no_retries(session)
+
+    with pytest.raises(SnapshotAuthError) as exc:
+        client.get_one("dcim/devices/")
+    assert exc.value.status == status
+    assert exc.value.base_url == "https://dest.example/"
 
 
 def test_source_get_all_iterates(monkeypatch: pytest.MonkeyPatch) -> None:

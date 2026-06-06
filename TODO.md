@@ -415,16 +415,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-07`.
 
-#### ARCH-07b: Translate `requests` exceptions inside the HTTP client
-
-* **Context.** `http/client.py::_request` is the right place to wrap.
-* **Requirements.**
-  * Catch `requests.exceptions.SSLError` and re-raise as `SnapshotConnectivityError(reason="tls", base_url=...)`.
-  * Catch `requests.exceptions.ConnectionError` and re-raise as `SnapshotConnectivityError(reason="connection", base_url=...)`.
-  * Catch HTTP 401/403 and re-raise as `SnapshotAuthError`.
-* **Testing.** Extend `tests/unit/test_http_client_transport.py` with one case per translation path.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-07c: Replace `requests.exceptions` catches in `import_cli.py`
 
 * **Context.** `import_cli.py:34, 249, 256` import `requests` for the catch.

@@ -35,7 +35,11 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 import requests
 
 from nbsnap.config import load_dotenv
-from nbsnap.http.exceptions import SnapshotTransportError
+from nbsnap.http.exceptions import (
+    SnapshotAuthError,
+    SnapshotConnectivityError,
+    SnapshotTransportError,
+)
 from nbsnap.http.guard import READ_ONLY_VERBS, SourceWriteForbidden, is_source_url
 
 # Best-effort `.env` discovery so an import in test code finds the
@@ -375,6 +379,39 @@ class NetboxHTTP:
             )
         return response
 
+    def _translate_transport_exc(self, exc: Exception) -> SnapshotConnectivityError:
+        """Convert a low-level ``requests`` failure into our domain exception.
+
+        ARCH-07b. The ``requests`` exception hierarchy is wide and leaks
+        through to call sites that have no business knowing about it.
+        Inside the HTTP package we still catch the bare types so the
+        retry envelope can decide on each, but the moment we hand the
+        failure back to a caller (after retries are exhausted) we
+        re-raise as :class:`SnapshotConnectivityError` so the CLI and
+        the graph builder only ever import from :mod:`nbsnap.http`.
+
+        The ``reason`` discriminator lets the CLI render a precise
+        hint per failure category, see
+        :class:`SnapshotConnectivityError` for the contract.
+        """
+
+        # The order matters: ``SSLError`` inherits from
+        # ``ConnectionError`` in the requests hierarchy. Checking
+        # SSLError first means we report "tls" for the more specific
+        # cert/handshake failure rather than the generic
+        # "connection" label.
+        if isinstance(exc, requests.exceptions.SSLError):
+            reason: str = "tls"
+        elif isinstance(exc, requests.exceptions.Timeout):
+            reason = "timeout"
+        else:
+            reason = "connection"
+        return SnapshotConnectivityError(
+            f"{type(exc).__name__}: {exc}",
+            reason=reason,  # type: ignore[arg-type]
+            base_url=self._base_url,
+        )
+
     def _backoff_for(self, attempt_index: int) -> float:
         """Return the backoff delay for the Nth retry, clamped to the schedule."""
         if not self._backoff:
@@ -452,15 +489,33 @@ class NetboxHTTP:
                 time.sleep(wait)
                 continue
 
+            if response.status_code in (401, 403):
+                # ARCH-07b: route auth-flavoured failures through the
+                # dedicated SnapshotAuthError so the CLI can distinguish
+                # "renew your token" from "ask an admin for permission"
+                # without sniffing message text. The generic 4xx branch
+                # below still catches every other client error as the
+                # legacy NetboxHTTPError; ARCH-07b deliberately does not
+                # widen the auth handling beyond 401 and 403.
+                raise SnapshotAuthError(
+                    f"{method.upper()} {url} -> HTTP {response.status_code}: "
+                    f"{response.text[:200]}",
+                    status=response.status_code,
+                    base_url=self._base_url,
+                )
+
             if response.status_code >= 400:
                 raise NetboxHTTPError(method.upper(), url, response.status_code, response.text)
             if response.status_code == 204 or not response.content:
                 return None
             return response.json()
 
-        # Exhausted retries with a connection-level exception.
+        # Exhausted retries with a connection-level exception. ARCH-07b
+        # translates the bare requests error into the nbsnap-domain
+        # SnapshotConnectivityError so callers outside the http package
+        # never have to import from `requests`.
         assert last_exc is not None
-        raise last_exc
+        raise self._translate_transport_exc(last_exc) from last_exc
 
     # ------------------------------------------------------------------
     # Public verb wrappers

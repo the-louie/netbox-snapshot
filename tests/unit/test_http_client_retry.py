@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError, _parse_retry_after
+from nbsnap.http.exceptions import SnapshotConnectivityError
 
 
 def _resp(
@@ -115,15 +116,25 @@ def test_five_503s_in_a_row_raises_after_three_retries() -> None:
     assert exc.value.status == 503
 
 
-def test_connection_error_retries_then_raises() -> None:
-    """A persistent `ConnectionError` bubbles up after the retry budget."""
+def test_connection_error_retries_then_raises_translated() -> None:
+    """A persistent ``ConnectionError`` exhausts retries and surfaces as the
+    nbsnap-domain :class:`SnapshotConnectivityError` after ARCH-07b.
+
+    Before ARCH-07b the bare ``requests.ConnectionError`` bubbled up
+    and any catcher outside ``nbsnap.http`` had to ``import requests``
+    to react. The new translation step means callers only ever see
+    the domain exception, ``reason="connection"`` for a vanilla
+    ConnectionError.
+    """
 
     session = MagicMock()
     session.request.side_effect = [requests.ConnectionError("boom") for _ in range(4)]
     client = _client_with(session)
 
-    with patch("time.sleep"), pytest.raises(requests.ConnectionError):
+    with patch("time.sleep"), pytest.raises(SnapshotConnectivityError) as exc:
         client.get_one("status/")
+    assert exc.value.reason == "connection"
+    assert exc.value.base_url == "https://dest.example/"
     assert session.request.call_count == 4  # original + 3 retries
 
 
