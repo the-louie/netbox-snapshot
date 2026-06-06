@@ -50,7 +50,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from nbsnap.export.extractor import _collapse_enum_dict
+from nbsnap.snapshot import collapse_enum_dict
 
 
 class BodyPreparer:
@@ -83,7 +83,7 @@ class BodyPreparer:
         out: dict[str, Any] = {}
         coerced_fields: list[str] = []
         for k, v in body.items():
-            coerced = _collapse_enum_dict(v)
+            coerced = collapse_enum_dict(v)
             if coerced is not v:
                 coerced_fields.append(k)
             if self._drop_nones and coerced is None:

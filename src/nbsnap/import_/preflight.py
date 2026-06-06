@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from nbsnap.export.manifest import Manifest
+from nbsnap.snapshot import Manifest
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.schema.content_types import ContentTypeCache
 from nbsnap.schema.status import Status, VersionSkew

@@ -568,16 +568,17 @@ def _coerce_body_for_write(
        that as a regular "required field" error which the
        operator can act on.
 
-    Re-uses the export-side enum helper so the choice-collapse
-    rule lives in one place and stays in lockstep.
+    Re-uses the shared coerce helper so the choice-collapse rule
+    lives in one place (nbsnap.snapshot.coerce) and the export and
+    import sides stay in lockstep.
     """
 
-    from nbsnap.export.extractor import _collapse_enum_dict
+    from nbsnap.snapshot import collapse_enum_dict
 
     out: dict[str, Any] = {}
     coerced_fields: list[str] = []
     for k, v in body.items():
-        coerced = _collapse_enum_dict(v)
+        coerced = collapse_enum_dict(v)
         if coerced is not v:
             # The enum-dict shape was actually collapsed.
             # Caller audits these as BYPASS_COERCED so the

@@ -22,8 +22,11 @@ if TYPE_CHECKING:
     from nbsnap.import_.phase2 import Phase2Summary as _Phase2Summary
     from nbsnap.import_.snapshot_index import SnapshotIndex as _SnapshotIndexType
 
-from nbsnap.export.manifest import MANIFEST_FILENAME, Manifest
-from nbsnap.export.writer import CONTENT_TYPE_FILES
+from nbsnap.snapshot import (
+    CONTENT_TYPE_FILES,
+    MANIFEST_FILENAME,
+    Manifest,
+)
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.import_.audit import Auditor, DropCategory, DropEvent
 from nbsnap.import_.fk_resolve import (

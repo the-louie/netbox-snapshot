@@ -59,15 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01e: Switch `import_/` to `snapshot/` imports
-
-* **Context.** Six imports point from `import_/` into `export/` today. Once the contracts live in `snapshot/`, every one of them moves over.
-* **Requirements.**
-  * Update the imports in `import_/driver.py:25-26`, `import_/preflight.py:26`, `import_/snapshot_index.py:91`, `import_/upsert.py:575`, `import_/body_preparer.py:53` to source `Manifest`, `MANIFEST_FILENAME`, `CONTENT_TYPE_FILES`, and `collapse_enum_dict` from `nbsnap.snapshot`.
-  * Run `grep -RIn "from nbsnap.export" src/nbsnap/import_/` and ensure no hits remain that are not via the new aliases (they should all be removed in this ticket).
-* **Testing.** Run `pytest tests/unit/import_ tests/integration -k "not slow"` and confirm no regressions. Add `tests/unit/test_import_no_export_imports.py` that walks `src/nbsnap/import_/` and asserts no `from nbsnap.export` line appears.
-* **Estimated effort.** 2h.
-
 #### ARCH-01f: Switch `export/` to `snapshot/` imports and remove the back-compat aliases
 
 * **Context.** With `import_/` migrated, the temporary re-exports in `export/manifest.py`, `export/writer.py`, and `export/extractor.py` (added in ARCH-01b/c/d) are no longer needed.

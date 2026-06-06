@@ -88,7 +88,7 @@ class SnapshotIndex:
         # CONTENT_TYPE_FILES maps content_type -> "<app>/<file>.jsonl".
         # We invert that mapping so we can recognise each jsonl
         # path and tag every row with its content type.
-        from nbsnap.export.writer import CONTENT_TYPE_FILES
+        from nbsnap.snapshot import CONTENT_TYPE_FILES
 
         ct_by_rel = {rel: ct for ct, rel in CONTENT_TYPE_FILES.items()}
 
