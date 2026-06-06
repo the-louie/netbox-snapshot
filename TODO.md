@@ -59,15 +59,6 @@ These notes are anchors that did not fit cleanly into any single sub-ticket. The
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
 
-#### ARCH-01g: Enforce the layering invariant with a test
-
-* **Context.** Once the migration is complete, a regression test prevents the layering violation from creeping back.
-* **Requirements.**
-  * Add `tests/unit/test_layering.py`. The test walks `src/nbsnap/snapshot/` and asserts no file imports from `nbsnap.export` or `nbsnap.import_`. It also walks `src/nbsnap/export/` and `src/nbsnap/import_/` and asserts neither imports from the other.
-  * Use `ast` to parse imports, not regex, so re-aliased imports still count.
-* **Testing.** Run `pytest tests/unit/test_layering.py`. Deliberately break it locally (add a stray `from nbsnap.export import Manifest` in `import_/driver.py`) and confirm it fails with a clear message; revert.
-* **Estimated effort.** 1h.
-
 ### ARCH-02: Adopt `ResolveContext` and split `import_/driver.py`
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
