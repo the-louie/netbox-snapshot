@@ -606,15 +606,6 @@ Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-a
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-05`.
 
-#### SEC-05a: Add `_redact_body` helper in `http/client.py`
-
-* **Context.** The helper is the single chokepoint for the redaction logic.
-* **Requirements.**
-  * Implement `_redact_body(body: str) -> str`: strip lines matching `Authorization:`, replace `Token [0-9a-fA-F]+` with `Token <redacted>`, strip HTML `<script>` and `<style>` blocks (use a non-greedy regex).
-  * Keep the helper at module scope so unit tests can import it directly.
-* **Testing.** Add `tests/unit/http/test_redact_body.py` covering each redaction case in isolation.
-* **Estimated effort.** 1.5h.
-
 #### SEC-05b: Apply redaction in `NetboxHTTPError.__init__`
 
 * **Context.** `http/client.py:118-127` formats the body on demand; redaction at construction time covers both audit and stderr paths.

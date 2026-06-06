@@ -25,6 +25,7 @@ from __future__ import annotations
 import email.utils
 import logging
 import os
+import re
 import time
 import warnings
 from collections.abc import Iterator
@@ -111,6 +112,59 @@ def _parse_retry_after(value: str | None) -> float | None:
         target = target.replace(tzinfo=UTC)
     now = datetime.now(UTC)
     return max(0.0, (target - now).total_seconds())
+
+
+# SEC-05a body-redaction patterns. Compiled once at module scope so
+# repeated NetboxHTTPError construction does not pay the regex
+# compilation cost. The three patterns map 1:1 to the three audit
+# leak channels the security audit identified:
+#
+# * ``Authorization:`` header echoes that appear in a NetBox error
+#   page (the destination occasionally renders request headers in
+#   its 500 template);
+# * Bare ``Token <hex>`` mentions in JSON bodies (NetBox does not do
+#   this today but a 3rd-party plugin might);
+# * Inline ``<script>`` / ``<style>`` blocks from an HTML error page
+#   that would otherwise paste base64 secrets or external URLs into
+#   audit.jsonl.
+_AUTH_HEADER_LINE = re.compile(r"^\s*Authorization:.*$", re.IGNORECASE | re.MULTILINE)
+_TOKEN_LITERAL = re.compile(r"Token\s+[0-9a-fA-F]+")
+_SCRIPT_OR_STYLE_BLOCK = re.compile(
+    r"<(script|style)\b[^>]*>.*?</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Note on the script/style regex: an unterminated ``<script>`` block
+# (no closing ``</script>``) does NOT match and would therefore leak
+# through. NetBox's own error pages always emit well-formed HTML, so
+# this is acceptable. If a future deployment puts a malformed proxy
+# in front of NetBox we will need an additional "tag-opens-without-
+# close" pattern.
+
+
+def _redact_body(body: str) -> str:
+    """Strip secrets-shaped content from a response body before logging.
+
+    Three transformations run in order:
+
+    1. Any line beginning ``Authorization:`` (case-insensitive) is
+       replaced wholesale, the operator's token can land verbatim
+       in a destination's debug response and audit.jsonl would
+       otherwise record it.
+    2. Any literal ``Token <hex>`` substring is masked to
+       ``Token <redacted>``.
+    3. Any ``<script>`` or ``<style>`` block is stripped, an HTML
+       error page from a misconfigured proxy can otherwise leak
+       cookies or analytics URLs into the audit log.
+
+    The function is intentionally lossy. The audit log is forensic,
+    not a faithful response capture; preserving the rest of the body
+    is enough to debug a failure without echoing secrets.
+    """
+
+    redacted = _AUTH_HEADER_LINE.sub("Authorization: <redacted>", body)
+    redacted = _TOKEN_LITERAL.sub("Token <redacted>", redacted)
+    redacted = _SCRIPT_OR_STYLE_BLOCK.sub("", redacted)
+    return redacted
 
 
 class NetboxHTTPError(RuntimeError):
