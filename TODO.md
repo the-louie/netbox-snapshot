@@ -445,15 +445,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-08`. Depends on ARCH-01.
 
-#### ARCH-08a: Hard-fail on unknown content type in `snapshot/layout.py`
-
-* **Context.** `relative_path` falls back to `f"{ct.replace('.', '/')}.jsonl"` silently.
-* **Requirements.**
-  * Remove the fallback. Raise `UnknownContentTypeError(content_type)` if the key is not in `CONTENT_TYPE_FILES`.
-  * Add the exception to `snapshot/layout.py`.
-* **Testing.** Add `tests/unit/snapshot/test_layout_unknown.py` asserting the error is raised with a clear message.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-08b: Preflight check in `import_/preflight.py`
 
 * **Context.** A snapshot whose manifest carries an unknown content type should be rejected before any HTTP call.

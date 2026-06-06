@@ -29,6 +29,7 @@ def test_snapshot_public_surface_contains_manifest() -> None:
         "MANIFEST_FILENAME",
         "Manifest",
         "SOURCE_URL_HASH_LENGTH",
+        "UnknownContentTypeError",
         "collapse_enum_dict",
         "compute_source_url_hash",
         "relative_path",

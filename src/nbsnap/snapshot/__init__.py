@@ -32,7 +32,11 @@ private.
 from __future__ import annotations
 
 from nbsnap.snapshot.coerce import ENUM_DICT_KEYS, collapse_enum_dict
-from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path
+from nbsnap.snapshot.layout import (
+    CONTENT_TYPE_FILES,
+    UnknownContentTypeError,
+    relative_path,
+)
 from nbsnap.snapshot.manifest import (
     MANIFEST_FILENAME,
     SOURCE_URL_HASH_LENGTH,
@@ -46,6 +50,7 @@ __all__: list[str] = [
     "MANIFEST_FILENAME",
     "Manifest",
     "SOURCE_URL_HASH_LENGTH",
+    "UnknownContentTypeError",
     "collapse_enum_dict",
     "compute_source_url_hash",
     "relative_path",

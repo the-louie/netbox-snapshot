@@ -9,11 +9,9 @@ import side rely on. Three behaviours need to be pinned:
 3. The legacy import path under :mod:`nbsnap.export.writer` resolves
    to the same objects (re-export, not a copy).
 
-The silent fallback for an unknown content type is intentionally
-NOT pinned by an assertion in this file. It will be replaced by a
-hard failure (:class:`UnknownContentTypeError`) in ARCH-08a; pinning
-its current behaviour now would lock us into a regression test on
-the migration window.
+The hard-failure-on-unknown-content-type behaviour (ARCH-08a) is
+pinned by ``tests/unit/snapshot/test_layout_unknown.py``; this file
+covers the *known* content types only.
 """
 
 from __future__ import annotations
