@@ -560,15 +560,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
 
-#### ARCH-11c: Re-export from top-level `nbsnap/__init__.py`
-
-* **Context.** `nbsnap/__init__.py` only exposes `__version__`.
-* **Requirements.**
-  * Add `from nbsnap.export import run_export, Manifest` and `from nbsnap.import_ import run_import`.
-  * Define `__all__ = ["__version__", "run_export", "run_import", "Manifest"]`.
-* **Testing.** Add `tests/unit/test_top_level_api.py` asserting the four symbols import.
-* **Estimated effort.** 1h.
-
 #### ARCH-11d: Embedded-use integration test
 
 * **Context.** Prove the public API is enough to run nbsnap from a script.
