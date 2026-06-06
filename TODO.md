@@ -606,15 +606,6 @@ Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-a
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-05`.
 
-#### SEC-05b: Apply redaction in `NetboxHTTPError.__init__`
-
-* **Context.** `http/client.py:118-127` formats the body on demand; redaction at construction time covers both audit and stderr paths.
-* **Requirements.**
-  * In `NetboxHTTPError.__init__`, call `_redact_body(body)` before storing on `self.body`.
-  * Confirm both `__str__` and downstream consumers see the redacted form.
-* **Testing.** Add `tests/unit/http/test_netbox_http_error_redaction.py` constructing the error with a body containing `Authorization: Token deadbeef` and asserting `error.body` is sanitised.
-* **Estimated effort.** 1h.
-
 #### SEC-05c: Audit-log redaction end-to-end test
 
 * **Context.** Prove the redaction reaches `audit.jsonl`.

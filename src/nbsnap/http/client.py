@@ -171,17 +171,28 @@ class NetboxHTTPError(RuntimeError):
     """Raised when the NetBox API responds with a 4xx or 5xx status.
 
     The message preserves the response body (truncated) so log lines
-    are debuggable without re-issuing the call.
+    are debuggable without re-issuing the call. SEC-05b routes the
+    body through :func:`_redact_body` at construction time so both
+    ``str(error)`` and downstream consumers (audit.jsonl, stderr
+    handlers) see the already-sanitised string. There is no separate
+    "raw body" channel; if the caller needs the literal response it
+    must inspect the underlying :class:`requests.Response` before
+    constructing this exception.
     """
 
     def __init__(self, method: str, url: str, status: int, body: str) -> None:
         self.method = method
         self.url = url
         self.status = status
-        self.body = body
+        self.body = _redact_body(body)
         super().__init__(self._format())
 
     def _format(self) -> str:
+        # The body is already SEC-05b-sanitised at construction, the
+        # truncation is purely a transcript-noise control. A 500-char
+        # ceiling matters here because the body has already had
+        # secrets stripped, so what we keep is debugging info, not
+        # raw response bytes.
         snippet = self.body if len(self.body) <= 500 else self.body[:497] + "..."
         return f"{self.method} {self.url} -> HTTP {self.status}: {snippet}"
 
