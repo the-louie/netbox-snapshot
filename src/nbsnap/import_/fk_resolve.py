@@ -16,6 +16,62 @@ from nbsnap.natkey.model import NKRegistry
 from nbsnap.natkey.resolver import NaturalKey
 
 
+class ResolverFKMissError(KeyError):
+    """Raised when an FK natural-key has no match on the destination.
+
+    ARCH-09b. The legacy raise was a bare :class:`KeyError`; this
+    typed exception carries record-level context so the audit row
+    points the operator at the offending ``(child_content_type,
+    natural_key)`` and names the FK ``target_ct`` they should be
+    chasing on the destination.
+
+    Attributes:
+
+    * ``content_type``  : the child record whose FK could not resolve
+      (e.g. ``"dcim.device"`` carrying a ``primary_ip4`` FK).
+    * ``natural_key``   : the child record's NK; useful so the
+      operator can find the offending row in the snapshot.
+    * ``target_ct``     : the parent content type the FK pointed at
+      (e.g. ``"ipam.ipaddress"``).
+    * ``hint``          : one of the three likely causes (missing
+      source data, scope mismatch, schema skew). Free-form string
+      so a new hint can land at a raise site without a wider patch.
+
+    Inherits :class:`KeyError` so the legacy ``except KeyError``
+    clauses keep working during the migration window.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        content_type: str,
+        natural_key: tuple[Any, ...] | None,
+        target_ct: str,
+        hint: str,
+    ) -> None:
+        self.content_type = content_type
+        self.natural_key = natural_key
+        self.target_ct = target_ct
+        self.hint = hint
+        self._message = message
+        super().__init__(self._render())
+
+    def _render(self) -> str:
+        return (
+            f"[{self.content_type} {self.natural_key} -> {self.target_ct}] "
+            f"{self._message} (hint: {self.hint})"
+        )
+
+    def __str__(self) -> str:
+        # ``KeyError`` overrides ``__str__`` to ``repr(message)`` which
+        # wraps the string in extra quotes; the audit consumer wants
+        # the bare message, not the quoted form. Override here so the
+        # bracketed prefix lands at column zero and ``str.startswith``
+        # works for grep-style consumers.
+        return self._render()
+
+
 def resolve_simple_fk(
     nk: Any,
     parent_ct: str,

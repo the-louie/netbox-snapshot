@@ -457,14 +457,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-09`.
 
-#### ARCH-09b: Add `ResolverFKMissError` in `import_/fk_resolve.py`
-
-* **Context.** `import_/fk_resolve.py:38` raises bare `KeyError`.
-* **Requirements.**
-  * Add `class ResolverFKMissError(KeyError)` carrying `content_type`, `natural_key`, `target_ct`, `hint`.
-* **Testing.** Add `tests/unit/import_/test_fk_resolve_errors.py::test_fk_miss_error_renders`.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-09c: Migrate raise sites
 
 * **Context.** Every existing raise site under `natkey/resolver.py` and `import_/fk_resolve.py` switches to the new types.
