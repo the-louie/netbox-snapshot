@@ -11,6 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from nbsnap.cli.common import add_scope_flags, add_tls_flags
 from nbsnap.export.driver import DEFAULT_SCOPE, run_export
 from nbsnap.http.client import NetboxHTTP
 
@@ -20,16 +21,15 @@ def add_export_args(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument("--url", help="NetBox base URL; defaults to NB_SOURCE_URL")
     parser.add_argument("--token", help="NetBox API token; defaults to NB_SOURCE_TOKEN")
-    parser.add_argument("--no-verify-tls", action="store_true", help="disable TLS verification")
+    # ARCH-10b: TLS and scope flags come from cli.common so the
+    # canonical name and help text are shared across subcommands.
+    add_tls_flags(parser)
+    add_scope_flags(parser)
     parser.add_argument(
         "--out",
         type=Path,
         required=True,
         help="output snapshot directory",
-    )
-    parser.add_argument(
-        "--only",
-        help="comma-separated content types; default is the renderer-minimum scope",
     )
     parser.add_argument(
         "--resume",
@@ -49,8 +49,8 @@ def run_export_cli(args: argparse.Namespace) -> int:
     )
     scope = (
         set(DEFAULT_SCOPE)
-        if not args.only
-        else {token.strip() for token in args.only.split(",") if token.strip()}
+        if not args.content_types
+        else {token.strip() for token in args.content_types.split(",") if token.strip()}
     )
     manifest = run_export(http, args.out, scope=scope, resume=args.resume)
 
