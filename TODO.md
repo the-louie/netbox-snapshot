@@ -443,15 +443,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
 
-#### ARCH-10c: Migrate `import_cli.py`
-
-* **Context.** Largest surface, 15 flags at lines 66-179.
-* **Requirements.**
-  * Replace the inline declarations with `add_tls_flags`, `add_scope_flags`, `add_audit_flags`.
-  * Keep import-specific flags inline.
-* **Testing.** Add `tests/unit/cli/test_import_cli_flags.py` parity assertions.
-* **Estimated effort.** 2h.
-
 #### ARCH-10d: Migrate `reset_cli.py` and `plan_cli.py`
 
 * **Context.** The two remaining subcommands.

@@ -31,6 +31,7 @@ import signal
 import sys
 from pathlib import Path
 
+from nbsnap.cli.common import add_audit_flags, add_tls_flags
 from nbsnap.snapshot import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
 from nbsnap.http.exceptions import (
@@ -68,7 +69,9 @@ logger = logging.getLogger(__name__)
 def add_import_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--url", help="NetBox base URL; defaults to NB_DESTINATION_URL")
     parser.add_argument("--token", help="NetBox API token; defaults to NB_DESTINATION_TOKEN")
-    parser.add_argument("--no-verify-tls", action="store_true", help="disable TLS verification")
+    # ARCH-10c: TLS and audit flags come from cli.common so the
+    # canonical names and help text are shared across subcommands.
+    add_tls_flags(parser)
     parser.add_argument("--in", dest="in_dir", type=Path, required=True, help="snapshot directory")
     parser.add_argument(
         "--max-version-skew",
@@ -82,13 +85,8 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         default="stop",
         help="behaviour when a single row fails to upsert",
     )
-    parser.add_argument(
-        "--audit-out",
-        type=Path,
-        default=None,
-        help="write the per-drop audit JSONL to this path "
-             "(default: <snapshot_dir>/audit.jsonl)",
-    )
+    # ARCH-10c: shared --audit-out + --audit-fsync builder.
+    add_audit_flags(parser)
     parser.add_argument(
         "--bypass-out",
         type=Path,
@@ -147,13 +145,6 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         help="trust the 2xx response of every Phase-2 PATCH "
              "without inspecting the returned field. Default is "
              "to verify (BUG-07).",
-    )
-    parser.add_argument(
-        "--audit-fsync",
-        action="store_true",
-        help="force os.fsync() on the audit JSONL after every "
-             "flush. Default off; enable for hosts where a hard "
-             "kill could lose the file from kernel cache.",
     )
     parser.add_argument(
         "--no-timestamps",
