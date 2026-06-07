@@ -35,6 +35,7 @@ import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from nbsnap.cli.common import add_audit_flags, add_scope_flags, add_tls_flags
 from nbsnap.export.driver import DEFAULT_SCOPE
 from nbsnap.http import NetboxHTTPError
 from nbsnap.http.client import NetboxHTTP
@@ -70,18 +71,9 @@ def add_reset_args(parser: argparse.ArgumentParser) -> None:
         "--token",
         help="NetBox API token; defaults to NB_DESTINATION_TOKEN",
     )
-    parser.add_argument(
-        "--no-verify-tls",
-        action="store_true",
-        help="disable TLS verification (self-signed dests only)",
-    )
-    parser.add_argument(
-        "--content-types",
-        help=(
-            "comma-separated content types to clear; defaults to "
-            "the renderer-minimum scope used by `nbsnap import`"
-        ),
-    )
+    # ARCH-10d: shared TLS and scope flag builders.
+    add_tls_flags(parser)
+    add_scope_flags(parser)
     parser.add_argument(
         "--keep",
         action="append",
@@ -109,12 +101,8 @@ def add_reset_args(parser: argparse.ArgumentParser) -> None:
         default="stop",
         help="behaviour when a single DELETE fails (default stop)",
     )
-    parser.add_argument(
-        "--audit-out",
-        type=Path,
-        default=None,
-        help="write a per-record JSONL audit of deletes to this path",
-    )
+    # ARCH-10d: shared audit flag builder.
+    add_audit_flags(parser)
 
 
 def run_reset_cli(args: argparse.Namespace) -> int:

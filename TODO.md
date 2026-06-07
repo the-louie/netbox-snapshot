@@ -443,14 +443,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
 
-#### ARCH-10d: Migrate `reset_cli.py` and `plan_cli.py`
-
-* **Context.** The two remaining subcommands.
-* **Requirements.**
-  * Apply the same migration to `reset_cli.py` and `plan_cli.py`.
-* **Testing.** Extend `tests/unit/cli/` with parity tests for these subcommands.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-10e: Canonicalise the scope flag name
 
 * **Context.** Scope flag drifts between `--only`, `--content-types`, `--max-skipped-ct`.

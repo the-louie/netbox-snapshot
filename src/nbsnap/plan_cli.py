@@ -17,6 +17,7 @@ import sys
 from collections.abc import Iterable
 from typing import TextIO
 
+from nbsnap.cli.common import add_scope_flags, add_tls_flags
 from nbsnap.graph import Plan, from_openapi, plan
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.schema.openapi import OpenAPI
@@ -53,11 +54,10 @@ def add_plan_args(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument("--url", help="NetBox base URL; defaults to NB_SOURCE_URL")
     parser.add_argument("--token", help="NetBox API token; defaults to NB_SOURCE_TOKEN")
-    parser.add_argument("--no-verify-tls", action="store_true", help="disable TLS verification")
-    parser.add_argument(
-        "--only",
-        help="comma-separated content types; default is the renderer-minimum scope",
-    )
+    # ARCH-10d: shared TLS and scope flag builders so the canonical
+    # names and help text are identical across subcommands.
+    add_tls_flags(parser)
+    add_scope_flags(parser)
     parser.add_argument(
         "--json", dest="emit_json", action="store_true", help="machine-readable JSON to stdout"
     )
@@ -94,7 +94,7 @@ def run_plan(args: argparse.Namespace) -> int:
         verify_tls=not args.no_verify_tls,
     )
     openapi = OpenAPI.fetch(http)
-    scope = _parse_scope(args.only)
+    scope = _parse_scope(args.content_types)
     graph = from_openapi(openapi, scope=scope)
     p = plan(graph)
 
