@@ -584,15 +584,6 @@ Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-04`.
 
-#### SEC-04b: Assert no URL leaks in the export reproducibility test
-
-* **Context.** Existing `tests/integration/test_export_reproducibility.py` asserts byte-for-byte parity; extend it to cover redaction.
-* **Requirements.**
-  * Add an assertion that no manifest field contains `http://` or `https://` substrings.
-  * Add a parallel assertion that no jsonl file under `snapshot/` contains the source URL.
-* **Testing.** Run the updated integration test.
-* **Estimated effort.** 1h.
-
 ### SEC-05: Destination response bodies in audit log can leak tokens
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-05`.

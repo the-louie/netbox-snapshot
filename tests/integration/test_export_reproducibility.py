@@ -61,3 +61,19 @@ def test_export_runs_produce_identical_jsonl(tmp_path: Path) -> None:
     assert manifest_a == manifest_b, "manifest differs beyond exported_at"
 
     assert not delta, "exports diverged:\n" + "\n\n".join(delta)
+
+    # SEC-04b: the snapshot must not leak the source URL. The literal
+    # URL is replaced by source_url_hash in the Manifest dataclass
+    # (SEC-04a); this assertion holds that contract end to end and
+    # also catches a future jsonl that accidentally carries an
+    # install-local URL through.
+    for path in sorted(out_a.rglob("*.json")) + sorted(out_a.rglob("*.jsonl")):
+        text = path.read_text(encoding="utf-8")
+        assert "http://" not in text, (
+            f"{path.relative_to(out_a)} contains an http:// literal; "
+            "the snapshot must not persist install-local URLs"
+        )
+        assert "https://" not in text, (
+            f"{path.relative_to(out_a)} contains an https:// literal; "
+            "the snapshot must not persist install-local URLs"
+        )
