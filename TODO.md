@@ -596,20 +596,6 @@ Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-a
 * **Testing.** Run the integration test.
 * **Estimated effort.** 1h.
 
-### SEC-06: `--audit-out` sidecar `preflight-bypass.jsonl` location
-
-Severity low. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-06`.
-
-#### SEC-06a: Co-locate `preflight-bypass.jsonl` inside `<snapshot_dir>` plus add `--bypass-out`
-
-* **Context.** `import_cli.py:307` derives the sidecar from `audit_path.with_name`.
-* **Requirements.**
-  * Default `bypass_path` to `<snapshot_dir>/preflight-bypass.jsonl`.
-  * Add `--bypass-out PATH` flag to override explicitly.
-  * Update `--help` text to call out the new default.
-* **Testing.** Add `tests/unit/test_import_cli_bypass_out.py` asserting: default lands inside snapshot_dir; explicit `--bypass-out /tmp/x.jsonl` overrides; passing both `--audit-out` and `--bypass-out` does not collide.
-* **Estimated effort.** 1h.
-
 ---
 
 ## Operator-deferred (no coding work)

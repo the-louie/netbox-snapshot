@@ -88,6 +88,15 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "(default: <snapshot_dir>/audit.jsonl)",
     )
     parser.add_argument(
+        "--bypass-out",
+        type=Path,
+        default=None,
+        help="(SEC-06a) write the preflight-bypass detail JSONL to this path "
+             "(default: <snapshot_dir>/preflight-bypass.jsonl). Independent "
+             "of --audit-out so the bypass record stays next to the snapshot "
+             "even when audit output is redirected elsewhere.",
+    )
+    parser.add_argument(
         "--allow-enum-dict-bypass",
         action="store_true",
         help="(power user) proceed even if the snapshot carries "
@@ -304,7 +313,12 @@ def run_import_cli(args: argparse.Namespace) -> int:
                 f"{len(summary.preflight.snapshot_format_issues)} "
                 "files used the import-side coerce.\n"
             )
-            bypass_path = audit_path.with_name("preflight-bypass.jsonl")
+            # SEC-06a: the bypass detail belongs inside the snapshot
+            # directory (not next to --audit-out). Co-locating it
+            # with the snapshot keeps the forensic record paired with
+            # the source artefact even when an operator redirects
+            # audit output to a separate filesystem.
+            bypass_path = args.bypass_out or (in_dir / "preflight-bypass.jsonl")
             with bypass_path.open("w", encoding="utf-8") as fp:
                 for issue in summary.preflight.snapshot_format_issues:
                     fp.write(json.dumps(issue, sort_keys=True) + "\n")
