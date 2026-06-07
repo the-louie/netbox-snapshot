@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import requests
+from nbsnap.http.exceptions import SnapshotAuthError, SnapshotConnectivityError
 
 from nbsnap.http.client import NetboxHTTPError
 from nbsnap.import_cli import (
@@ -196,7 +196,11 @@ def test_returns_4_on_tls_verification_failure(
     snap = _write_minimal_snapshot(tmp_path)
     with patch(
         "nbsnap.import_cli.run_import",
-        side_effect=requests.exceptions.SSLError("cert verify failed"),
+        side_effect=SnapshotConnectivityError(
+            "cert verify failed",
+            reason="tls",
+            base_url="https://dest.example/",
+        ),
     ):
         rc = run_import_cli(_args(snap))
     assert rc == EXIT_DESTINATION_UNREACHABLE
@@ -209,7 +213,11 @@ def test_returns_4_on_connection_error(tmp_path: Path, capsys: pytest.CaptureFix
     snap = _write_minimal_snapshot(tmp_path)
     with patch(
         "nbsnap.import_cli.run_import",
-        side_effect=requests.exceptions.ConnectionError("name resolution"),
+        side_effect=SnapshotConnectivityError(
+            "name resolution",
+            reason="connection",
+            base_url="https://dest.example/",
+        ),
     ):
         rc = run_import_cli(_args(snap))
     assert rc == EXIT_DESTINATION_UNREACHABLE
@@ -220,8 +228,10 @@ def test_returns_4_on_401_unauthorized(tmp_path: Path, capsys: pytest.CaptureFix
     snap = _write_minimal_snapshot(tmp_path)
     with patch(
         "nbsnap.import_cli.run_import",
-        side_effect=NetboxHTTPError(
-            "GET", "https://dest.example/api/status/", 401, '{"detail":"Invalid token"}'
+        side_effect=SnapshotAuthError(
+            "Invalid token",
+            status=401,
+            base_url="https://dest.example/",
         ),
     ):
         rc = run_import_cli(_args(snap))
@@ -233,8 +243,10 @@ def test_returns_4_on_403_forbidden(tmp_path: Path, capsys: pytest.CaptureFixtur
     snap = _write_minimal_snapshot(tmp_path)
     with patch(
         "nbsnap.import_cli.run_import",
-        side_effect=NetboxHTTPError(
-            "GET", "https://dest.example/api/status/", 403, '{"detail":"No permission"}'
+        side_effect=SnapshotAuthError(
+            "No permission",
+            status=403,
+            base_url="https://dest.example/",
         ),
     ):
         rc = run_import_cli(_args(snap))

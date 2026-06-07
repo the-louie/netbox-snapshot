@@ -31,10 +31,12 @@ import signal
 import sys
 from pathlib import Path
 
-import requests
-
 from nbsnap.snapshot import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
+from nbsnap.http.exceptions import (
+    SnapshotAuthError,
+    SnapshotConnectivityError,
+)
 from nbsnap.import_.audit import DropCategory
 from nbsnap.import_.driver import ImportSummary, run_import
 from nbsnap.import_.phase2 import Phase2Outcome
@@ -255,26 +257,34 @@ def run_import_cli(args: argparse.Namespace) -> int:
             strict_schema=args.strict_schema,
             use_destination_schema=args.use_destination_schema,
         )
-    except requests.exceptions.SSLError as exc:
-        sys.stderr.write(
-            "nbsnap import: TLS verification failed against the destination "
-            f"({http.base_url}). Either the destination cert is invalid, or pass "
-            f"--no-verify-tls if you know it is intentional. ({exc})\n"
-        )
+    except SnapshotConnectivityError as exc:
+        # ARCH-07c: ARCH-07b translates the bare requests exceptions
+        # into SnapshotConnectivityError at the HTTP boundary. The
+        # CLI branches on ``exc.reason`` to render the right hint:
+        # a TLS failure points to ``--no-verify-tls``, a connection
+        # or timeout failure points to URL/firewall.
+        if exc.reason == "tls":
+            sys.stderr.write(
+                "nbsnap import: TLS verification failed against the destination "
+                f"({http.base_url}). Either the destination cert is invalid, or pass "
+                f"--no-verify-tls if you know it is intentional. ({exc})\n"
+            )
+        else:
+            sys.stderr.write(
+                f"nbsnap import: cannot reach destination at {http.base_url} ({exc})\n"
+            )
         return EXIT_DESTINATION_UNREACHABLE
-    except requests.exceptions.ConnectionError as exc:
+    except SnapshotAuthError as exc:
+        # ARCH-07c: 401/403 used to live under the NetboxHTTPError
+        # branch with an inline status check. ARCH-07b promoted them
+        # into a dedicated exception so the catch is direct now.
         sys.stderr.write(
-            f"nbsnap import: cannot reach destination at {http.base_url} ({exc})\n"
+            "nbsnap import: authentication failed against the destination "
+            f"({http.base_url}). Check NB_DESTINATION_TOKEN or --token. "
+            f"HTTP {exc.status}.\n"
         )
         return EXIT_DESTINATION_UNREACHABLE
     except NetboxHTTPError as exc:
-        if exc.status in (401, 403):
-            sys.stderr.write(
-                "nbsnap import: authentication failed against the destination "
-                f"({http.base_url}). Check NB_DESTINATION_TOKEN or --token. "
-                f"HTTP {exc.status}.\n"
-            )
-            return EXIT_DESTINATION_UNREACHABLE
         sys.stderr.write(
             f"nbsnap import: destination returned HTTP {exc.status}: "
             f"{exc.body[:200]}\n"

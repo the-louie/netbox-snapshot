@@ -415,15 +415,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-07`.
 
-#### ARCH-07c: Replace `requests.exceptions` catches in `import_cli.py`
-
-* **Context.** `import_cli.py:34, 249, 256` import `requests` for the catch.
-* **Requirements.**
-  * Remove `import requests` from `import_cli.py`.
-  * Catch `SnapshotConnectivityError` and `SnapshotAuthError` for the operator-facing messages.
-* **Testing.** Update `tests/unit/test_import_cli.py` to drive the connectivity/auth code paths through the new exceptions.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-07d: Replace `NetboxHTTPError` catches outside `http/`
 
 * **Context.** `graph/polymorphic.py:83`, `import_/phase2.py`, `schema/content_types.py` catch `NetboxHTTPError` outside the HTTP package.
