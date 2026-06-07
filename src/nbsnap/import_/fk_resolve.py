@@ -91,8 +91,22 @@ def resolve_simple_fk(
         return None
     resolved = index.lookup(parent_ct, nk)
     if resolved is None:
-        msg = f"NK {nk!r} for {parent_ct} not found on destination"
-        raise KeyError(msg)
+        # ARCH-09c: anchor what the leaf knows. We do not know the
+        # child's content_type or its NK here, those are caller
+        # context, the caller can wrap and re-raise with the child
+        # detail if it wants a more specific audit row. Leaf-level
+        # we set content_type = target_ct so the rendered prefix
+        # still reads correctly. ``hint`` is "missing source data"
+        # because in practice the parent row simply was not in the
+        # source export, scope-mismatch and schema-skew are rarer
+        # in this code path.
+        raise ResolverFKMissError(
+            f"NK {nk!r} not found on destination",
+            content_type=parent_ct,
+            natural_key=nk if isinstance(nk, tuple) else None,
+            target_ct=parent_ct,
+            hint="missing source data",
+        )
     return resolved
 
 

@@ -111,11 +111,18 @@ def resolve_slug(spec: NKSpec, record: Mapping[str, Any]) -> NaturalKey:
     field_name = spec.fields[0].name
     value = record.get(field_name)
     if value in (None, ""):
-        msg = (
-            f"slug NK field {field_name!r} is empty on a "
-            f"{spec.content_type} record"
+        # ARCH-09c: ResolverFieldError lets the audit log anchor the
+        # row by content type + field. natural_key is None because the
+        # NK has not been assembled yet, the failure happened on its
+        # one and only field. Hint targets the three likely causes,
+        # an empty slug is almost always a source-side data issue.
+        raise ResolverFieldError(
+            f"slug NK field {field_name!r} is empty",
+            content_type=spec.content_type,
+            natural_key=None,
+            field_name=field_name,
+            hint="missing source data",
         )
-        raise ValueError(msg)
     return (value,)
 
 
@@ -235,19 +242,29 @@ def _resolve_parent(
         return resolve(registry, field.parent_content_type, raw, parent_lookup)
     if isinstance(raw, int) and field.parent_content_type is not None:
         if parent_lookup is None:
-            msg = (
+            # ARCH-09c: a missing parent_lookup is almost always
+            # scope mismatch, the exporter excluded the parent
+            # content type so the FK has nothing to substitute.
+            raise ResolverFieldError(
                 f"cannot resolve {field.parent_content_type} id {raw} "
-                "without a parent_lookup map"
+                "without a parent_lookup map",
+                content_type=field.parent_content_type,
+                natural_key=None,
+                field_name=field.name,
+                hint="scope mismatch",
             )
-            raise ValueError(msg)
         lookup_key = (field.parent_content_type, raw)
         parent_record = parent_lookup.get(lookup_key)
         if parent_record is None:
-            msg = (
-                f"parent_lookup is missing {field.parent_content_type} "
-                f"id {raw}"
+            # ARCH-09c: same scope-mismatch story, but specifically
+            # that the parent_lookup map was built without this id.
+            raise ResolverFieldError(
+                f"parent_lookup is missing {field.parent_content_type} id {raw}",
+                content_type=field.parent_content_type,
+                natural_key=None,
+                field_name=field.name,
+                hint="scope mismatch",
             )
-            raise ValueError(msg)
         return resolve(registry, field.parent_content_type, parent_record, parent_lookup)
     return raw
 

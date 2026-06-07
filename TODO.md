@@ -457,15 +457,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-09`.
 
-#### ARCH-09c: Migrate raise sites
-
-* **Context.** Every existing raise site under `natkey/resolver.py` and `import_/fk_resolve.py` switches to the new types.
-* **Requirements.**
-  * Update each raise site with concrete `content_type`, `natural_key`, `field_name`, `hint`.
-  * Hints should call out the three most likely causes: missing source data, scope mismatch, schema skew.
-* **Testing.** Run the natkey and import unit suites. Confirm log messages in `tests/integration/test_import_*` now include the row anchor.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-09d: Auditor cross-reference test
 
 * **Context.** Confirm the new exception fields propagate into audit rows.
