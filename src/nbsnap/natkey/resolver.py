@@ -29,6 +29,57 @@ from nbsnap.natkey.model import NKField, NKRegistry, NKSpec, Strategy
 NaturalKey = tuple[Any, ...]
 
 
+class ResolverFieldError(ValueError):
+    """Raised when a natural-key resolver cannot read a required field.
+
+    ARCH-09a. The legacy raise was a bare :class:`ValueError` whose
+    only context lived in its message string. The audit's complaint:
+    when 5 000 rows fail with the same shape, the operator wants the
+    failure anchored to the offending ``(content_type, natural_key,
+    field)`` tuple so a grep against ``audit.jsonl`` finds them. The
+    new exception carries that anchor on the instance:
+
+    * ``content_type``  : the record's NetBox content type
+      ("dcim.device", "ipam.iprange", ...).
+    * ``natural_key``   : the partial NK that was being built, or
+      None when the failure happened before any field landed.
+    * ``field_name``    : the field the resolver could not read.
+    * ``hint``          : a short operator-facing hint at one of the
+      three likely causes (missing source data, scope mismatch,
+      schema skew). Free-form string, no enum, so a new hint can
+      land at a raise site without a wider patch.
+
+    The exception inherits :class:`ValueError` so any pre-ARCH-09a
+    ``except ValueError`` clause still catches it, and the
+    :meth:`__str__` renders a single-line summary suited for
+    audit-row inclusion.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        content_type: str,
+        natural_key: tuple[Any, ...] | None,
+        field_name: str,
+        hint: str,
+    ) -> None:
+        self.content_type = content_type
+        self.natural_key = natural_key
+        self.field_name = field_name
+        self.hint = hint
+        self._message = message
+        super().__init__(self._render())
+
+    def _render(self) -> str:
+        # Format: "[ct nk.field] message (hint: hint)". The square
+        # brackets are easy to spot in a wall of audit lines.
+        return (
+            f"[{self.content_type} {self.natural_key}.{self.field_name}] "
+            f"{self._message} (hint: {self.hint})"
+        )
+
+
 def resolve(
     registry: NKRegistry,
     content_type: str,

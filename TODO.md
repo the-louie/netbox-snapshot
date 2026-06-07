@@ -457,15 +457,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-09`.
 
-#### ARCH-09a: Add `ResolverFieldError` in `natkey/resolver.py`
-
-* **Context.** `natkey/resolver.py:58-68` raises bare `ValueError`.
-* **Requirements.**
-  * Add `class ResolverFieldError(ValueError)` carrying `content_type`, `natural_key`, `field_name`, `hint`.
-  * Override `__str__` to render `"[<ct> <nk>.<field>] <message> (hint: <hint>)"`.
-* **Testing.** Add `tests/unit/natkey/test_resolver_errors.py::test_resolver_field_error_renders` covering the format string.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-09b: Add `ResolverFKMissError` in `import_/fk_resolve.py`
 
 * **Context.** `import_/fk_resolve.py:38` raises bare `KeyError`.
