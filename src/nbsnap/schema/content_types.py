@@ -77,7 +77,10 @@ class ContentTypeCache:
         instead of getting a silent empty cache.
         """
 
-        from nbsnap.http.client import NetboxHTTPError
+        # ARCH-07d: NetboxHTTPError is a nbsnap-domain exception
+        # exported from nbsnap.http; the catch is appropriate here
+        # because we deliberately probe legacy 404-only endpoints.
+        from nbsnap.http import NetboxHTTPError
 
         last_error: Exception | None = None
         for endpoint in _CONTENT_TYPE_ENDPOINTS:

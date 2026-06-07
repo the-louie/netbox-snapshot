@@ -415,23 +415,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-07`.
 
-#### ARCH-07d: Replace `NetboxHTTPError` catches outside `http/`
-
-* **Context.** `graph/polymorphic.py:83`, `import_/phase2.py`, `schema/content_types.py` catch `NetboxHTTPError` outside the HTTP package.
-* **Requirements.**
-  * Decide per call site: either re-raise as a domain-appropriate exception, or move the catch into `http/` if it is truly a transport concern.
-  * Document the choice inline (one-line comment per site).
-* **Testing.** Run the full unit suite. Confirm no module outside `src/nbsnap/http/` references `NetboxHTTPError` or `requests.exceptions`.
-* **Estimated effort.** 1.5h.
-
-#### ARCH-07e: Enforce the boundary with a test
-
-* **Context.** A regression test holds the line.
-* **Requirements.**
-  * Add `tests/unit/test_http_boundary.py` walking `src/nbsnap/` and asserting that no module outside `nbsnap.http` imports `requests`.
-* **Testing.** Run the new test; deliberately add `import requests` to `import_cli.py` and confirm the test catches it; revert.
-* **Estimated effort.** 1h.
-
 ### ARCH-08: Replace the silent `CONTENT_TYPE_FILES` fallback
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-08`. Depends on ARCH-01.

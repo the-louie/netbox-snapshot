@@ -80,7 +80,12 @@ def discover_via_post_probe(
         return None
 
     sentinel_payload = {field: {"object_type": "nbsnap.does_not_exist", "object_id": 1}}
-    from nbsnap.http.client import NetboxHTTPError
+    # ARCH-07d: NetboxHTTPError is the domain exception we expect for
+    # the deliberately-bad POST below; we read its `body` to learn the
+    # valid polymorphic targets NetBox enumerates in the 400 response.
+    # Catching it here (not requests.exceptions) keeps this module
+    # decoupled from the HTTP transport library.
+    from nbsnap.http import NetboxHTTPError
 
     try:
         http.post(endpoint, sentinel_payload)

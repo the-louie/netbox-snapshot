@@ -36,7 +36,8 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from nbsnap.export.driver import DEFAULT_SCOPE
-from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
+from nbsnap.http import NetboxHTTPError
+from nbsnap.http.client import NetboxHTTP
 from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
 
 # Documented exit codes. The numbers stay stable across follow-up

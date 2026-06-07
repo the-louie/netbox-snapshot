@@ -31,7 +31,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 
-from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
+from nbsnap.http import NetboxHTTPError
+from nbsnap.http.client import NetboxHTTP
 from nbsnap.import_.lookahead import DeferredFK
 from nbsnap.import_.nk_index import NKIndex
 from nbsnap.natkey.model import NKRegistry
@@ -145,6 +146,12 @@ def run_phase2(
                 f"{endpoint}{child_id}/", {entry.field_name: target_id}
             )
         except NetboxHTTPError as exc:
+            # ARCH-07d: NetboxHTTPError is a nbsnap-domain exception
+            # exported from nbsnap.http; catching it here keeps the
+            # phase-2 driver decoupled from the requests library.
+            # The HTTP-status branch decides between retry, skip,
+            # and surface; the body slice lands in the operator log
+            # already redacted (SEC-05b).
             logger.warning(
                 "Phase-2 PATCH failed for %s id=%d field=%s: HTTP %d %s",
                 entry.child_content_type, child_id, entry.field_name,
