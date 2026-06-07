@@ -443,15 +443,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
 
-#### ARCH-10a: Create `cli/common.py` with shared flag builders
-
-* **Context.** Today every subcommand re-declares TLS, scope, audit flags.
-* **Requirements.**
-  * Add `src/nbsnap/cli/common.py` with `add_tls_flags(parser)`, `add_scope_flags(parser)`, `add_audit_flags(parser)`.
-  * Each function attaches the canonical flag name and help text.
-* **Testing.** Add `tests/unit/cli/test_common_flags.py` asserting each helper adds the expected flags with the documented defaults.
-* **Estimated effort.** 2h.
-
 #### ARCH-10b: Migrate `export_cli.py`
 
 * **Context.** Export currently declares its own TLS and scope flags.
