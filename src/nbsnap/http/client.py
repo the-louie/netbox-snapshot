@@ -31,7 +31,7 @@ import warnings
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any, Literal
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import urlencode, urlparse, urlsplit, urlunsplit
 
 import requests
 
@@ -139,6 +139,28 @@ _SCRIPT_OR_STYLE_BLOCK = re.compile(
 # this is acceptable. If a future deployment puts a malformed proxy
 # in front of NetBox we will need an additional "tag-opens-without-
 # close" pattern.
+
+
+def _host_port(url: str) -> tuple[str, int]:
+    """Return ``(hostname, port)`` from ``url``, with scheme-default port.
+
+    Used by :meth:`NetboxHTTP._follow_one_safe_hop` (SEC-03b) to
+    compare a redirect's ``Location`` against the client's
+    ``base_url``. ``urlparse.port`` is None when the URL omits the
+    port; in that case we substitute the scheme's default (443 for
+    HTTPS, 80 otherwise) so ``https://x/`` and ``https://x:443/``
+    compare equal.
+    """
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.port is not None:
+        port = parsed.port
+    elif parsed.scheme == "https":
+        port = 443
+    else:
+        port = 80
+    return host, port
 
 
 def _redact_body(body: str) -> str:
@@ -443,6 +465,48 @@ class NetboxHTTP:
                 redirect_url=redirect_url or None,
             )
         return response
+
+    def _follow_one_safe_hop(self, response: requests.Response) -> str:
+        """Return the ``Location`` URL of a 3xx, only when the host is unchanged.
+
+        SEC-03b. SEC-03a refused every 3xx at the leaf send. The
+        absolute "never follow" is the safe default, but some
+        legitimate flows (NetBox can issue a 301 for a trailing-slash
+        canonicalisation, for example) need exactly one same-host
+        redirect to be allowed. This helper is the opt-in:
+
+        * Caller catches :class:`SnapshotTransportError` from a GET,
+          notices ``exc.redirect_url`` is non-None, and asks this
+          helper whether the hop is safe.
+        * The helper returns the URL only when ``(host, port)`` match
+          the client's ``base_url``. Anything else is a refusal.
+
+We do NOT replay the request inside the helper, the caller
+        re-issues if and only if the helper returned. Any future
+        edit that pushes the replay into this method MUST drop the
+        Authorization header before sending if the cross-host check
+        ever fails, otherwise a leaked token is the cost. As the
+        current implementation simply raises on a cross-host hit,
+        the header never reaches the wrong host.
+        """
+
+        location = response.headers.get("Location", "")
+        if not location:
+            raise SnapshotTransportError(
+                "3xx response carried no Location header; refusing to redirect",
+                base_url=self._base_url,
+            )
+
+        base_host, base_port = _host_port(self._base_url)
+        target_host, target_port = _host_port(location)
+        if (base_host, base_port) != (target_host, target_port):
+            raise SnapshotTransportError(
+                f"refusing cross-host redirect from "
+                f"{base_host}:{base_port} to {target_host}:{target_port}",
+                base_url=self._base_url,
+                redirect_url=location,
+            )
+        return location
 
     def _translate_transport_exc(self, exc: Exception) -> SnapshotConnectivityError:
         """Convert a low-level ``requests`` failure into our domain exception.

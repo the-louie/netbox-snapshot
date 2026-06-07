@@ -563,15 +563,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-03`.
 
-#### SEC-03b: One-hop redirect helper with host validation
-
-* **Context.** Some GET flows may legitimately need to follow a redirect.
-* **Requirements.**
-  * Add `_follow_one_safe_hop(response)` to `http/client.py`. It returns the new URL only if `urlparse(url).hostport == urlparse(self._base_url).hostport`. Otherwise it raises `SnapshotTransportError` with a clear cross-host message.
-  * Document that the helper drops the auth header before re-issuing if the host check fails (defensive).
-* **Testing.** Extend `tests/unit/test_http_client_redirect.py` with one safe-hop case and one cross-host rejection case.
-* **Estimated effort.** 1.5h.
-
 #### SEC-03c: Integration test on the destination
 
 * **Context.** A high-fidelity scenario test backs the unit work.

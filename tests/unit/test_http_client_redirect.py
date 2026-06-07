@@ -104,6 +104,48 @@ def test_send_raises_directly_on_3xx() -> None:
     assert exc.value.redirect_url == "https://other.example/"
 
 
+def test_follow_one_safe_hop_returns_same_host_url() -> None:
+    """SEC-03b: a same-host redirect produces the new URL for re-issue."""
+
+    client = NetboxHTTP("https://dest.example/", "tok")
+    response = _redirect_response("https://dest.example/api/status/")
+    assert client._follow_one_safe_hop(response) == "https://dest.example/api/status/"
+
+
+def test_follow_one_safe_hop_refuses_cross_host_redirect() -> None:
+    """A redirect to a different host raises with both hosts in the message."""
+
+    client = NetboxHTTP("https://dest.example/", "tok")
+    response = _redirect_response("https://attacker.example/api/")
+    with pytest.raises(SnapshotTransportError) as exc:
+        client._follow_one_safe_hop(response)
+
+    assert "cross-host" in str(exc.value)
+    assert exc.value.redirect_url == "https://attacker.example/api/"
+    assert "dest.example" in str(exc.value)
+    assert "attacker.example" in str(exc.value)
+
+
+def test_follow_one_safe_hop_refuses_cross_port_redirect() -> None:
+    """Same hostname but a different port still counts as cross-host."""
+
+    client = NetboxHTTP("https://dest.example/", "tok")
+    response = _redirect_response("https://dest.example:8443/api/")
+    with pytest.raises(SnapshotTransportError):
+        client._follow_one_safe_hop(response)
+
+
+def test_follow_one_safe_hop_refuses_missing_location_header() -> None:
+    """A 3xx without ``Location`` cannot be safely followed."""
+
+    client = NetboxHTTP("https://dest.example/", "tok")
+    no_loc = MagicMock()
+    no_loc.headers = {}
+    with pytest.raises(SnapshotTransportError) as exc:
+        client._follow_one_safe_hop(no_loc)
+    assert "no Location header" in str(exc.value)
+
+
 def test_send_redirect_without_location_header_still_refuses() -> None:
     """A 3xx with no Location is still refused, not silently consumed."""
 
