@@ -23,7 +23,33 @@ the builders pure makes them easy to test in isolation.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+
+class _ScopeFlagAction(argparse.Action):
+    """Store the scope value; emit a deprecation warning for ``--only``.
+
+    ARCH-10e. Both flag names (``--content-types`` and ``--only``)
+    write to the same ``content_types`` dest, but the latter is
+    legacy. The action fires on every matched flag; we only warn
+    when the operator used the legacy spelling, so a script that
+    already follows the canonical name produces no noise.
+    """
+
+    def __call__(  # type: ignore[override]
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values,  # type: ignore[no-untyped-def]
+        option_string: str | None = None,
+    ) -> None:
+        if option_string == "--only":
+            sys.stderr.write(
+                "warning: --only is deprecated, use --content-types instead "
+                "(ARCH-10e)\n"
+            )
+        setattr(namespace, self.dest, values)
 
 
 def add_tls_flags(parser: argparse.ArgumentParser) -> None:
@@ -58,13 +84,15 @@ def add_scope_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--content-types",
         "--only",
+        action=_ScopeFlagAction,
         dest="content_types",
         default=None,
         help=(
             "comma-separated list of NetBox content types to operate on "
             "(e.g. 'dcim.site,dcim.device'). When omitted, the subcommand "
             "uses its renderer-minimum default scope. The ``--only`` "
-            "spelling is a deprecated alias kept for older scripts."
+            "spelling is a deprecated alias kept for older scripts; "
+            "ARCH-10e emits a stderr warning when it is used."
         ),
     )
 

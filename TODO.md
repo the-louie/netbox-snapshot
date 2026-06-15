@@ -443,15 +443,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
 
-#### ARCH-10e: Canonicalise the scope flag name
-
-* **Context.** Scope flag drifts between `--only`, `--content-types`, `--max-skipped-ct`.
-* **Requirements.**
-  * Pick `--content-types` as canonical. Add `--only` as a deprecated alias that emits a warning to stderr.
-  * Document the deprecation in `--help` and in `docs/operator-runbook.md`.
-* **Testing.** Add `tests/unit/cli/test_scope_alias_deprecation.py` asserting the alias still works and the warning fires.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-10f: Help-text parity test
 
 * **Context.** A regression test ensures the help strings stay aligned.
