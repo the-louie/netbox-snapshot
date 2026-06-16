@@ -431,14 +431,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-09`.
 
-#### ARCH-09d: Auditor cross-reference test
-
-* **Context.** Confirm the new exception fields propagate into audit rows.
-* **Requirements.**
-  * Add `tests/integration/test_audit_resolver_context.py` triggering one `ResolverFieldError` and one `ResolverFKMissError`. Assert the audit row carries `content_type`, `natural_key`, `field_name`.
-* **Testing.** Run the integration test.
-* **Estimated effort.** 1h.
-
 ### ARCH-10: Shared CLI flags
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
