@@ -419,14 +419,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-08`. Depends on ARCH-01.
 
-#### ARCH-08c: End-to-end test
-
-* **Context.** Confirm the new error path renders sanely to the operator.
-* **Requirements.**
-  * Add `tests/integration/test_import_unknown_ct_message.py` running `nbsnap import` against a fixture with one unknown content type; assert exit code non-zero and stderr contains the content type name.
-* **Testing.** Run the integration test.
-* **Estimated effort.** 1h.
-
 ### ARCH-09: Record-level context on resolver exceptions
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-09`.

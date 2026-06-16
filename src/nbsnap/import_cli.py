@@ -297,6 +297,15 @@ def run_import_cli(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     sys.stderr.write("# nbsnap import complete\n")
     sys.stderr.write(f"  preflight version skew: {summary.preflight.version_skew.name}\n")
+    if summary.preflight.unknown_content_types:
+        # ARCH-08c: an unknown content type is a snapshot-side defect,
+        # the manifest carries a type nbsnap does not recognise. Print
+        # the offenders here so the operator-facing log mirrors the
+        # in-process is_blocking decision the driver already made.
+        sys.stderr.write(
+            "  unknown content types (refused before any HTTP call): "
+            f"{sorted(summary.preflight.unknown_content_types)}\n"
+        )
     if summary.preflight.missing_content_types:
         sys.stderr.write(
             "  missing content types: "
