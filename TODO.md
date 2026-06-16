@@ -221,16 +221,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
-#### ARCH-05a: Add the `ContentType` dataclass
-
-* **Context.** No central place owns the `app.model` → endpoint mapping today.
-* **Requirements.**
-  * Add `src/nbsnap/schema/content_type.py` with `@dataclass(frozen=True) class ContentType: app: str; model: str`.
-  * Add `ContentType.from_str("dcim.device")`, `ContentType.as_str() -> "dcim.device"`, and `ContentType.endpoint() -> "dcim/devices/"`.
-  * Reject invalid input in `from_str` with a clear `InvalidContentTypeError`.
-* **Testing.** Add `tests/unit/schema/test_content_type.py` covering round-trip, endpoint mapping for `dcim.device`/`ipam.iprange`/`dcim.cable`, and `InvalidContentTypeError` on `"dcim"` and `"dcim.devic"`.
-* **Estimated effort.** 2h.
-
 #### ARCH-05b: Centralise the endpoint table
 
 * **Context.** `CONTENT_TYPE_ENDPOINTS` is in `natkey/verify.py:49-70` today.
