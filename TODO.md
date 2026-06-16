@@ -217,15 +217,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-04`.
 
-#### ARCH-04d: Integration test loading `sample_bgp` end to end
-
-* **Context.** A real end-to-end load proves the contract holds.
-* **Requirements.**
-  * Add `tests/integration/test_plugin_load_e2e.py`. The test runs `run_import` against a mocked NetBox with `--plugins-dir tests/fixtures/plugins/` where `sample_bgp.py` is staged.
-  * Confirm the BGP-flavoured NK appears in audit output for at least one row.
-* **Testing.** Run `pytest tests/integration/test_plugin_load_e2e.py`.
-* **Estimated effort.** 1.5h.
-
 ### ARCH-05: Introduce a `ContentType` value object
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
