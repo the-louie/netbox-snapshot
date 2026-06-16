@@ -443,14 +443,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
 
-#### ARCH-10f: Help-text parity test
-
-* **Context.** A regression test ensures the help strings stay aligned.
-* **Requirements.**
-  * Add `tests/unit/cli/test_help_parity.py` rendering `--help` for each subcommand and asserting the wording for `--no-verify-tls`, `--content-types`, `--audit-out` is identical.
-* **Testing.** Run the new test.
-* **Estimated effort.** 1h.
-
 ### ARCH-11: Programmatic API surface
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
