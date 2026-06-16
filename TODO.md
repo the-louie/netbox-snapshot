@@ -217,15 +217,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-04`.
 
-#### ARCH-04a: Add `NKRegistry.with_plugins`
-
-* **Context.** `plugins/api.py:68` defines `load_all(registry: NKRegistry)` but it is never called.
-* **Requirements.**
-  * Add a `NKRegistry.with_plugins(directory: Path | None) -> "NKRegistry"` classmethod that builds the default registry, then calls `plugins.api.load_all(registry, directory)`.
-  * If `directory` is None, fall back to the value of `NBSNAP_PLUGINS_DIR`, then to a no-op (no plugins loaded).
-* **Testing.** Add `tests/unit/natkey/test_registry_with_plugins.py`: no directory yields the default registry; a directory with one valid plugin yields default plus one extra entry; a directory with a malformed plugin file raises a clear `PluginLoadError`.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-04b: Rewrite `sample_bgp.py` to use the public surface
 
 * **Context.** `plugins/sample_bgp.py:21-39` pokes `NKSpec` and `NKField` directly, contradicting its job of being a canonical example.

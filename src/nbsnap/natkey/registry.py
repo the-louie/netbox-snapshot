@@ -6,11 +6,50 @@ decorating Extras). Tenancy is now out of scope per the
 "NETWORK MODEL ONLY" banner in CLAUDE.md, the registry still ships
 the entries so a plugin extension can opt back in but `default()`
 filters them out for the v1 base.
+
+ARCH-04a: :func:`with_plugins` is the factory that the CLIs reach
+for, it builds the default registry then asks the plugin loader to
+extend it from either an explicit directory or the
+``NBSNAP_PLUGINS_DIR`` env-var fallback.
 """
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from nbsnap.natkey.model import NKField, NKRegistry, NKSpec, Strategy
+
+
+def with_plugins(directory: Path | None = None) -> NKRegistry:
+    """Return :func:`default` plus any plugin-registered NKSpecs.
+
+    Resolution order for ``directory``:
+
+    1. The explicit argument, when not None.
+    2. The ``NBSNAP_PLUGINS_DIR`` environment variable.
+    3. None, meaning "no directory plugins". Entry-point plugins
+       discovered via ``importlib.metadata`` are still loaded so an
+       installed extension keeps working.
+
+    Raises :class:`nbsnap.plugins.api.PluginLoadError` if a
+    directory plugin fails to import; entry-point plugins still
+    swallow exceptions per the existing :func:`discover` contract,
+    because they are not operator-controlled.
+    """
+
+    # Import locally to avoid a circular import on module load.
+    from nbsnap.plugins.api import load_all
+
+    registry = default()
+    resolved: Path | None
+    if directory is not None:
+        resolved = directory
+    else:
+        env = os.environ.get("NBSNAP_PLUGINS_DIR")
+        resolved = Path(env) if env else None
+    load_all(registry, directory=resolved)
+    return registry
 
 
 def default() -> NKRegistry:
