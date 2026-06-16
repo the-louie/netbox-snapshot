@@ -217,15 +217,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-04`.
 
-#### ARCH-04b: Rewrite `sample_bgp.py` to use the public surface
-
-* **Context.** `plugins/sample_bgp.py:21-39` pokes `NKSpec` and `NKField` directly, contradicting its job of being a canonical example.
-* **Requirements.**
-  * Rewrite the sample plugin to use `Registrar.add_nkspec` and `Registrar.add_field_rewriter` exclusively.
-  * Add a module docstring explaining how a plugin is structured and where the loader picks it up.
-* **Testing.** Add `tests/unit/plugins/test_sample_bgp.py` that loads `sample_bgp` through `Registrar` and asserts the resulting NKSpec is equivalent to the previous direct-poke version (compare field by field).
-* **Estimated effort.** 1.5h.
-
 #### ARCH-04c: Wire `--plugins-dir` into the CLIs
 
 * **Context.** The factory exists once ARCH-04a lands; the CLIs need to opt in.
