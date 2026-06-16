@@ -431,14 +431,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
 
-#### ARCH-11d: Embedded-use integration test
-
-* **Context.** Prove the public API is enough to run nbsnap from a script.
-* **Requirements.**
-  * Add `tests/integration/test_embedded_use.py` that imports only the top-level symbols and runs a small export-then-import cycle against mocked transports.
-* **Testing.** Run the new test.
-* **Estimated effort.** 1h.
-
 ### SEC-03: Bearer token follows redirects across hosts
 
 Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-03`.
