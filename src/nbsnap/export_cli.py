@@ -36,6 +36,17 @@ def add_export_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="skip content types reported done in progress.jsonl",
     )
+    parser.add_argument(
+        "--plugins-dir",
+        type=Path,
+        default=None,
+        help=(
+            "ARCH-04c: directory of plugin .py files to load. Each file's "
+            "module-level `plugin` object is registered through the public "
+            "Registrar surface. Falls back to the `NBSNAP_PLUGINS_DIR` env "
+            "variable when this flag is omitted."
+        ),
+    )
 
 
 def run_export_cli(args: argparse.Namespace) -> int:
@@ -52,7 +63,13 @@ def run_export_cli(args: argparse.Namespace) -> int:
         if not args.content_types
         else {token.strip() for token in args.content_types.split(",") if token.strip()}
     )
-    manifest = run_export(http, args.out, scope=scope, resume=args.resume)
+    manifest = run_export(
+        http,
+        args.out,
+        scope=scope,
+        resume=args.resume,
+        plugins_dir=args.plugins_dir,
+    )
 
     sys.stderr.write("# nbsnap export complete\n")
     sys.stderr.write(f"  snapshot: {args.out}\n")

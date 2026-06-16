@@ -217,15 +217,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-04`.
 
-#### ARCH-04c: Wire `--plugins-dir` into the CLIs
-
-* **Context.** The factory exists once ARCH-04a lands; the CLIs need to opt in.
-* **Requirements.**
-  * Add `--plugins-dir PATH` to `import_cli.py` and `export_cli.py`. Route to `NKRegistry.with_plugins`.
-  * Document the env-var fallback `NBSNAP_PLUGINS_DIR` in `--help`.
-* **Testing.** Add `tests/unit/test_cli_plugins_flag.py` exercising the flag on both subcommands. Assert the registry passed into `run_import` / `run_export` carries the loaded plugin.
-* **Estimated effort.** 1h.
-
 #### ARCH-04d: Integration test loading `sample_bgp` end to end
 
 * **Context.** A real end-to-end load proves the contract holds.

@@ -15,6 +15,7 @@ modules above.
 from __future__ import annotations
 
 import datetime as dt
+import os
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from nbsnap.graph import from_openapi
 from nbsnap.graph import plan as build_plan
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.natkey.registry import default as default_registry
+from nbsnap.natkey.registry import with_plugins as registry_with_plugins
 from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
 from nbsnap.schema.content_types import ContentTypeCache
 from nbsnap.schema.openapi import SCHEMA_PATH, OpenAPI
@@ -48,8 +50,16 @@ def run_export(
     *,
     scope: Iterable[str] | None = None,
     resume: bool = False,
+    plugins_dir: Path | None = None,
 ) -> Manifest:
-    """Export the source NetBox to `out_dir`, return the manifest."""
+    """Export the source NetBox to ``out_dir``, return the manifest.
+
+    ``plugins_dir`` (ARCH-04c): when set, the natural-key registry is
+    extended with NKSpecs loaded from every ``.py`` file under the
+    directory. ``None`` falls back to the env var ``NBSNAP_PLUGINS_DIR``
+    via :func:`nbsnap.natkey.registry.with_plugins`; if that is also
+    unset, only the built-in registry is used.
+    """
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +108,12 @@ def run_export(
     progress = ProgressLog(out_dir / PROGRESS_FILENAME)
     flag_writer = FlagWriter(out_dir / "flags.jsonl")
     completed: set[str] = resume_from(out_dir / PROGRESS_FILENAME) if resume else set()
-    registry = default_registry()
+    # ARCH-04c: plugin-aware registry when --plugins-dir or env are set.
+    registry = (
+        registry_with_plugins(plugins_dir)
+        if plugins_dir is not None or "NBSNAP_PLUGINS_DIR" in os.environ
+        else default_registry()
+    )
     parent_lookup: dict[tuple[str, int], dict[str, Any]] = {}
     cached_records: dict[str, list[dict[str, Any]]] = {}
 

@@ -163,6 +163,17 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
              "retry. See FEAT-45b.",
     )
     parser.add_argument(
+        "--plugins-dir",
+        type=Path,
+        default=None,
+        help=(
+            "ARCH-04c: directory of plugin .py files to load. Each file's "
+            "module-level `plugin` object is registered through the public "
+            "Registrar surface. Falls back to the `NBSNAP_PLUGINS_DIR` env "
+            "variable when this flag is omitted."
+        ),
+    )
+    parser.add_argument(
         "--strict-schema",
         action="store_true",
         help="exit EXIT_PREFLIGHT_BLOCKED when the destination's "
@@ -247,6 +258,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
             cache_lookahead_failures=not args.no_lookahead_failure_cache,
             strict_schema=args.strict_schema,
             use_destination_schema=args.use_destination_schema,
+            plugins_dir=args.plugins_dir,
         )
     except SnapshotConnectivityError as exc:
         # ARCH-07c: ARCH-07b translates the bare requests exceptions

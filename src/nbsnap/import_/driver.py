@@ -39,6 +39,7 @@ from nbsnap.import_.preflight import PreflightReport, run_preflight
 from nbsnap.import_.snapshot_index import iter_jsonl
 from nbsnap.import_.upsert import UpsertOutcome, UpsertResult, upsert
 from nbsnap.natkey.registry import default as default_registry
+from nbsnap.natkey.registry import with_plugins as registry_with_plugins
 from nbsnap.schema.openapi import SCHEMA_PATH, OpenAPI
 from nbsnap.schema.status import VersionSkew
 
@@ -106,6 +107,7 @@ def run_import(
     cache_lookahead_failures: bool = True,
     strict_schema: bool = False,
     use_destination_schema: bool = False,
+    plugins_dir: Path | None = None,
 ) -> ImportSummary:
     """Apply the snapshot at `snapshot_dir` to the destination NetBox.
 
@@ -146,7 +148,14 @@ def run_import(
     ):
         return summary
 
-    registry = default_registry()
+    # ARCH-04c: plugin-aware registry when --plugins-dir or env are set.
+    import os as _os
+
+    registry = (
+        registry_with_plugins(plugins_dir)
+        if plugins_dir is not None or "NBSNAP_PLUGINS_DIR" in _os.environ
+        else default_registry()
+    )
     index = NKIndex()
     # FEAT-46c: an opt-in lets the driver use the destination's
     # OpenAPI for body resolution instead of the snapshot's.

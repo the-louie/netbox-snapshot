@@ -27,6 +27,7 @@ def _args(snap: Path, **overrides) -> argparse.Namespace:
         "on_error": "continue",
         "audit_out": None,
         "bypass_out": None,
+        "plugins_dir": None,
         "allow_enum_dict_bypass": True,
         "max_parse_errors": 0,
         "audit_summary_limit": 10,
