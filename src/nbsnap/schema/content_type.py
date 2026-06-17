@@ -81,6 +81,13 @@ class ContentType:
     (component-wise), so two ``ContentType`` instances with the
     same app+model compare equal and hash the same; this is what
     makes the value object cheap to use as a dict key.
+
+    Direct construction (``ContentType(app="dcim", model="cable")``)
+    bypasses the unknown-content-type check. The escape hatch exists
+    for internal planner data (polymorphic targets that point at
+    content types outside the renderer-minimum scope, see
+    ARCH-05c). User-supplied strings should always go through
+    :meth:`from_str` so the typo path is closed.
     """
 
     app: str

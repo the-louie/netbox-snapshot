@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nbsnap.graph.model import Edge, Graph, Node
+from nbsnap.schema.content_type import ContentType
 
 if TYPE_CHECKING:
     from nbsnap.http.client import NetboxHTTP
@@ -154,63 +155,75 @@ def add_polymorphic_edges(
 # Each entry carries `verified_against` so a NetBox version bump
 # that restructures these fields can be caught by re-running the
 # hint check against the new schema.
+# ARCH-05c: switched the bare strings to ContentType. Direct
+# construction (no from_str) is intentional, several targets sit
+# outside the renderer-minimum scope and would otherwise fail
+# validation. Callers convert back to strings via ``.as_str()`` where
+# the rest of the planner still expects a plain string.
+def _ct(raw: str) -> ContentType:
+    """Construct a ContentType from a literal app.model string."""
+
+    app, _, model = raw.partition(".")
+    return ContentType(app=app, model=model)
+
+
 POLYMORPHIC_HINTS: list[dict[str, Any]] = [
     {
-        "owner_ct": "dcim.cable",
+        "owner_ct": _ct("dcim.cable"),
         "field": "a_terminations",
         "targets": [
-            "dcim.interface", "dcim.frontport", "dcim.rearport",
-            "dcim.consoleport", "dcim.consoleserverport",
-            "dcim.powerport", "dcim.poweroutlet",
-            "circuits.circuittermination",
+            _ct("dcim.interface"), _ct("dcim.frontport"), _ct("dcim.rearport"),
+            _ct("dcim.consoleport"), _ct("dcim.consoleserverport"),
+            _ct("dcim.powerport"), _ct("dcim.poweroutlet"),
+            _ct("circuits.circuittermination"),
         ],
         "verified_against": "netbox 4.6.2",
     },
     {
-        "owner_ct": "dcim.cable",
+        "owner_ct": _ct("dcim.cable"),
         "field": "b_terminations",
         "targets": [
-            "dcim.interface", "dcim.frontport", "dcim.rearport",
-            "dcim.consoleport", "dcim.consoleserverport",
-            "dcim.powerport", "dcim.poweroutlet",
-            "circuits.circuittermination",
+            _ct("dcim.interface"), _ct("dcim.frontport"), _ct("dcim.rearport"),
+            _ct("dcim.consoleport"), _ct("dcim.consoleserverport"),
+            _ct("dcim.powerport"), _ct("dcim.poweroutlet"),
+            _ct("circuits.circuittermination"),
         ],
         "verified_against": "netbox 4.6.2",
     },
     {
-        "owner_ct": "ipam.ipaddress",
+        "owner_ct": _ct("ipam.ipaddress"),
         "field": "assigned_object",
         "targets": [
-            "dcim.interface", "virtualization.vminterface",
-            "ipam.fhrpgroup",
+            _ct("dcim.interface"), _ct("virtualization.vminterface"),
+            _ct("ipam.fhrpgroup"),
         ],
         "verified_against": "netbox 4.6.2",
     },
     {
-        "owner_ct": "ipam.service",
+        "owner_ct": _ct("ipam.service"),
         "field": "parent",
         "targets": [
-            "dcim.device", "virtualization.virtualmachine",
-            "ipam.fhrpgroup",
+            _ct("dcim.device"), _ct("virtualization.virtualmachine"),
+            _ct("ipam.fhrpgroup"),
         ],
         "verified_against": "netbox 4.6.2",
     },
     {
-        "owner_ct": "wireless.wirelesslink",
+        "owner_ct": _ct("wireless.wirelesslink"),
         "field": "interface_a",
-        "targets": ["dcim.interface"],
+        "targets": [_ct("dcim.interface")],
         "verified_against": "netbox 4.6.2",
     },
     {
-        "owner_ct": "wireless.wirelesslink",
+        "owner_ct": _ct("wireless.wirelesslink"),
         "field": "interface_b",
-        "targets": ["dcim.interface"],
+        "targets": [_ct("dcim.interface")],
         "verified_against": "netbox 4.6.2",
     },
     {
-        "owner_ct": "dcim.virtualchassis",
+        "owner_ct": _ct("dcim.virtualchassis"),
         "field": "master",
-        "targets": ["dcim.device"],
+        "targets": [_ct("dcim.device")],
         "verified_against": "netbox 4.6.2",
     },
 ]
@@ -247,25 +260,25 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
 # delays the field's value into Phase-2 for no benefit.
 KNOWN_VALIDATION_CYCLES: list[dict[str, Any]] = [
     {
-        "content_type": "dcim.device",
+        "content_type": _ct("dcim.device"),
         "field": "primary_ip4",
         "note": "IPAddress.assigned_object must be one of device's interfaces",
         "verified_against": "netbox 4.6.2",
     },
     {
-        "content_type": "dcim.device",
+        "content_type": _ct("dcim.device"),
         "field": "primary_ip6",
         "note": "same rule as primary_ip4, for IPv6",
         "verified_against": "netbox 4.6.2",
     },
     {
-        "content_type": "dcim.device",
+        "content_type": _ct("dcim.device"),
         "field": "oob_ip",
         "note": "same rule as primary_ip4, for out-of-band management",
         "verified_against": "netbox 4.6.2",
     },
     {
-        "content_type": "dcim.virtualchassis",
+        "content_type": _ct("dcim.virtualchassis"),
         "field": "master",
         "note": "Device.virtual_chassis must point back at this chassis",
         "verified_against": "netbox 4.6.2",
@@ -285,7 +298,10 @@ def known_validation_cycle_fields() -> dict[str, set[str]]:
 
     by_ct: dict[str, set[str]] = {}
     for entry in KNOWN_VALIDATION_CYCLES:
-        ct = entry["content_type"]
+        # ARCH-05c: entries now hold ContentType; consumers downstream
+        # still index by ``str``, so we round-trip back here. ARCH-05d
+        # will widen the consumer to accept ContentType directly.
+        ct: str = entry["content_type"].as_str()
         field = entry["field"]
         by_ct.setdefault(ct, set()).add(field)
     return by_ct
@@ -308,10 +324,13 @@ def add_hint_edges(graph: Graph, scope: set[str]) -> None:
     """
 
     for hint in POLYMORPHIC_HINTS:
-        owner = hint["owner_ct"]
+        # ARCH-05c: hint entries hold ContentType; convert to the
+        # string shape the rest of the planner (and ``scope``) speaks.
+        owner: str = hint["owner_ct"].as_str()
         if owner not in scope:
             continue
-        for target in hint["targets"]:
+        targets_str = [t.as_str() for t in hint["targets"]]
+        for target in targets_str:
             if target not in scope:
                 continue
             graph.add_node(Node(target))  # idempotent
@@ -323,6 +342,6 @@ def add_hint_edges(graph: Graph, scope: set[str]) -> None:
                     nullable=True,
                     required=False,
                     is_m2m=True,
-                    polymorphic_targets=tuple(hint["targets"]),
+                    polymorphic_targets=tuple(targets_str),
                 )
             )
