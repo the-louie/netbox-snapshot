@@ -45,3 +45,5 @@ venv/
 .vscode/
 *.swp
 .DS_Store
+tmp
+.devvenv
