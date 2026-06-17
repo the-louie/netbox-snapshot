@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02e: Extract `phase1_runner.py`
-
-* **Context.** The Phase 1 loop at `driver.py:265-290` orchestrates the per-content-type create pass.
-* **Requirements.**
-  * Move the Phase 1 loop and its helpers into `src/nbsnap/import_/phase1_runner.py`, exposed as `run_phase1(plan, ctx)`.
-  * `driver.py` calls `run_phase1` and nothing else for Phase 1.
-* **Testing.** Add `tests/unit/import_/test_phase1_runner.py` covering: empty plan returns without HTTP calls; a one-content-type plan posts once; auditor receives one CREATED row per record. Run the full integration suite for parity.
-* **Estimated effort.** 2h.
-
 #### ARCH-02f: Extract `phase2_runner.py`
 
 * **Context.** Phase 2 patches the cycle-closing fields (`primary_ip4`, cable terminations).
