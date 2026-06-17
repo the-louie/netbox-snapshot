@@ -221,14 +221,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
-#### ARCH-05g: Regression test on typo detection
-
-* **Context.** ARCH-05's payoff is catching typos like `dcim.devic` at parse time.
-* **Requirements.**
-  * Add `tests/unit/schema/test_content_type_typos.py` with a parametrised list of common typos and assert each raises `InvalidContentTypeError`.
-* **Testing.** Run the new test; deliberately break by registering `dcim.devic` in `_ENDPOINTS` and confirm the test catches it; revert.
-* **Estimated effort.** 1h.
-
 ### ARCH-06: Pydantic v2 models from the OpenAPI schema
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-06`. Depends on ARCH-01 and ARCH-05. Sub-tickets ARCH-06a..j stage the migration without breaking the wire boundary.
