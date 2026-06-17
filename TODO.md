@@ -317,13 +317,6 @@ Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-a
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-05`.
 
-#### SEC-05c: Audit-log redaction end-to-end test
-
-* **Context.** Prove the redaction reaches `audit.jsonl`.
-* **Requirements.**
-  * Add `tests/integration/test_audit_redaction.py` driving a failing POST whose response body contains `Authorization: Token deadbeef`. Assert no token bytes land in `audit.jsonl`.
-* **Testing.** Run the integration test.
-* **Estimated effort.** 1h.
 
 ---
 
