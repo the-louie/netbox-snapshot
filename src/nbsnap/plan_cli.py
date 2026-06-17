@@ -20,6 +20,7 @@ from typing import TextIO
 from nbsnap.cli.common import add_scope_flags, add_tls_flags
 from nbsnap.graph import Plan, from_openapi, plan
 from nbsnap.http.client import NetboxHTTP
+from nbsnap.schema.content_type import ContentType, InvalidContentTypeError
 from nbsnap.schema.openapi import OpenAPI
 
 # Renderer-minimum scope, mirrors the table in CLAUDE.md / TODO.md.
@@ -64,9 +65,32 @@ def add_plan_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _parse_scope(only: str | None) -> set[str]:
+    """Parse ``--content-types`` into a string set, validating each entry.
+
+    ARCH-05f. Every comma-separated token is parsed through
+    :class:`ContentType.from_str` so typos like ``dcim.devic`` fail
+    at the CLI boundary with the same error the schema module
+    raises elsewhere, rather than silently producing an empty plan
+    or trying to fetch a non-existent endpoint.
+
+    Empty input means "use the renderer-minimum default scope" and
+    skips validation, the default set is known good.
+    """
+
     if not only:
         return set(DEFAULT_SCOPE)
-    return {token.strip() for token in only.split(",") if token.strip()}
+    result: set[str] = set()
+    for token in only.split(","):
+        stripped = token.strip()
+        if not stripped:
+            continue
+        # ContentType.from_str raises InvalidContentTypeError for
+        # unknown / malformed strings; we let it propagate so the
+        # operator sees the error from the parser, not after a
+        # silent HTTP failure.
+        ct = ContentType.from_str(stripped)
+        result.add(ct.as_str())
+    return result
 
 
 def _print_human_plan(plan_obj: Plan, scope: Iterable[str], stream: TextIO) -> None:

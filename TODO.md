@@ -221,15 +221,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
-#### ARCH-05f: Migrate `plan_cli.py` scope handling
-
-* **Context.** `plan_cli.py` accepts bare schema strings as scope examples.
-* **Requirements.**
-  * Parse `--scope` values into `ContentType` and pass them through.
-  * Reject unknown content types at parse time with `InvalidContentTypeError`.
-* **Testing.** Add `tests/unit/test_plan_cli_scope.py` covering valid and invalid scope arguments.
-* **Estimated effort.** 1h.
-
 #### ARCH-05g: Regression test on typo detection
 
 * **Context.** ARCH-05's payoff is catching typos like `dcim.devic` at parse time.
