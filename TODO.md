@@ -309,14 +309,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-03`.
 
-#### SEC-03c: Integration test on the destination
-
-* **Context.** A high-fidelity scenario test backs the unit work.
-* **Requirements.**
-  * Add `tests/integration/test_import_redirect_safety.py` running `run_import` against a mocked destination that returns `302 Location: http://attacker.example/` on the first POST. Assert no second request is sent with the `Authorization: Token ...` header.
-* **Testing.** Run the integration test.
-* **Estimated effort.** 1.5h.
-
 ### SEC-04: Manifest persists full `source_url`
 
 Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-04`.
