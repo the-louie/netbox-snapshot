@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02c: Migrate `_resolve_body` to `(content_type, body, ctx)`
-
-* **Context.** Once `ResolveContext` is complete, the signature can shrink.
-* **Requirements.**
-  * Reduce `_resolve_body(content_type, body, ctx)` in `driver.py`. Read every state field via `ctx.<field>`.
-  * Update all internal call sites in `driver.py` to pass `ctx`.
-* **Testing.** Run the import unit suite, `pytest tests/unit/import_`. The behaviour change should be zero; the signature change is mechanical.
-* **Estimated effort.** 2h.
-
 #### ARCH-02d: Migrate `lookahead.py` to `ResolveContext`
 
 * **Context.** `lookahead.py:253-272` rebuilds the parameter bundle on the recursive callback path.

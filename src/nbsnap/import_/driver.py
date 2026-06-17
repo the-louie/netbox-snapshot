@@ -416,6 +416,39 @@ def _content_type_order(manifest: Manifest, snapshot_dir: Path) -> list[str]:
     return ordered
 
 
+def _resolve_body_via_ctx(
+    content_type: str,
+    body: dict[str, Any],
+    ctx: "ResolveContext",
+) -> dict[str, Any]:
+    """ARCH-02c: thin wrapper exposing the 3-arg signature the audit asks for.
+
+    Unpacks :class:`ResolveContext` into the legacy nine-kwarg
+    bundle the existing :func:`_resolve_body` body expects. ARCH-02h
+    will inline the body once the driver itself is slimmed down;
+    this wrapper is the safe migration step that lets every caller
+    move to the typed context now without a 200-line rewrite.
+    """
+
+    return _resolve_body(
+        content_type,
+        body,
+        ctx.openapi,
+        ctx.index,
+        ctx.http,
+        ctx.registry,
+        snapshot_index=ctx.snapshot_index,
+        processing_stack=ctx.processing_stack,
+        deferred_queue=ctx.deferred_queue,
+        current_nk=ctx.current_nk,
+        auditor=ctx.auditor,
+        failed_keys=ctx.failed_keys,
+        deferred_fields_by_ct=ctx.deferred_fields_by_ct,
+        warn_dedup=ctx.warn_dedup,
+        transient_keys=ctx.transient_keys,
+    )
+
+
 def _resolve_body(
     content_type: str,
     body: dict[str, Any],
