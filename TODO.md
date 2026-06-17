@@ -221,15 +221,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
-#### ARCH-05d: Migrate `natkey/registry.py` to `ContentType`
-
-* **Context.** Every `NKSpec` registration at `natkey/registry.py:30-127` uses bare strings.
-* **Requirements.**
-  * Update `NKSpec.content_type` and the registry's keying to use `ContentType`.
-  * Migrate the 30+ registrations.
-* **Testing.** Run the natkey unit suite. Add one test asserting `NKRegistry.get("dcim.device")` accepts both a `ContentType` and a string for backwards compatibility.
-* **Estimated effort.** 2h.
-
 #### ARCH-05e: Migrate `natkey/verify.py` callers
 
 * **Context.** Verify reaches into the endpoint table.

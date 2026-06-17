@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class Strategy(Enum):
@@ -62,25 +63,54 @@ class NKSpec:
         return tuple(f.name for f in self.fields)
 
 
+def _as_string_key(content_type: Any) -> str:
+    """Normalise ``str`` and ``ContentType`` lookups to the same key.
+
+    ARCH-05d. The registry's on-disk shape is a ``dict[str, NKSpec]``;
+    callers may pass either a bare string or a :class:`ContentType`.
+    Both must hit the same slot, otherwise a caller mid-migration
+    would silently miss the registration. Lazy import so this module
+    has no compile-time dependency on :mod:`nbsnap.schema`.
+    """
+
+    if isinstance(content_type, str):
+        return content_type
+    from nbsnap.schema.content_type import ContentType
+
+    if isinstance(content_type, ContentType):
+        return content_type.as_str()
+    msg = (
+        f"NKRegistry key must be str or ContentType, got {type(content_type).__name__}"
+    )
+    raise TypeError(msg)
+
+
 class NKRegistry:
-    """In-memory map content_type -> NKSpec."""
+    """In-memory map content_type -> NKSpec.
+
+    Keys are stored as strings ("dcim.device") under the hood, but
+    :meth:`get` and :meth:`has` accept either bare strings or
+    :class:`ContentType` instances so the wider migration to typed
+    keys can proceed one caller at a time.
+    """
 
     def __init__(self) -> None:
         self._by_ct: dict[str, NKSpec] = {}
 
     def register(self, spec: NKSpec) -> None:
         """Add or replace the NKSpec for a content type."""
-        self._by_ct[spec.content_type] = spec
+        self._by_ct[_as_string_key(spec.content_type)] = spec
 
-    def get(self, content_type: str) -> NKSpec:
+    def get(self, content_type: Any) -> NKSpec:
+        key = _as_string_key(content_type)
         try:
-            return self._by_ct[content_type]
+            return self._by_ct[key]
         except KeyError:
             msg = f"no NKSpec registered for {content_type!r}"
             raise KeyError(msg) from None
 
-    def has(self, content_type: str) -> bool:
-        return content_type in self._by_ct
+    def has(self, content_type: Any) -> bool:
+        return _as_string_key(content_type) in self._by_ct
 
     def __iter__(self) -> Iterator[NKSpec]:
         return iter(self._by_ct.values())
