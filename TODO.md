@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02g: Extract `field_resolver.py`
-
-* **Context.** The four `_resolve_*` helpers handle FK, polymorphic FK, M2M, and termination-list fields.
-* **Requirements.**
-  * Move the four helpers to `src/nbsnap/import_/field_resolver.py` and import them into `driver.py`.
-  * Keep the helpers as module-level functions taking `(content_type, body, ctx)`.
-* **Testing.** Add `tests/unit/import_/test_field_resolver.py` with one test per helper using a faked `ResolveContext`. Confirm `pytest tests/unit/import_` is green.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-02h: Reduce `driver.py` to a thin orchestrator
 
 * **Context.** With Phase 1, Phase 2, and field resolution extracted, `driver.py` is largely orchestration glue.

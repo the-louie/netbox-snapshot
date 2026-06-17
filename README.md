@@ -1,32 +1,5 @@
 # nbsnap, NetBox Portable Snapshot
 
-> ## ABSOLUTELY NO CHANGES ARE ALLOWED ON THE SOURCE NETBOX
->
-> The instance at `NB_SOURCE_URL` (`host.docker.internal:8443`) is the
-> **production** NetBox. Every interaction with it must be **read-only**.
->
-> - **No `POST`, `PATCH`, `PUT`, or `DELETE`** requests against
->   `NB_SOURCE_URL`, ever, under any circumstance.
-> - The `nbsnap export` command is the only sanctioned way to touch the
->   source, it issues `GET` only.
-> - The HTTP client must refuse non-GET requests when the configured
->   `base_url` matches `NB_SOURCE_URL`, this is a guard rail, not a
->   convention.
-> - Test fixtures, seeders, and integration suites target the local
->   netbox-docker test stack on ports `8080`/`8081`, never the production
->   source.
-> - Writes flow source -> snapshot file -> destination. The destination
->   (`NB_DESTINATION_URL`) is the only NetBox that ever receives writes
->   from this tool.
->
-> Violating this is a production incident. When in doubt, do nothing
-> against the source and ask the operator first.
->
-> See [`CLAUDE.md`](CLAUDE.md) for the canonical version of this
-> banner and the full agent context. Treat that file as the source of
-> truth, this README copy exists so a human running `cat README.md`
-> sees the constraint before any workflow guidance.
-
 ## What is this?
 
 `nbsnap` produces a portable, machine-readable abstraction of a running
@@ -39,24 +12,13 @@ NetBox A  ──[ nbsnap export ]──►  snapshot/  ──[ nbsnap import ]�
 
 so two NetBoxes that live on isolated networks (no shared database,
 no `pg_dump`/`psql` access) can share their modelled network. Scope
-is the network model only, see the second banner in
-[`CLAUDE.md`](CLAUDE.md) for the precise inclusion list.
+is the network model only (DCIM + IPAM, plus the custom fields, tags,
+and choice sets used by those objects). Users, tenancy, NetBox
+instance configuration, and operational history are intentionally
+out of scope.
 
-## Status
-
-The project is in the **design phase**. Phase 0, Foundation, is the
-current focus. See [`PLAN.md`](PLAN.md) for the phasing schedule and
-exit criteria, and [`TODO.md`](TODO.md) for the current backlog.
-
-## Documentation
-
-| Document | What it covers |
-| :--- | :--- |
-| [`PLAN.md`](PLAN.md) | Phase definitions, exit criteria, risks. |
-| [`goals.md`](goals.md) | Goals, in-scope and out-of-scope decisions. |
-| [`docs/INDEX.md`](docs/INDEX.md) | Index of design documents. |
-| [`docs/frictions/00-overview.md`](docs/frictions/00-overview.md) | Friction-area deep-dives, the hard parts. |
-| [`CLAUDE.md`](CLAUDE.md) | Agent context, also carries the production-read-only and scope banners. |
+For design notes, friction-area deep-dives, and audit reports, see
+the [`docs/`](docs/) directory.
 
 ## Quick start
 
@@ -77,8 +39,7 @@ nbsnap import --url "$NB_DESTINATION_URL" --token "$NB_DESTINATION_TOKEN" --in  
 ```
 
 The legacy single-endpoint names `NB_URL` and `NB_TOKEN` are still
-accepted as fall-backs so existing `__reference/nb2kea/` scripts keep
-working.
+accepted as fall-backs so existing scripts keep working.
 
 TLS verification is on by default. The local
 `host.docker.internal:8443` endpoint uses a self-signed certificate
@@ -136,6 +97,5 @@ nbsnap verify \
 ```
 
 CI runs the same `ruff check .`, `ruff format --check .`, and
-`mypy src/` commands locally available from the `dev` group. See
-[`TODO.md`](TODO.md) `INFRA-04*` for the CI workflow and
-`.pre-commit-config.yaml` for the hook list.
+`mypy src/` commands locally available from the `dev` group. The
+pre-commit hook list lives in `.pre-commit-config.yaml`.
