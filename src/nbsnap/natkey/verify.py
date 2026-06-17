@@ -43,9 +43,14 @@ class VerifyReport:
         return not self.duplicates
 
 
-# ARCH-05b: the canonical mapping moved to
+# ARCH-05b/e: the canonical mapping lives in
 # :mod:`nbsnap.schema.content_type`. The re-export below keeps the
-# legacy import path alive for one sub-ticket (ARCH-05e drops it).
+# legacy import path alive for external callers (export/driver.py,
+# reset_cli.py, several import_/ helpers) that still index the dict
+# directly. Internal lookups in this module use
+# :meth:`ContentType.endpoint` so the typed boundary lives here
+# rather than at every consumer.
+from nbsnap.schema.content_type import ContentType, InvalidContentTypeError
 from nbsnap.schema.content_type import _ENDPOINTS as CONTENT_TYPE_ENDPOINTS  # noqa: F401
 
 
@@ -68,8 +73,13 @@ def audit(
     report = VerifyReport()
 
     for spec in reg:
-        endpoint = CONTENT_TYPE_ENDPOINTS.get(spec.content_type)
-        if endpoint is None:
+        # ARCH-05e: use the typed boundary for internal lookups; an
+        # unregistered content type produces InvalidContentTypeError
+        # which we treat the same as the old None branch, skip and
+        # let the caller see the gap.
+        try:
+            endpoint = ContentType.from_str(spec.content_type).endpoint()
+        except InvalidContentTypeError:
             continue
         seen: dict[NaturalKey, list[int]] = defaultdict(list)
         count = 0

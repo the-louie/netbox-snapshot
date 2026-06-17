@@ -221,15 +221,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
-#### ARCH-05e: Migrate `natkey/verify.py` callers
-
-* **Context.** Verify reaches into the endpoint table.
-* **Requirements.**
-  * Replace local lookups in `natkey/verify.py` with `ContentType.endpoint`.
-  * Drop the re-export shim introduced in ARCH-05b.
-* **Testing.** Run `pytest tests/unit/natkey/test_verify.py`. Add a test exercising verify against a stub HTTP client to confirm the endpoint resolves the same way as before.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-05f: Migrate `plan_cli.py` scope handling
 
 * **Context.** `plan_cli.py` accepts bare schema strings as scope examples.
