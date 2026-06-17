@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02a: Inventory the 15-parameter resolver call sites
-
-* **Context.** `_resolve_body` at `import_/driver.py:407` carries nine keyword-only state buckets, and `lookahead.py:253-272` reconstructs the same bundle.
-* **Requirements.**
-  * Add `docs/audits/arch-02-resolver-inventory.md`. List every direct caller of `_resolve_body`, every helper that re-passes the same nine kwargs, and every test that constructs the bundle.
-  * Cross-reference against the existing `import_/resolve_context.py` fields to highlight the delta to be added.
-* **Testing.** No code change. Reviewer checks the inventory against `git grep "_resolve_body"`.
-* **Estimated effort.** 1h.
-
 #### ARCH-02b: Extend `ResolveContext` with the missing state fields
 
 * **Context.** `import_/resolve_context.py` is the half-finished destination dataclass.
