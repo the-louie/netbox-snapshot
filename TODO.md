@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02b: Extend `ResolveContext` with the missing state fields
-
-* **Context.** `import_/resolve_context.py` is the half-finished destination dataclass.
-* **Requirements.**
-  * Add the nine fields identified in ARCH-02a (`snapshot_index`, `processing_stack`, `deferred_queue`, `current_nk`, `auditor`, `failed_keys`, `deferred_fields_by_ct`, `warn_dedup`, `transient_keys`) to `ResolveContext` with explicit types.
-  * Add a `ResolveContext.fresh()` classmethod that constructs a fully-initialised context for tests.
-* **Testing.** Add `tests/unit/import_/test_resolve_context.py` covering field construction, `fresh()` defaults, and a check that all fields are mutable references (the existing code mutates them in place).
-* **Estimated effort.** 2h.
-
 #### ARCH-02c: Migrate `_resolve_body` to `(content_type, body, ctx)`
 
 * **Context.** Once `ResolveContext` is complete, the signature can shrink.
