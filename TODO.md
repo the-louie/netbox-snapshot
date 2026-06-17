@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02f: Extract `phase2_runner.py`
-
-* **Context.** Phase 2 patches the cycle-closing fields (`primary_ip4`, cable terminations).
-* **Requirements.**
-  * Move the Phase 2 patch loop and `deferred_fields_by_ct` handling into `src/nbsnap/import_/phase2_runner.py` as `run_phase2(plan, ctx)`.
-  * Keep the per-field error budget in the runner, not the driver.
-* **Testing.** Add `tests/unit/import_/test_phase2_runner.py`: empty deferred map skips; one deferred patch fires a PATCH; PATCH failure routes to auditor. Confirm `tests/integration/test_import_cycles.py` (or the closest existing analogue) still passes.
-* **Estimated effort.** 2h.
-
 #### ARCH-02g: Extract `field_resolver.py`
 
 * **Context.** The four `_resolve_*` helpers handle FK, polymorphic FK, M2M, and termination-list fields.
