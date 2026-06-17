@@ -221,15 +221,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
-#### ARCH-05b: Centralise the endpoint table
-
-* **Context.** `CONTENT_TYPE_ENDPOINTS` is in `natkey/verify.py:49-70` today.
-* **Requirements.**
-  * Move `CONTENT_TYPE_ENDPOINTS` to `schema/content_type.py` as a private `_ENDPOINTS` dict consulted by `ContentType.endpoint`.
-  * Re-export the old name from `natkey/verify.py` for one ticket to avoid churn.
-* **Testing.** Extend `tests/unit/schema/test_content_type.py` to assert every entry in `_ENDPOINTS` round-trips through `from_str`.
-* **Estimated effort.** 1.5h.
-
 #### ARCH-05c: Migrate `graph/polymorphic.py` to `ContentType`
 
 * **Context.** `POLYMORPHIC_HINTS` and `KNOWN_VALIDATION_CYCLES` at `graph/polymorphic.py:152-268` hold bare strings.

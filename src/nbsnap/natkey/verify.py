@@ -43,31 +43,10 @@ class VerifyReport:
         return not self.duplicates
 
 
-# Default mapping from content type to the API path the audit
-# walker hits. The map is small on purpose, the auditor reports
-# "unknown endpoint" for anything missing rather than guessing.
-CONTENT_TYPE_ENDPOINTS: dict[str, str] = {
-    "dcim.site": "dcim/sites/",
-    "dcim.location": "dcim/locations/",
-    "dcim.rack": "dcim/racks/",
-    "dcim.devicerole": "dcim/device-roles/",
-    "dcim.devicetype": "dcim/device-types/",
-    "dcim.manufacturer": "dcim/manufacturers/",
-    "dcim.platform": "dcim/platforms/",
-    "dcim.device": "dcim/devices/",
-    "dcim.interface": "dcim/interfaces/",
-    "dcim.frontport": "dcim/front-ports/",
-    "dcim.rearport": "dcim/rear-ports/",
-    "dcim.cable": "dcim/cables/",
-    "ipam.role": "ipam/roles/",
-    "ipam.vlan": "ipam/vlans/",
-    "ipam.prefix": "ipam/prefixes/",
-    "ipam.iprange": "ipam/ip-ranges/",
-    "ipam.ipaddress": "ipam/ip-addresses/",
-    "extras.tag": "extras/tags/",
-    "extras.customfield": "extras/custom-fields/",
-    "extras.customfieldchoiceset": "extras/custom-field-choice-sets/",
-}
+# ARCH-05b: the canonical mapping moved to
+# :mod:`nbsnap.schema.content_type`. The re-export below keeps the
+# legacy import path alive for one sub-ticket (ARCH-05e drops it).
+from nbsnap.schema.content_type import _ENDPOINTS as CONTENT_TYPE_ENDPOINTS  # noqa: F401
 
 
 def audit(

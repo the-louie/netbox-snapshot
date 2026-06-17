@@ -37,6 +37,35 @@ def test_equality_and_hashing_for_dict_key_use() -> None:
     assert {a: "x"}[b] == "x"
 
 
+def test_every_endpoint_round_trips_through_from_str() -> None:
+    """ARCH-05b: every known content type in ``_ENDPOINTS`` is parseable.
+
+    A regression that adds an entry to the dict but with a malformed
+    key (missing dot, multi-dot) would fail here before reaching a
+    caller. Pin the contract.
+    """
+
+    from nbsnap.schema.content_type import _ENDPOINTS
+
+    for raw in _ENDPOINTS:
+        ct = ContentType.from_str(raw)
+        assert ct.endpoint() == _ENDPOINTS[raw]
+
+
+def test_natkey_verify_re_export_is_the_same_dict() -> None:
+    """ARCH-05b shim: the legacy ``CONTENT_TYPE_ENDPOINTS`` name still works.
+
+    ARCH-05e drops this re-export; until then, both names must
+    resolve to the same in-memory dict so a caller mid-migration
+    sees consistent data.
+    """
+
+    from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS as legacy
+    from nbsnap.schema.content_type import _ENDPOINTS
+
+    assert legacy is _ENDPOINTS
+
+
 @pytest.mark.parametrize(
     "raw",
     ["dcim", "dcim.devic", "dcim.devic.extra", "", ".device", "dcim."],
