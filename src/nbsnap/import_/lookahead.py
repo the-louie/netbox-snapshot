@@ -253,22 +253,31 @@ def resolve_or_create(
     processing_stack.add(key)
     try:
         if openapi is not None:
-            from nbsnap.import_.driver import _resolve_body
+            # ARCH-02d: route through the typed wrapper so the recursive
+            # call uses the same :class:`ResolveContext` boundary the
+            # driver's main loop now uses (ARCH-02c). The wrapper still
+            # delegates to the legacy nine-kwarg ``_resolve_body`` body
+            # internally; ARCH-02h will inline that body.
+            from nbsnap.import_.driver import _resolve_body_via_ctx
+            from nbsnap.import_.resolve_context import ResolveContext
 
-            resolved_body = _resolve_body(
-                content_type,
-                dict(snapshot_body),
-                openapi,
-                dest_index,
-                http,
-                registry,
+            inner_ctx = ResolveContext(
+                http=http,
+                index=dest_index,
+                registry=registry,
+                openapi=openapi,
                 snapshot_index=snapshot_index,
                 processing_stack=processing_stack,
                 deferred_queue=deferred_queue,
-                current_nk=natural_key,
                 auditor=auditor,
                 failed_keys=failed_keys,
+                transient_keys=None,
                 deferred_fields_by_ct=deferred_fields_by_ct,
+                warn_dedup=None,
+                current_nk=natural_key,
+            )
+            resolved_body = _resolve_body_via_ctx(
+                content_type, dict(snapshot_body), inner_ctx
             )
         else:
             # Backwards-compat for callers that have not yet

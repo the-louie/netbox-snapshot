@@ -63,15 +63,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
 
-#### ARCH-02d: Migrate `lookahead.py` to `ResolveContext`
-
-* **Context.** `lookahead.py:253-272` rebuilds the parameter bundle on the recursive callback path.
-* **Requirements.**
-  * Change the lookahead helpers to accept `ctx: ResolveContext` and pass it back into `_resolve_body`.
-  * Delete the bundle-reconstruction code.
-* **Testing.** Run `pytest tests/unit/import_/test_lookahead.py` plus `tests/integration/test_import_*`. Confirm cycle resolution still completes (`Device.primary_ip4` round-trip).
-* **Estimated effort.** 1.5h.
-
 #### ARCH-02e: Extract `phase1_runner.py`
 
 * **Context.** The Phase 1 loop at `driver.py:265-290` orchestrates the per-content-type create pass.
