@@ -1,16 +1,16 @@
 [
   {
-    "endpoint": "dcim/devices/d39a/",
+    "endpoint": "dcim/devices/",
     "method": "PATCH",
-    "payload": {
-      "primary_ip4": {"_resolve": ["ipam.ipaddress", "172.16.1.10/24"]}
-    }
-  },
-  {
-    "endpoint": "dcim/devices/d39b/",
-    "method": "PATCH",
-    "payload": {
-      "primary_ip4": {"_resolve": ["ipam.ipaddress", "172.16.1.11/24"]}
-    }
+    "payload": [
+      {
+        "id": {"_resolve": ["dcim.device", "d39a"]},
+        "primary_ip4": {"_resolve": ["ipam.ipaddress", "172.16.1.10/24"]}
+      },
+      {
+        "id": {"_resolve": ["dcim.device", "d39b"]},
+        "primary_ip4": {"_resolve": ["ipam.ipaddress", "172.16.1.11/24"]}
+      }
+    ]
   }
 ]
