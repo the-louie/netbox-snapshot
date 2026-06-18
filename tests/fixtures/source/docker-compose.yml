@@ -26,7 +26,11 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://localhost:8080/api/status/"]
+      # `/login/` is open without authentication on every NetBox
+      # version we target; `/api/status/` requires a token on 4.6
+      # and would otherwise leave the compose health probe stuck
+      # at HTTP 403 forever.
+      test: ["CMD", "curl", "-f", "-s", "http://localhost:8080/login/"]
       # `start_period` gives migrations and superuser creation room
       # to finish before failing probes count against `retries`.
       # 60s plus 30 retries at 10s interval gives a 360s ceiling,

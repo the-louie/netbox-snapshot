@@ -52,17 +52,24 @@ stack-down:
 # netbox-docker stack takes 2 to 4 minutes to finish migrations
 # and bind nginx, so the 90s budget the prior version used was too
 # tight for a fresh runner. Exit non-zero on timeout so make's
-# error propagation kicks in. `/api/status/` is open in NetBox, no
-# auth header needed; passing one made the failure mode harder to
-# diagnose (`curl -w` writes "000" on connect failure and the
-# `|| echo 000` fallback then concatenated a second "000").
+# error propagation kicks in. NetBox 4.6 requires authentication on
+# `/api/status/` (the server returns HTTP 403 without a token), so
+# we pass the configured admin token. A 200 response then proves
+# three things at once: nginx is up, the django app is serving, and
+# the configured admin token has been written to the auth table.
+# `curl -w` writes "000" on a failed connect, which is the natural
+# sentinel for "not ready yet".
 stack-wait:
 	@bash -c ' \
 	  deadline=$$(( $$(date +%s) + 300 )); \
 	  src=000; dst=000; \
 	  while [ $$(date +%s) -lt $$deadline ]; do \
-	    src=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8080/api/status/); \
-	    dst=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8081/api/status/); \
+	    src=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+	      -H "Authorization: Token $(SOURCE_TOKEN)" \
+	      http://localhost:8080/api/status/); \
+	    dst=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+	      -H "Authorization: Token $(DEST_TOKEN)" \
+	      http://localhost:8081/api/status/); \
 	    if [ "$$src" = "200" ] && [ "$$dst" = "200" ]; then \
 	      echo "both stacks ready"; exit 0; \
 	    fi; \
