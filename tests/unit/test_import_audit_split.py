@@ -394,13 +394,13 @@ def test_bypass_coerced_emits_one_event_per_field() -> None:
 
     from unittest.mock import MagicMock
 
-    from nbsnap.import_.upsert import UpsertOutcome, upsert
+    from nbsnap.import_.upsert import upsert
 
     http = MagicMock()
     http.base_url = "https://dest.example/"
     http._cf_cache = None
     http._cf_cache_failed = False
-    http.get_all.side_effect = lambda endpoint: iter([])
+    http.get_all.side_effect = lambda _endpoint: iter([])
     http.post.return_value = {"id": 42}
 
     index = MagicMock()

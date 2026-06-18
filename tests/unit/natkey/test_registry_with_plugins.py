@@ -19,7 +19,6 @@ import pytest
 from nbsnap.natkey.registry import default, with_plugins
 from nbsnap.plugins.api import PluginLoadError
 
-
 VALID_PLUGIN = """
 from nbsnap.natkey.model import NKField, NKSpec, Strategy
 from nbsnap.plugins.api import Registrar

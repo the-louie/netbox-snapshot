@@ -19,7 +19,6 @@ from nbsnap.import_cli import add_import_args
 from nbsnap.plan_cli import add_plan_args
 from nbsnap.reset_cli import add_reset_args
 
-
 # (builder, list of substrings that must appear in --help)
 _SUBCOMMAND_TLS = [
     (add_export_args, "self-signed"),

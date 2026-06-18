@@ -21,6 +21,12 @@ from nbsnap.http.client import NetboxHTTP
 from nbsnap.natkey.model import NKRegistry
 from nbsnap.natkey.registry import default
 from nbsnap.natkey.resolver import NaturalKey, resolve
+from nbsnap.schema.content_type import _ENDPOINTS, ContentType, InvalidContentTypeError
+
+# Re-export the canonical endpoint mapping under its legacy public
+# name. Assignment (not aliased import) so mypy with strict
+# `--no-implicit-reexport` treats this as a deliberate re-export.
+CONTENT_TYPE_ENDPOINTS = _ENDPOINTS
 
 
 @dataclass(frozen=True)
@@ -44,14 +50,12 @@ class VerifyReport:
 
 
 # ARCH-05b/e: the canonical mapping lives in
-# :mod:`nbsnap.schema.content_type`. The re-export below keeps the
+# :mod:`nbsnap.schema.content_type`. The re-export above keeps the
 # legacy import path alive for external callers (export/driver.py,
 # reset_cli.py, several import_/ helpers) that still index the dict
 # directly. Internal lookups in this module use
 # :meth:`ContentType.endpoint` so the typed boundary lives here
 # rather than at every consumer.
-from nbsnap.schema.content_type import ContentType, InvalidContentTypeError
-from nbsnap.schema.content_type import _ENDPOINTS as CONTENT_TYPE_ENDPOINTS  # noqa: F401
 
 
 def audit(http: NetboxHTTP, registry: NKRegistry | None = None) -> VerifyReport:

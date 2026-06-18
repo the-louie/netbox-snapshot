@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 from nbsnap.import_.audit import Auditor, DropCategory, DropEvent
 from nbsnap.import_.driver import ImportSummary
-from nbsnap.import_.phase2 import Phase2Summary, Phase2Outcome
+from nbsnap.import_.phase2 import Phase2Outcome, Phase2Summary
 from nbsnap.import_.upsert import UpsertOutcome
 from nbsnap.import_cli import (
     EXIT_OK,

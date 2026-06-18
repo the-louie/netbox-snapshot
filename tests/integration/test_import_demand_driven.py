@@ -21,7 +21,6 @@ from nbsnap.import_.driver import run_import
 from nbsnap.import_.phase2 import Phase2Outcome
 from nbsnap.import_.upsert import UpsertOutcome
 from nbsnap.schema.status import VersionSkew
-
 from tests.integration.conftest import DEST_TOKEN, DEST_URL, SOURCE_TOKEN, SOURCE_URL
 
 

@@ -24,7 +24,7 @@ import pytest
 from nbsnap.http.client import NetboxHTTPError
 from nbsnap.import_.lookahead import DeferredFK
 from nbsnap.import_.nk_index import NKIndex
-from nbsnap.import_.phase2 import Phase2Summary, run_phase2, Phase2Outcome
+from nbsnap.import_.phase2 import Phase2Outcome, Phase2Summary, run_phase2
 from nbsnap.natkey.registry import default as default_registry
 
 

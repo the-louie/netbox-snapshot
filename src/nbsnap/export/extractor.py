@@ -36,6 +36,7 @@ from nbsnap.export.install_local import Flag, is_install_local
 from nbsnap.natkey.model import NKRegistry
 from nbsnap.natkey.resolver import resolve
 from nbsnap.schema.openapi import OpenAPI
+from nbsnap.snapshot.coerce import collapse_enum_dict
 
 
 @dataclass(frozen=True)
@@ -96,9 +97,6 @@ def extract(
             continue
 
         yield ExtractedRow(content_type=content_type, natural_key=nk, body=body), None
-
-
-from nbsnap.snapshot.coerce import collapse_enum_dict
 
 
 def _apply_allowlist(record: Mapping[str, Any], allowlist: frozenset[str]) -> dict[str, Any]:

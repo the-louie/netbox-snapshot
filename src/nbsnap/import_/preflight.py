@@ -23,11 +23,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from nbsnap.snapshot import Manifest
-from nbsnap.snapshot.layout import UnknownContentTypeError, relative_path
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.schema.content_types import ContentTypeCache
 from nbsnap.schema.status import Status, VersionSkew
+from nbsnap.snapshot import Manifest
+from nbsnap.snapshot.layout import UnknownContentTypeError, relative_path
 
 # Sentinel set of keys identifying a NetBox enum dict. NetBox
 # GETs return `{"value": "...", "label": "..."}` for choice

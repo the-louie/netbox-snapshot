@@ -17,12 +17,12 @@ the existing destination-dependent integration tests.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from unittest.mock import patch
 
 from nbsnap.natkey.model import NKRegistry
 from nbsnap.natkey.registry import with_plugins as registry_with_plugins
-
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "plugins"
 
@@ -67,10 +67,8 @@ def test_import_driver_passes_plugins_dir_through() -> None:
     ):
         from nbsnap.import_ import run_import
 
-        try:
+        with contextlib.suppress(FileNotFoundError):
             run_import(http=None, snapshot_dir=Path("/nonexistent"), plugins_dir=FIXTURE_DIR)  # type: ignore[arg-type]
-        except FileNotFoundError:
-            pass
 
     # The driver should not have called the factory at all because
     # Manifest.load failed first; what we are actually pinning is

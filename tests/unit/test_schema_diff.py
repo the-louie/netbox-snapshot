@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nbsnap.schema.diff import FieldDrift, diff_schemas
+from nbsnap.schema.diff import diff_schemas
 from nbsnap.schema.openapi import OpenAPI
 
 

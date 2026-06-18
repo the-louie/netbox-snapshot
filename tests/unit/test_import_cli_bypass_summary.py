@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -81,7 +80,11 @@ def _fake_preflight_with_issues() -> MagicMock:
     return pre
 
 
-def test_bypass_active_suppresses_verbose_list(tmp_path: Path, capsys, monkeypatch) -> None:
+def test_bypass_active_suppresses_verbose_list(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,  # noqa: ARG001
+) -> None:
     snap = _build_snapshot(tmp_path)
 
     fake_pre = _fake_preflight_with_issues()
@@ -112,7 +115,11 @@ def test_bypass_active_suppresses_verbose_list(tmp_path: Path, capsys, monkeypat
     assert len(rows) == 12
 
 
-def test_bypass_inactive_still_emits_verbose_block(tmp_path: Path, capsys, monkeypatch) -> None:
+def test_bypass_inactive_still_emits_verbose_block(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,  # noqa: ARG001
+) -> None:
     snap = _build_snapshot(tmp_path)
 
     fake_pre = _fake_preflight_with_issues()

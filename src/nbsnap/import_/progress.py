@@ -270,10 +270,7 @@ class ProgressReporter:
             return
         if self._show_timestamps:
             stamp = self._wallclock().strftime("%H:%M:%S")
-            if line.startswith("#"):
-                line = f"# [{stamp}]{line[1:]}"
-            else:
-                line = f"[{stamp}] {line}"
+            line = f"# [{stamp}]{line[1:]}" if line.startswith("#") else f"[{stamp}] {line}"
         self._stream.write(line)
         self._stream.flush()
 

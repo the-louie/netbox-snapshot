@@ -20,7 +20,7 @@ from typing import TextIO
 from nbsnap.cli.common import add_scope_flags, add_tls_flags
 from nbsnap.graph import Plan, from_openapi, plan
 from nbsnap.http.client import NetboxHTTP
-from nbsnap.schema.content_type import ContentType, InvalidContentTypeError
+from nbsnap.schema.content_type import ContentType
 from nbsnap.schema.openapi import OpenAPI
 
 # Renderer-minimum scope, mirrors the table in CLAUDE.md / TODO.md.

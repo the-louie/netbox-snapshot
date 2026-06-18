@@ -54,14 +54,14 @@ class ResolveContext:
     the intended shape.
     """
 
-    http: "NetboxHTTP"
-    index: "NKIndex"
-    registry: "NKRegistry"
-    openapi: "OpenAPI"
-    snapshot_index: "SnapshotIndex"
+    http: NetboxHTTP
+    index: NKIndex
+    registry: NKRegistry
+    openapi: OpenAPI
+    snapshot_index: SnapshotIndex
     processing_stack: set[tuple[str, tuple[Any, ...]]]
     deferred_queue: list[Any]
-    auditor: "Auditor | None"
+    auditor: Auditor | None
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None
     transient_keys: set[tuple[str, tuple[Any, ...]]] | None
     deferred_fields_by_ct: dict[str, set[str]] | None
@@ -75,12 +75,12 @@ class ResolveContext:
     @classmethod
     def fresh(
         cls,
-        http: "NetboxHTTP | None" = None,
-        index: "NKIndex | None" = None,
-        registry: "NKRegistry | None" = None,
-        openapi: "OpenAPI | None" = None,
-        snapshot_index: "SnapshotIndex | None" = None,
-    ) -> "ResolveContext":
+        http: NetboxHTTP | None = None,
+        index: NKIndex | None = None,
+        registry: NKRegistry | None = None,
+        openapi: OpenAPI | None = None,
+        snapshot_index: SnapshotIndex | None = None,
+    ) -> ResolveContext:
         """Build a context with empty mutable defaults for tests.
 
         Production callers (``run_import``) construct the context

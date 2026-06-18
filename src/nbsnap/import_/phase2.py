@@ -176,10 +176,7 @@ def run_phase2(
             value = response.get(entry.field_name)
             # NetBox may return the field as `{"id": <int>}`
             # (nested representation) or a bare int.
-            if isinstance(value, dict):
-                actual = value.get("id")
-            else:
-                actual = value
+            actual = value.get("id") if isinstance(value, dict) else value
             if actual != target_id:
                 logger.warning(
                     "Phase-2 PATCH for %s id=%d field=%s returned 2xx "

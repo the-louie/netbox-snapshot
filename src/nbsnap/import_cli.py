@@ -32,7 +32,6 @@ import sys
 from pathlib import Path
 
 from nbsnap.cli.common import add_audit_flags, add_tls_flags
-from nbsnap.snapshot import MANIFEST_FILENAME
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
 from nbsnap.http.exceptions import (
     SnapshotAuthError,
@@ -44,6 +43,7 @@ from nbsnap.import_.phase2 import Phase2Outcome
 from nbsnap.import_.upsert import UpsertOutcome
 from nbsnap.schema.openapi import SCHEMA_PATH
 from nbsnap.schema.status import VersionSkew
+from nbsnap.snapshot import MANIFEST_FILENAME
 
 # Exit code constants so the tests and the docstring agree.
 EXIT_OK = 0

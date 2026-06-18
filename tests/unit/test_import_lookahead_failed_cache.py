@@ -205,6 +205,7 @@ def test_transient_5xx_failure_does_not_get_cached() -> None:
     dropping the FK with a phantom MISSING_FROM_SOURCE."""
 
     from unittest.mock import MagicMock, patch
+
     from nbsnap.import_.lookahead import resolve_or_create
     from nbsnap.import_.nk_index import NKIndex
     from nbsnap.import_.snapshot_index import SnapshotIndex
@@ -243,6 +244,7 @@ def test_permanent_4xx_failure_is_cached() -> None:
     failing POST."""
 
     from unittest.mock import MagicMock, patch
+
     from nbsnap.import_.lookahead import resolve_or_create
     from nbsnap.import_.nk_index import NKIndex
     from nbsnap.import_.snapshot_index import SnapshotIndex

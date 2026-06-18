@@ -23,8 +23,8 @@ import pytest
 
 from nbsnap.import_.audit import Auditor, DropCategory
 from nbsnap.import_.driver import _resolve_body
-from nbsnap.import_.snapshot_index import SnapshotIndex
 from nbsnap.import_.nk_index import NKIndex
+from nbsnap.import_.snapshot_index import SnapshotIndex
 from nbsnap.natkey.registry import default as default_registry
 from nbsnap.schema.openapi import OpenAPI
 

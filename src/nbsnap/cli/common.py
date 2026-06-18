@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 
 class _ScopeFlagAction(argparse.Action):
@@ -37,11 +38,11 @@ class _ScopeFlagAction(argparse.Action):
     already follows the canonical name produces no noise.
     """
 
-    def __call__(  # type: ignore[override]
+    def __call__(
         self,
-        parser: argparse.ArgumentParser,
+        parser: argparse.ArgumentParser,  # noqa: ARG002
         namespace: argparse.Namespace,
-        values,  # type: ignore[no-untyped-def]
+        values: Any,
         option_string: str | None = None,
     ) -> None:
         if option_string == "--only":

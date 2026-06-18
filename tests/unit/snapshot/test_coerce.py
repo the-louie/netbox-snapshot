@@ -43,7 +43,7 @@ def test_collapse_non_dict_passthrough() -> None:
 
 
 def test_enum_dict_keys_constant_is_exact() -> None:
-    assert ENUM_DICT_KEYS == frozenset({"value", "label"})
+    assert frozenset({"value", "label"}) == ENUM_DICT_KEYS
 
 
 def test_legacy_extractor_alias_no_longer_exists() -> None:

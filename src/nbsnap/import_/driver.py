@@ -20,13 +20,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nbsnap.import_.phase2 import Phase2Summary as _Phase2Summary
+    from nbsnap.import_.resolve_context import ResolveContext
     from nbsnap.import_.snapshot_index import SnapshotIndex as _SnapshotIndexType
 
-from nbsnap.snapshot import (
-    CONTENT_TYPE_FILES,
-    MANIFEST_FILENAME,
-    Manifest,
-)
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.import_.audit import Auditor, DropCategory, DropEvent
 from nbsnap.import_.fk_resolve import (
@@ -42,6 +38,11 @@ from nbsnap.natkey.registry import default as default_registry
 from nbsnap.natkey.registry import with_plugins as registry_with_plugins
 from nbsnap.schema.openapi import SCHEMA_PATH, OpenAPI
 from nbsnap.schema.status import VersionSkew
+from nbsnap.snapshot import (
+    CONTENT_TYPE_FILES,
+    MANIFEST_FILENAME,
+    Manifest,
+)
 
 
 @dataclass
@@ -421,7 +422,7 @@ def _content_type_order(manifest: Manifest, snapshot_dir: Path) -> list[str]:
 def _resolve_body_via_ctx(
     content_type: str,
     body: dict[str, Any],
-    ctx: "ResolveContext",
+    ctx: ResolveContext,
 ) -> dict[str, Any]:
     """ARCH-02c: thin wrapper exposing the 3-arg signature the audit asks for.
 
@@ -616,7 +617,6 @@ def _resolve_body(
                 value, spec.fk_target, index, http=http, registry=registry
             )
         except (KeyError, ValueError) as exc:
-            queue_size_before = len(deferred_queue) if deferred_queue is not None else 0
             recovered, was_deferred = _try_lookahead(
                 value=value,
                 target_ct=spec.fk_target,
@@ -825,8 +825,8 @@ def _resolve_polymorphic_id_pairs(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
-    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
-    ctx: Any = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,  # noqa: ARG001
+    ctx: Any = None,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
 
@@ -919,7 +919,6 @@ def _resolve_polymorphic_id_pairs(
             new_body[id_field] = rid
             continue
         except (KeyError, ValueError) as exc:
-            queue_size_before = len(deferred_queue) if deferred_queue is not None else 0
             # Try the look-ahead path so the parent can be
             # created on demand from the snapshot.
             recovered, was_deferred = _try_lookahead(
@@ -988,8 +987,8 @@ def _resolve_termination_lists(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
-    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
-    ctx: Any = None,
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,  # noqa: ARG001
+    ctx: Any = None,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Convert termination dicts from snapshot to NetBox shape.
 
@@ -1063,7 +1062,6 @@ def _resolve_termination_lists(
                 )
                 continue
             except (KeyError, ValueError) as exc:
-                queue_size_before = len(deferred_queue) if deferred_queue is not None else 0
                 # Look-ahead path so the target interface can be
                 # created from the snapshot if it is in scope.
                 recovered, was_deferred = _try_lookahead(
@@ -1387,7 +1385,7 @@ def resolve_with_audit(
     child_ct: str,
     child_nk: tuple[Any, ...],
     field_name: str,
-) -> tuple[int | None, "DropCategory | None"]:
+) -> tuple[int | None, DropCategory | None]:
     """One-call wrapper around `_try_lookahead` + `_record_drop`.
 
     REFACTOR-02 unifies the three near-identical sites in

@@ -17,7 +17,6 @@ import pytest
 
 from tests.integration.conftest import SOURCE_TOKEN, SOURCE_URL
 
-
 # Hard-coded mirror of the M-rows in docs/02-data-model-scope.md.
 # Update both files together when the scope changes.
 RENDERER_MINIMUM_ENDPOINTS: set[str] = {
@@ -74,7 +73,6 @@ def test_renderer_minimum_endpoints_are_hit(tmp_path: Path) -> None:
     }
     # Direct check: every expected endpoint has its jsonl on disk.
     for endpoint in RENDERER_MINIMUM_ENDPOINTS:
-        ct_guess = endpoint.replace("/", ".").rstrip(".").replace("-", "")
         candidates = list(
             (out).rglob(endpoint.rstrip("/").split("/")[-1].replace("-", "_") + ".jsonl")
         )

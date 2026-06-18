@@ -8,7 +8,6 @@ Export + import; GET the device on the destination and assert
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path

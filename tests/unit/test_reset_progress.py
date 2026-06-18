@@ -49,7 +49,7 @@ def test_progress_emits_every_ten_percent_for_round_total() -> None:
         p.finish()
 
     out = _capture(drive)
-    lines = [l for l in out.splitlines() if l.strip()]
+    lines = [line for line in out.splitlines() if line.strip()]
     assert lines == [
         "  dcim.interface: 10/100 (10%)",
         "  dcim.interface: 20/100 (20%)",
@@ -106,7 +106,7 @@ def test_progress_quiet_keeps_closing_line_suppresses_boundaries() -> None:
         p.finish()
 
     out = _capture(drive)
-    lines = [l for l in out.splitlines() if l.strip()]
+    lines = [line for line in out.splitlines() if line.strip()]
     assert lines == ["  dcim.interface: 100/100 (100%)"]
 
 
@@ -124,7 +124,7 @@ def test_progress_single_large_tick_emits_every_crossed_boundary() -> None:
         p.finish()
 
     out = _capture(drive)
-    lines = [l for l in out.splitlines() if l.strip()]
+    lines = [line for line in out.splitlines() if line.strip()]
     # Six lines from the first tick (10% through 60%), three
     # more from the second (70% through 90%), then 100% at finish.
     assert lines == [

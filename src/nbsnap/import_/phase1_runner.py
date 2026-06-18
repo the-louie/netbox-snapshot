@@ -28,14 +28,13 @@ the legacy path. The two contracts converge once ARCH-02h is in.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nbsnap.import_.driver import ImportSummary
     from nbsnap.import_.resolve_context import ResolveContext
 
 
-def run_phase1(plan_order: list[str], ctx: "ResolveContext") -> None:
+def run_phase1(plan_order: list[str], ctx: ResolveContext) -> None:
     """Walk the plan and POST each row through the FK resolver.
 
     The audit-documented contract:

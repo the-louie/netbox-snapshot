@@ -490,7 +490,7 @@ class NetboxHTTP:
                 the header never reaches the wrong host.
         """
 
-        location = response.headers.get("Location", "")
+        location = str(response.headers.get("Location", ""))
         if not location:
             raise SnapshotTransportError(
                 "3xx response carried no Location header; refusing to redirect",

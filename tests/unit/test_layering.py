@@ -64,7 +64,7 @@ def _imported_modules(py_path: Path) -> list[tuple[int, str]]:
 def _offending_imports(
     package_root: Path, forbidden_prefixes: tuple[str, ...]
 ) -> list[tuple[Path, int, str]]:
-    """Walk ``package_root`` and return every import that starts with one of ``forbidden_prefixes``."""
+    """Return every import in ``package_root`` that starts with one of ``forbidden_prefixes``."""
 
     findings: list[tuple[Path, int, str]] = []
     for py_path in _python_files(package_root):

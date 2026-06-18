@@ -18,9 +18,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from nbsnap.http.exceptions import SnapshotAuthError, SnapshotConnectivityError
 
 from nbsnap.http.client import NetboxHTTPError
+from nbsnap.http.exceptions import SnapshotAuthError, SnapshotConnectivityError
 from nbsnap.import_cli import (
     EXIT_BAD_INVOCATION,
     EXIT_DESTINATION_UNREACHABLE,

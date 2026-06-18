@@ -289,7 +289,7 @@ def _delete_ids_with_audit(
     endpoint: str,
     ids: list[int],
     content_type: str,
-    on_batch: "Callable[[int], None] | None" = None,
+    on_batch: Callable[[int], None] | None = None,
 ) -> tuple[list[tuple[int, str]], list[str]]:
     """Delete every id, return `(failures, audit_lines)`.
 

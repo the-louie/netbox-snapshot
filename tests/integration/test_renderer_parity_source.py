@@ -12,7 +12,6 @@ import pytest
 
 from tests.integration.conftest import SOURCE_TOKEN, SOURCE_URL
 
-
 NB2KEA_SCRIPTS = Path("__reference/nb2kea/scripts")
 RENDERER_SCRIPTS = ("netbox2cisco.py", "netbox2junos.py", "netbox2kea.py")
 

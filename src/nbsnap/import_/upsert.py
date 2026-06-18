@@ -24,6 +24,7 @@ field definitions exist.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -218,7 +219,6 @@ def _filter_custom_fields(
 # Add entries sparingly, every entry hides a class of failure
 # from the operator's primary error count, so the explanation
 # field should clearly tell them what to investigate.
-import re
 
 # BUG-05: structural matchers tolerate cosmetic NetBox error
 # rewording (e.g. "addresses overlap with range" -> "addresses

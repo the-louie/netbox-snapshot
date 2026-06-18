@@ -10,8 +10,6 @@ from __future__ import annotations
 import argparse
 import io
 
-import pytest
-
 from nbsnap.cli.common import add_scope_flags
 
 

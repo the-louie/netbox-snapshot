@@ -16,7 +16,6 @@ import pytest
 
 from nbsnap.schema.content_type import ContentType, InvalidContentTypeError
 
-
 _TYPOS = [
     "dcim.devic",
     "dcim.devices",

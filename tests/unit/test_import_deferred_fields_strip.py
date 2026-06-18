@@ -433,6 +433,7 @@ def test_strip_queues_even_when_target_unresolvable() -> None:
     would never see it."""
 
     from unittest.mock import MagicMock
+
     from nbsnap.import_.driver import _resolve_body
     from nbsnap.import_.nk_index import NKIndex
     from nbsnap.import_.snapshot_index import SnapshotIndex

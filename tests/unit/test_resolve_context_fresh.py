@@ -55,7 +55,6 @@ def test_fresh_bundle_reference_is_immutable() -> None:
     """
 
     ctx = ResolveContext.fresh()
-    with pytest.raises(Exception):
-        # dataclasses.FrozenInstanceError inherits AttributeError in
-        # 3.11; pytest.raises(Exception) is broad enough.
+    # dataclasses.FrozenInstanceError inherits AttributeError in 3.11.
+    with pytest.raises(AttributeError):
         ctx.current_nk = ("nope",)  # type: ignore[misc]

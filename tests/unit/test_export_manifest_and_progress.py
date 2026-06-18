@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 
 from nbsnap.export.manifest import PerfTimer
-from nbsnap.snapshot import Manifest
 from nbsnap.export.progress import ProgressLog, resume_from
+from nbsnap.snapshot import Manifest
 
 
 def test_manifest_roundtrip(tmp_path: Path) -> None:

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from nbsnap.import_.upsert import _classify_post_failure
 
-
 _NETBOX_OVERLAP_ERROR = "Addresses overlap with the range 92.33.40.137/26-92.33.40.190/26"
 
 

@@ -94,7 +94,7 @@ class ContentType:
     model: str
 
     @classmethod
-    def from_str(cls, raw: str) -> "ContentType":
+    def from_str(cls, raw: str) -> ContentType:
         """Parse a string into a :class:`ContentType`.
 
         Validation rules:

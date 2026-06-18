@@ -23,11 +23,6 @@ from typing import Any
 from nbsnap.export.extractor import ExtractedRow, extract
 from nbsnap.export.install_local import FlagWriter
 from nbsnap.export.manifest import PerfTimer
-from nbsnap.snapshot import (
-    MANIFEST_FILENAME,
-    Manifest,
-    compute_source_url_hash,
-)
 from nbsnap.export.progress import PROGRESS_FILENAME, ProgressLog, resume_from
 from nbsnap.export.writer import write_content_type
 from nbsnap.graph import from_openapi
@@ -39,6 +34,11 @@ from nbsnap.natkey.verify import CONTENT_TYPE_ENDPOINTS
 from nbsnap.schema.content_types import ContentTypeCache
 from nbsnap.schema.openapi import SCHEMA_PATH, OpenAPI
 from nbsnap.schema.status import Status
+from nbsnap.snapshot import (
+    MANIFEST_FILENAME,
+    Manifest,
+    compute_source_url_hash,
+)
 
 # Renderer-minimum scope, shares the source of truth with plan_cli.
 DEFAULT_SCOPE: frozenset[str] = frozenset(CONTENT_TYPE_ENDPOINTS.keys())

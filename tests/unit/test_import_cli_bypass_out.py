@@ -28,7 +28,7 @@ def _parse(args: list[str]) -> argparse.Namespace:
 
 
 def test_bypass_out_defaults_to_none_so_runtime_derives_inside_snapshot() -> None:
-    """No ``--bypass-out`` means the runtime falls back to ``<snapshot_dir>/preflight-bypass.jsonl``.
+    """No ``--bypass-out``: runtime falls back to ``<snapshot_dir>/preflight-bypass.jsonl``.
 
     The defaulting happens inside ``main`` (``args.bypass_out or
     (in_dir / 'preflight-bypass.jsonl')``); argparse reports ``None``

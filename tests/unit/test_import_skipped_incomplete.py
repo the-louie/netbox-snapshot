@@ -37,7 +37,6 @@ from nbsnap.import_.upsert import (
 )
 from nbsnap.natkey.registry import default as default_registry
 
-
 # ---------------------------------------------------------------------------
 # Precondition check
 # ---------------------------------------------------------------------------

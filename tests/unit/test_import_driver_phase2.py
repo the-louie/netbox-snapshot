@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 from nbsnap.import_.driver import ImportSummary, run_import
 from nbsnap.import_.lookahead import DeferredFK
-from nbsnap.import_.phase2 import Phase2Summary, Phase2Outcome
+from nbsnap.import_.phase2 import Phase2Outcome, Phase2Summary
 from nbsnap.schema.status import VersionSkew
 
 
