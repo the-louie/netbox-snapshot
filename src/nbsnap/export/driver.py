@@ -91,16 +91,24 @@ def run_export(
     with perf.timer("plan"):
         graph = from_openapi(openapi, scope=effective_scope)
         plan_obj = build_plan(graph)
-        manifest.deferred_edges = [
-            {
-                "child": e.child,
-                "parent": e.parent,
-                "field": e.field,
-                "nullable": e.nullable,
-                "is_m2m": e.is_m2m,
-            }
-            for e in plan_obj.deferred
-        ]
+        # Sort by the natural composite key so two successive
+        # exports of the same source produce byte-identical
+        # `manifest.deferred_edges`. The underlying planner does
+        # not guarantee a stable iteration order across runs,
+        # which would otherwise break the reproducibility test.
+        manifest.deferred_edges = sorted(
+            (
+                {
+                    "child": e.child,
+                    "parent": e.parent,
+                    "field": e.field,
+                    "nullable": e.nullable,
+                    "is_m2m": e.is_m2m,
+                }
+                for e in plan_obj.deferred
+            ),
+            key=lambda d: (d["child"], d["parent"], d["field"]),
+        )
 
     # ------------------------------------------------------------------
     # Phase C, extract + write

@@ -61,12 +61,21 @@ def test_export_runs_produce_identical_jsonl(tmp_path: Path) -> None:
             )
             delta.append(diff)
 
-    # Allow only manifest.exported_at to diverge.
+    # Strip the manifest fields that are intrinsically tied to
+    # wall-clock time before comparing. `exported_at` is the
+    # obvious one. `created_at` is also a per-run timestamp,
+    # added by `Manifest` at construction time. `perf` holds
+    # per-step durations measured with `time.perf_counter`, so
+    # two runs will never produce the same numbers even on
+    # otherwise identical input. The structural shape we care
+    # about (counts, scope, deferred_edges, source_url_hash) is
+    # unchanged after these pops.
     manifest_a = json.loads((out_a / "manifest.json").read_text())
     manifest_b = json.loads((out_b / "manifest.json").read_text())
-    manifest_a.pop("exported_at", None)
-    manifest_b.pop("exported_at", None)
-    assert manifest_a == manifest_b, "manifest differs beyond exported_at"
+    for key in ("exported_at", "created_at", "perf"):
+        manifest_a.pop(key, None)
+        manifest_b.pop(key, None)
+    assert manifest_a == manifest_b, "manifest differs beyond exported_at, created_at, perf"
 
     assert not delta, "exports diverged:\n" + "\n\n".join(delta)
 
