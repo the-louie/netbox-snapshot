@@ -21,9 +21,7 @@ from nbsnap.snapshot.manifest import (
 
 
 def test_manifest_roundtrip(tmp_path: Path) -> None:
-    m = Manifest(
-        source_url_hash="deadbeef0001", netbox_version="4.6.2", counts={"a": 1}
-    )
+    m = Manifest(source_url_hash="deadbeef0001", netbox_version="4.6.2", counts={"a": 1})
     m.write(tmp_path / MANIFEST_FILENAME)
     loaded = Manifest.load(tmp_path / MANIFEST_FILENAME)
     assert loaded.source_url_hash == "deadbeef0001"

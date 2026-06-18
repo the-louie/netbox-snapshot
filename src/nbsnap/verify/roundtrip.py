@@ -52,9 +52,7 @@ def round_trip(
 
 
 def add_verify_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--source-url", help="source NetBox URL; defaults to NB_SOURCE_URL"
-    )
+    parser.add_argument("--source-url", help="source NetBox URL; defaults to NB_SOURCE_URL")
     parser.add_argument("--source-token", help="defaults to NB_SOURCE_TOKEN")
     parser.add_argument("--dest-url", help="defaults to NB_DESTINATION_URL")
     parser.add_argument("--dest-token", help="defaults to NB_DESTINATION_TOKEN")

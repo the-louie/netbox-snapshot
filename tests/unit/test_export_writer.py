@@ -30,12 +30,8 @@ def test_write_content_type_sorts_by_natural_key(tmp_path: Path) -> None:
 def test_write_content_type_replaces_existing_file(tmp_path: Path) -> None:
     """Re-writing the same content type overwrites cleanly."""
 
-    write_content_type(
-        tmp_path, "dcim.site", [ExtractedRow("dcim.site", ("a",), {})]
-    )
-    write_content_type(
-        tmp_path, "dcim.site", [ExtractedRow("dcim.site", ("b",), {})]
-    )
+    write_content_type(tmp_path, "dcim.site", [ExtractedRow("dcim.site", ("a",), {})])
+    write_content_type(tmp_path, "dcim.site", [ExtractedRow("dcim.site", ("b",), {})])
     text = (tmp_path / "dcim/sites.jsonl").read_text().splitlines()
     assert len(text) == 1
     assert json.loads(text[0])["natural_key"] == ["b"]

@@ -23,9 +23,7 @@ from nbsnap.export.extractor import ExtractedRow
 from nbsnap.snapshot.layout import relative_path
 
 
-def write_content_type(
-    snapshot_dir: Path, content_type: str, rows: Iterable[ExtractedRow]
-) -> int:
+def write_content_type(snapshot_dir: Path, content_type: str, rows: Iterable[ExtractedRow]) -> int:
     """Sort `rows` by NK and write to `<snapshot_dir>/<file>`.
 
     Returns the number of rows written so the caller can update

@@ -77,11 +77,15 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_enumerate_yields_every_id() -> None:
     """Three rows with ids 1, 2, 3 yield those ids in order."""
 
-    client = _fake_client(**{"dcim/sites/": [
-        {"id": 1, "name": "A"},
-        {"id": 2, "name": "B"},
-        {"id": 3, "name": "C"},
-    ]})
+    client = _fake_client(
+        **{
+            "dcim/sites/": [
+                {"id": 1, "name": "A"},
+                {"id": 2, "name": "B"},
+                {"id": 3, "name": "C"},
+            ]
+        }
+    )
     ids = list(_enumerate_ids(client, "dcim/sites/", keep_names=set()))
     assert ids == [1, 2, 3]
 
@@ -89,10 +93,14 @@ def test_enumerate_yields_every_id() -> None:
 def test_enumerate_drops_rows_matching_keep_by_name() -> None:
     """A row whose `name` is in keep_names is excluded."""
 
-    client = _fake_client(**{"dcim/sites/": [
-        {"id": 1, "name": "keep-me"},
-        {"id": 2, "name": "drop-me"},
-    ]})
+    client = _fake_client(
+        **{
+            "dcim/sites/": [
+                {"id": 1, "name": "keep-me"},
+                {"id": 2, "name": "drop-me"},
+            ]
+        }
+    )
     ids = list(_enumerate_ids(client, "dcim/sites/", keep_names={"keep-me"}))
     assert ids == [2]
 
@@ -101,10 +109,14 @@ def test_enumerate_drops_rows_matching_keep_by_slug() -> None:
     """Some content types only have `slug` in brief responses,
     so the matcher checks slug too."""
 
-    client = _fake_client(**{"dcim/sites/": [
-        {"id": 5, "slug": "hall-d"},
-        {"id": 6, "slug": "hall-a"},
-    ]})
+    client = _fake_client(
+        **{
+            "dcim/sites/": [
+                {"id": 5, "slug": "hall-d"},
+                {"id": 6, "slug": "hall-a"},
+            ]
+        }
+    )
     ids = list(_enumerate_ids(client, "dcim/sites/", keep_names={"hall-d"}))
     assert ids == [6]
 
@@ -114,11 +126,15 @@ def test_enumerate_matches_slug_when_name_field_is_absent() -> None:
     NetBox occasionally omits `name` on brief responses for
     slug-keyed content types."""
 
-    client = _fake_client(**{"dcim/sites/": [
-        # Deliberately no `name` key, only `slug`.
-        {"id": 11, "slug": "keep-me-slug"},
-        {"id": 12, "slug": "drop-me-slug"},
-    ]})
+    client = _fake_client(
+        **{
+            "dcim/sites/": [
+                # Deliberately no `name` key, only `slug`.
+                {"id": 11, "slug": "keep-me-slug"},
+                {"id": 12, "slug": "drop-me-slug"},
+            ]
+        }
+    )
     ids = list(_enumerate_ids(client, "dcim/sites/", keep_names={"keep-me-slug"}))
     assert ids == [12]
 
@@ -126,11 +142,15 @@ def test_enumerate_matches_slug_when_name_field_is_absent() -> None:
 def test_enumerate_skips_rows_without_id() -> None:
     """Defensive: a row missing `id` is silently skipped."""
 
-    client = _fake_client(**{"dcim/sites/": [
-        {"id": 1, "name": "ok"},
-        {"name": "missing-id"},  # no id key
-        {"id": "not-an-int", "name": "wrong type"},
-    ]})
+    client = _fake_client(
+        **{
+            "dcim/sites/": [
+                {"id": 1, "name": "ok"},
+                {"name": "missing-id"},  # no id key
+                {"id": "not-an-int", "name": "wrong type"},
+            ]
+        }
+    )
     ids = list(_enumerate_ids(client, "dcim/sites/", keep_names=set()))
     assert ids == [1]
 
@@ -168,9 +188,11 @@ def test_dry_run_emits_would_delete_count_per_content_type(
     """The dry-run path enumerates each in-scope content type
     and writes one stderr line per type with the count."""
 
-    client = _fake_client(**{
-        "dcim/sites/": [{"id": 1, "name": "Hall-A"}, {"id": 2, "name": "Hall-B"}],
-    })
+    client = _fake_client(
+        **{
+            "dcim/sites/": [{"id": 1, "name": "Hall-A"}, {"id": 2, "name": "Hall-B"}],
+        }
+    )
     with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=client):
         rc = run_reset_cli(_args(content_types="dcim.site"))
 
@@ -186,13 +208,19 @@ def test_apply_mode_emits_deleting_count_per_content_type(
     opening line `<ct>: N records to delete` (FEAT-50). Dry-run
     keeps the legacy `would delete` phrasing."""
 
-    client = _fake_client(**{
-        "dcim/sites/": [{"id": 1, "name": "Hall-A"}],
-    })
+    client = _fake_client(
+        **{
+            "dcim/sites/": [{"id": 1, "name": "Hall-A"}],
+        }
+    )
     with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=client):
-        rc = run_reset_cli(_args(
-            content_types="dcim.site", apply=True, confirmed=True,
-        ))
+        rc = run_reset_cli(
+            _args(
+                content_types="dcim.site",
+                apply=True,
+                confirmed=True,
+            )
+        )
 
     assert rc == EXIT_OK
     err = capsys.readouterr().err
@@ -205,12 +233,14 @@ def test_keep_excludes_named_row_in_run_reset_cli(
     """End-to-end: --keep prunes the count surfaced in the
     stderr summary."""
 
-    client = _fake_client(**{
-        "dcim/sites/": [
-            {"id": 1, "name": "keep-me"},
-            {"id": 2, "name": "drop-me"},
-        ],
-    })
+    client = _fake_client(
+        **{
+            "dcim/sites/": [
+                {"id": 1, "name": "keep-me"},
+                {"id": 2, "name": "drop-me"},
+            ],
+        }
+    )
     with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=client):
         run_reset_cli(_args(content_types="dcim.site", keep=["keep-me"]))
 

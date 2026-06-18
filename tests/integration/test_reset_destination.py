@@ -71,10 +71,7 @@ def test_reset_clears_seeded_destination(tmp_path: Path) -> None:
     assert post == 0, f"sites remain on the destination after reset (count={post})"
 
     # Audit JSONL exists and lists at least one deleted row.
-    rows = [
-        json.loads(line)
-        for line in audit_path.read_text(encoding="utf-8").splitlines()
-    ]
+    rows = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
     assert rows, "audit file is empty"
     site_rows = [r for r in rows if r["content_type"] == "dcim.site"]
     assert site_rows

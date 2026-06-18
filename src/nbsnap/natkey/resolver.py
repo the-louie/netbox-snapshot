@@ -148,9 +148,7 @@ def resolve_composite(
     for field in spec.fields:
         value = record.get(field.name)
         if field.parent_content_type is not None:
-            parts.append(
-                _resolve_parent(field, value, registry, parent_lookup)
-            )
+            parts.append(_resolve_parent(field, value, registry, parent_lookup))
         elif _looks_like_polymorphic_id(field.name, record):
             parts.append(_resolve_polymorphic_id_in_nk(field.name, record, registry, parent_lookup))
         else:
@@ -246,8 +244,7 @@ def _resolve_parent(
             # scope mismatch, the exporter excluded the parent
             # content type so the FK has nothing to substitute.
             raise ResolverFieldError(
-                f"cannot resolve {field.parent_content_type} id {raw} "
-                "without a parent_lookup map",
+                f"cannot resolve {field.parent_content_type} id {raw} without a parent_lookup map",
                 content_type=field.parent_content_type,
                 natural_key=None,
                 field_name=field.name,

@@ -26,10 +26,16 @@ def test_export_runs_produce_identical_jsonl(tmp_path: Path) -> None:
     for out in (out_a, out_b):
         subprocess.run(
             [
-                sys.executable, "-m", "nbsnap", "export",
-                "--url", SOURCE_URL,
-                "--token", SOURCE_TOKEN,
-                "--out", str(out),
+                sys.executable,
+                "-m",
+                "nbsnap",
+                "export",
+                "--url",
+                SOURCE_URL,
+                "--token",
+                SOURCE_TOKEN,
+                "--out",
+                str(out),
             ],
             check=True,
         )
@@ -46,8 +52,10 @@ def test_export_runs_produce_identical_jsonl(tmp_path: Path) -> None:
         if text_a != text_b:
             diff = "\n".join(
                 difflib.unified_diff(
-                    text_a, text_b,
-                    fromfile=f"a/{rel}", tofile=f"b/{rel}",
+                    text_a,
+                    text_b,
+                    fromfile=f"a/{rel}",
+                    tofile=f"b/{rel}",
                     lineterm="",
                 )
             )

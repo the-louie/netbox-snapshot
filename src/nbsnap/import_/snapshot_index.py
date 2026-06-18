@@ -116,9 +116,7 @@ class SnapshotIndex:
                     index._by_key[(content_type, nk)] = body
         return index
 
-    def lookup(
-        self, content_type: str, natural_key: NaturalKey
-    ) -> dict[str, Any] | None:
+    def lookup(self, content_type: str, natural_key: NaturalKey) -> dict[str, Any] | None:
         """Return the snapshot body for `(content_type, NK)` or None.
 
         The NK can be a tuple OR a list (callers passing the
@@ -191,11 +189,16 @@ def iter_jsonl(
                 yield json.loads(stripped)
             except json.JSONDecodeError as exc:
                 logger.warning(
-                    "parse error in %s:%d: %s", path, lineno, exc.msg,
+                    "parse error in %s:%d: %s",
+                    path,
+                    lineno,
+                    exc.msg,
                 )
                 if errors is not None:
-                    errors.append({
-                        "path": str(path),
-                        "lineno": lineno,
-                        "message": exc.msg,
-                    })
+                    errors.append(
+                        {
+                            "path": str(path),
+                            "lineno": lineno,
+                            "message": exc.msg,
+                        }
+                    )

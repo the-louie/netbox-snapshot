@@ -38,56 +38,85 @@ def _platform_schema() -> OpenAPI:
     dcim.manufacturer. Lets us assert the resolver replaces
     ['debian'] with the integer id at POST time."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Platform": {
-                    "type": "object",
-                    "properties": {
-                        "id": {},
-                        "slug": {"type": "string"},
-                        "manufacturer": {"$ref": "#/components/schemas/BriefManufacturer"},
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Platform": {
+                        "type": "object",
+                        "properties": {
+                            "id": {},
+                            "slug": {"type": "string"},
+                            "manufacturer": {"$ref": "#/components/schemas/BriefManufacturer"},
+                        },
+                    },
+                    "PaginatedPlatformList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Platform"},
+                            }
+                        }
+                    },
+                    "BriefManufacturer": {
+                        "type": "object",
+                        "properties": {"id": {}, "slug": {}},
+                    },
+                }
+            },
+            "paths": {
+                "/api/dcim/platforms/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/PaginatedPlatformList"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "properties": {
+                                            "slug": {},
+                                            "manufacturer": {},
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
                 },
-                "PaginatedPlatformList": {
-                    "properties": {
-                        "results": {
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/Platform"},
+                "/api/dcim/manufacturers/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
+                                    }
+                                }
+                            }
                         }
-                    }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"slug": {}}}}
+                            }
+                        }
+                    },
                 },
-                "BriefManufacturer": {
-                    "type": "object",
-                    "properties": {"id": {}, "slug": {}},
-                },
-            }
-        },
-        "paths": {
-            "/api/dcim/platforms/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedPlatformList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {
-                        "slug": {}, "manufacturer": {},
-                    }}}
-                }}},
-            },
-            "/api/dcim/manufacturers/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "slug": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}}}}
-                }}},
             },
         }
-    })
+    )
 
 
 def test_lookahead_posts_resolved_fk_when_openapi_provided() -> None:
@@ -105,7 +134,8 @@ def test_lookahead_posts_resolved_fk_when_openapi_provided() -> None:
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("dcim.manufacturer", ("debian",))] = {
-        "name": "Debian", "slug": "debian",
+        "name": "Debian",
+        "slug": "debian",
     }
     snapshot_index._by_key[("dcim.platform", ("debian13-trixie",))] = {
         "name": "Debian13 Trixie",
@@ -153,7 +183,8 @@ def test_lookahead_without_openapi_falls_back_to_raw_body() -> None:
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("dcim.site", ("hall-d",))] = {
-        "name": "Hall-D", "slug": "hall-d",
+        "name": "Hall-D",
+        "slug": "hall-d",
     }
 
     rid = resolve_or_create(
@@ -188,7 +219,8 @@ def test_lookahead_recursion_does_not_loop_via_resolve_body() -> None:
     # resolver would call back into resolve_or_create with the
     # same key; processing_stack must short-circuit it.
     snapshot_index._by_key[("dcim.platform", ("self-ref",))] = {
-        "name": "Self", "slug": "self-ref",
+        "name": "Self",
+        "slug": "self-ref",
         "parent": ["self-ref"],
     }
 

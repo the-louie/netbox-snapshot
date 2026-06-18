@@ -70,15 +70,11 @@ def diff_trees(left: Path, right: Path, ignore: frozenset[str]) -> TreeDiff:
     result.missing_on_left = sorted(right_files - left_files)
 
     for rel in sorted(left_files & right_files):
-        result.file_diffs.append(
-            _diff_one_file(left / rel, right / rel, rel, ignore)
-        )
+        result.file_diffs.append(_diff_one_file(left / rel, right / rel, rel, ignore))
     return result
 
 
-def _diff_one_file(
-    left: Path, right: Path, rel: str, ignore: frozenset[str]
-) -> FileDiff:
+def _diff_one_file(left: Path, right: Path, rel: str, ignore: frozenset[str]) -> FileDiff:
     """Compare the two jsonl files row by row by natural key."""
 
     left_rows = {_nk_key(row): row for row in _iter_jsonl(left)}

@@ -82,12 +82,14 @@ def diff_schemas(
             dest_summary = _spec_summary_or_missing(destination, ct, field_name, dest_fields)
             if snap_summary == dest_summary:
                 continue
-            drift.append(FieldDrift(
-                content_type=ct,
-                field=field_name,
-                snapshot_shape=snap_summary,
-                destination_shape=dest_summary,
-            ))
+            drift.append(
+                FieldDrift(
+                    content_type=ct,
+                    field=field_name,
+                    snapshot_shape=snap_summary,
+                    destination_shape=dest_summary,
+                )
+            )
     return drift
 
 
@@ -106,7 +108,10 @@ def _writable_fields(schema: OpenAPI, content_type: str) -> set[str]:
 
 
 def _spec_summary_or_missing(
-    schema: OpenAPI, ct: str, field_name: str, present: set[str],
+    schema: OpenAPI,
+    ct: str,
+    field_name: str,
+    present: set[str],
 ) -> str:
     if field_name not in present:
         return "<missing>"

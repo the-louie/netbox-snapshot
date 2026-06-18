@@ -39,55 +39,90 @@ def _schema_with_iprange_role() -> OpenAPI:
     points at ipam.role. Mirrors the NetBox 4.6.2 shape that the
     rescue-10 snapshot was exported against."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "IPRange": {
-                    "type": "object",
-                    "properties": {
-                        "id": {},
-                        "start_address": {"type": "string"},
-                        "end_address": {"type": "string"},
-                        "role": {"allOf": [{"$ref": "#/components/schemas/BriefRole"}], "nullable": True},
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "IPRange": {
+                        "type": "object",
+                        "properties": {
+                            "id": {},
+                            "start_address": {"type": "string"},
+                            "end_address": {"type": "string"},
+                            "role": {
+                                "allOf": [{"$ref": "#/components/schemas/BriefRole"}],
+                                "nullable": True,
+                            },
+                        },
+                    },
+                    "PaginatedIPRangeList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/IPRange"},
+                            }
+                        }
+                    },
+                    "BriefRole": {
+                        "type": "object",
+                        "properties": {"id": {}, "slug": {}},
+                    },
+                }
+            },
+            "paths": {
+                "/api/ipam/ip-ranges/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/PaginatedIPRangeList"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "properties": {
+                                            "start_address": {},
+                                            "end_address": {},
+                                            "role": {},
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
                 },
-                "PaginatedIPRangeList": {
-                    "properties": {"results": {
-                        "type": "array",
-                        "items": {"$ref": "#/components/schemas/IPRange"},
-                    }}
+                "/api/ipam/roles/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"slug": {}}}}
+                            }
+                        }
+                    },
                 },
-                "BriefRole": {
-                    "type": "object",
-                    "properties": {"id": {}, "slug": {}},
-                },
-            }
-        },
-        "paths": {
-            "/api/ipam/ip-ranges/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedIPRangeList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {
-                        "start_address": {}, "end_address": {}, "role": {},
-                    }}}
-                }}},
-            },
-            "/api/ipam/roles/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "slug": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}}}}
-                }}},
             },
         }
-    })
+    )
 
 
 def test_role_resolves_when_dest_index_is_populated() -> None:
@@ -96,8 +131,12 @@ def test_role_resolves_when_dest_index_is_populated() -> None:
 
     index = NKIndex()
     # Pretend the ipam.role phase already populated the index.
-    for slug, rid in [("kea-bootstrap", 5), ("kea-crew", 6),
-                      ("kea-dist-mgmt", 7), ("kea-participant", 8)]:
+    for slug, rid in [
+        ("kea-bootstrap", 5),
+        ("kea-crew", 6),
+        ("kea-dist-mgmt", 7),
+        ("kea-participant", 8),
+    ]:
         index.insert("ipam.role", (slug,), rid)
     index._built_cts.add("ipam.role")
 
@@ -109,8 +148,12 @@ def test_role_resolves_when_dest_index_is_populated() -> None:
         "role": ["kea-participant"],
     }
     out = _resolve_body(
-        "ipam.iprange", body, _schema_with_iprange_role(),
-        index, http, default_registry(),
+        "ipam.iprange",
+        body,
+        _schema_with_iprange_role(),
+        index,
+        http,
+        default_registry(),
     )
     assert out["role"] == 8
 
@@ -127,8 +170,12 @@ def test_role_dropped_when_dest_and_snapshot_both_miss() -> None:
         "role": ["ghost-role"],
     }
     out = _resolve_body(
-        "ipam.iprange", body, _schema_with_iprange_role(),
-        NKIndex(), http, default_registry(),
+        "ipam.iprange",
+        body,
+        _schema_with_iprange_role(),
+        NKIndex(),
+        http,
+        default_registry(),
     )
     # Field dropped.
     assert "role" not in out
@@ -148,7 +195,8 @@ def test_role_created_on_demand_when_snapshot_has_it() -> None:
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("ipam.role", ("kea-participant",))] = {
-        "name": "kea-participant", "slug": "kea-participant",
+        "name": "kea-participant",
+        "slug": "kea-participant",
     }
 
     body = {
@@ -157,8 +205,12 @@ def test_role_created_on_demand_when_snapshot_has_it() -> None:
         "role": ["kea-participant"],
     }
     out = _resolve_body(
-        "ipam.iprange", body, _schema_with_iprange_role(),
-        NKIndex(), http, default_registry(),
+        "ipam.iprange",
+        body,
+        _schema_with_iprange_role(),
+        NKIndex(),
+        http,
+        default_registry(),
         snapshot_index=snapshot_index,
         processing_stack=set(),
         deferred_queue=[],

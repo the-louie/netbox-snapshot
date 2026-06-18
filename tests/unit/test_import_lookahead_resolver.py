@@ -75,7 +75,8 @@ def test_snapshot_tier_creates_target_on_demand(empty_state) -> None:
 
     # Pre-seed the snapshot.
     empty_state["snapshot_index"]._by_key[("dcim.site", ("hall-d",))] = {
-        "name": "Hall-D", "slug": "hall-d",
+        "name": "Hall-D",
+        "slug": "hall-d",
     }
     # The upsert path calls http.post; stub it to return a
     # NetBox-shaped response with the new id.
@@ -118,9 +119,7 @@ def test_cycle_on_stack_returns_none_without_recursion(empty_state) -> None:
     # Pretend we are already creating dcim.device d39a higher up
     # the call chain. A recursive call into the same key returns
     # None without touching upsert.
-    empty_state["processing_stack"].add(
-        ("dcim.device", (("hall-d",), "d39a"))
-    )
+    empty_state["processing_stack"].add(("dcim.device", (("hall-d",), "d39a")))
     # Even though the snapshot has the record, the cycle bites
     # first.
     empty_state["snapshot_index"]._by_key[("dcim.device", (("hall-d",), "d39a"))] = {

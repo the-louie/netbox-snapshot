@@ -20,9 +20,7 @@ def _parser(builder) -> argparse.ArgumentParser:
 
 
 def test_plan_cli_uses_content_types_canonical() -> None:
-    ns = _parser(add_plan_args).parse_args(
-        ["--no-verify-tls", "--content-types", "dcim.site"]
-    )
+    ns = _parser(add_plan_args).parse_args(["--no-verify-tls", "--content-types", "dcim.site"])
     assert ns.no_verify_tls is True
     assert ns.content_types == "dcim.site"
 

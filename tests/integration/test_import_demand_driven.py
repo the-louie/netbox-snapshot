@@ -40,49 +40,78 @@ def _seed_misordered_snapshot(snap: Path) -> None:
     )
     schema_resp.raise_for_status()
     (snap / "schema").mkdir(parents=True, exist_ok=True)
-    (snap / "schema" / "openapi.json").write_text(
-        json.dumps(schema_resp.json()), encoding="utf-8"
+    (snap / "schema" / "openapi.json").write_text(json.dumps(schema_resp.json()), encoding="utf-8")
+
+    (snap / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "source_url_hash": "abcd1234ef56",
+                "netbox_version": "4.6.2",
+                "nbsnap_version": "0.0.1",
+                "created_at": "2026-06-15T00:00:00+00:00",
+                "counts": {
+                    "dcim.site": 1,
+                    "dcim.device": 1,
+                    "dcim.devicerole": 1,
+                    "dcim.manufacturer": 1,
+                    "dcim.devicetype": 1,
+                },
+                "perf": {},
+                "deferred_edges": [],
+            }
+        ),
+        encoding="utf-8",
     )
 
-    (snap / "manifest.json").write_text(json.dumps({
-        "version": 1,
-        "source_url_hash": "abcd1234ef56",
-        "netbox_version": "4.6.2",
-        "nbsnap_version": "0.0.1",
-        "created_at": "2026-06-15T00:00:00+00:00",
-        "counts": {
-            "dcim.site": 1, "dcim.device": 1, "dcim.devicerole": 1,
-            "dcim.manufacturer": 1, "dcim.devicetype": 1,
-        },
-        "perf": {},
-        "deferred_edges": [],
-    }), encoding="utf-8")
-
-    _write_jsonl(snap / "dcim/sites.jsonl", [
-        {"natural_key": ["test-hall"],
-         "body": {"name": "Test Hall", "slug": "test-hall", "status": "active"}},
-    ])
-    _write_jsonl(snap / "dcim/device-roles.jsonl", [
-        {"natural_key": ["test-role"],
-         "body": {"name": "Test Role", "slug": "test-role", "color": "808080"}},
-    ])
-    _write_jsonl(snap / "dcim/manufacturers.jsonl", [
-        {"natural_key": ["test-mfr"],
-         "body": {"name": "Test Mfr", "slug": "test-mfr"}},
-    ])
-    _write_jsonl(snap / "dcim/device-types.jsonl", [
-        {"natural_key": [["test-mfr"], "test-model"],
-         "body": {"manufacturer": ["test-mfr"], "model": "Test Model",
-                  "slug": "test-model"}},
-    ])
-    _write_jsonl(snap / "dcim/devices.jsonl", [
-        {"natural_key": [["test-hall"], "test-dev-1"],
-         "body": {"name": "test-dev-1",
-                  "site": ["test-hall"],
-                  "role": ["test-role"],
-                  "device_type": [["test-mfr"], "test-model"],
-                  "status": "active"}},
-    ])
+    _write_jsonl(
+        snap / "dcim/sites.jsonl",
+        [
+            {
+                "natural_key": ["test-hall"],
+                "body": {"name": "Test Hall", "slug": "test-hall", "status": "active"},
+            },
+        ],
+    )
+    _write_jsonl(
+        snap / "dcim/device-roles.jsonl",
+        [
+            {
+                "natural_key": ["test-role"],
+                "body": {"name": "Test Role", "slug": "test-role", "color": "808080"},
+            },
+        ],
+    )
+    _write_jsonl(
+        snap / "dcim/manufacturers.jsonl",
+        [
+            {"natural_key": ["test-mfr"], "body": {"name": "Test Mfr", "slug": "test-mfr"}},
+        ],
+    )
+    _write_jsonl(
+        snap / "dcim/device-types.jsonl",
+        [
+            {
+                "natural_key": [["test-mfr"], "test-model"],
+                "body": {"manufacturer": ["test-mfr"], "model": "Test Model", "slug": "test-model"},
+            },
+        ],
+    )
+    _write_jsonl(
+        snap / "dcim/devices.jsonl",
+        [
+            {
+                "natural_key": [["test-hall"], "test-dev-1"],
+                "body": {
+                    "name": "test-dev-1",
+                    "site": ["test-hall"],
+                    "role": ["test-role"],
+                    "device_type": [["test-mfr"], "test-model"],
+                    "status": "active",
+                },
+            },
+        ],
+    )
 
 
 @pytest.mark.usefixtures("require_stack")
@@ -93,22 +122,21 @@ def test_demand_driven_imports_misordered_snapshot(tmp_path: Path) -> None:
 
     http = NetboxHTTP(DEST_URL, DEST_TOKEN, verify_tls=False)
     summary = run_import(
-        http, snap, max_skew=VersionSkew.MINOR, on_error="continue",
+        http,
+        snap,
+        max_skew=VersionSkew.MINOR,
+        on_error="continue",
     )
 
     assert summary.counts.get(UpsertOutcome.CREATED, 0) >= 5
-    assert summary.counts.get(UpsertOutcome.FAILED, 0) == 0, [
-        f.message for f in summary.failures
-    ]
+    assert summary.counts.get(UpsertOutcome.FAILED, 0) == 0, [f.message for f in summary.failures]
 
     if getattr(summary, "auditor", None) is not None:
         missing = [
-            ev for ev in summary.auditor.events
-            if ev.category is DropCategory.MISSING_FROM_SOURCE
+            ev for ev in summary.auditor.events if ev.category is DropCategory.MISSING_FROM_SOURCE
         ]
         assert missing == [], [
-            f"{ev.child_content_type}.{ev.field_name} -> "
-            f"{ev.target_content_type} NK={ev.target_nk}"
+            f"{ev.child_content_type}.{ev.field_name} -> {ev.target_content_type} NK={ev.target_nk}"
             for ev in missing
         ]
 

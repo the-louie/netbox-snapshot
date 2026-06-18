@@ -38,9 +38,7 @@ def test_tls_help_text_is_shared(builder, substring: str) -> None:
     parser = argparse.ArgumentParser()
     builder(parser)
     help_text = parser.format_help()
-    assert substring in help_text, (
-        f"{builder.__name__} dropped the canonical TLS help substring"
-    )
+    assert substring in help_text, f"{builder.__name__} dropped the canonical TLS help substring"
 
 
 _SUBCOMMAND_SCOPE = [

@@ -33,9 +33,7 @@ def _minimal_openapi() -> OpenAPI:
                         "requestBody": {
                             "content": {
                                 "application/json": {
-                                    "schema": {
-                                        "properties": {"name": {}, "slug": {}}
-                                    }
+                                    "schema": {"properties": {"name": {}, "slug": {}}}
                                 }
                             }
                         }

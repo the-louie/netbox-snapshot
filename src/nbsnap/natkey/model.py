@@ -79,9 +79,7 @@ def _as_string_key(content_type: Any) -> str:
 
     if isinstance(content_type, ContentType):
         return content_type.as_str()
-    msg = (
-        f"NKRegistry key must be str or ContentType, got {type(content_type).__name__}"
-    )
+    msg = f"NKRegistry key must be str or ContentType, got {type(content_type).__name__}"
     raise TypeError(msg)
 
 

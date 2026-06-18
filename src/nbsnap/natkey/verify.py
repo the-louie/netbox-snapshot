@@ -54,9 +54,7 @@ from nbsnap.schema.content_type import ContentType, InvalidContentTypeError
 from nbsnap.schema.content_type import _ENDPOINTS as CONTENT_TYPE_ENDPOINTS  # noqa: F401
 
 
-def audit(
-    http: NetboxHTTP, registry: NKRegistry | None = None
-) -> VerifyReport:
+def audit(http: NetboxHTTP, registry: NKRegistry | None = None) -> VerifyReport:
     """Walk every supported endpoint and report duplicate NKs.
 
     Args:
@@ -97,9 +95,7 @@ def audit(
         report.by_ct[spec.content_type] = count
         for nk, ids in seen.items():
             if len(ids) > 1:
-                report.duplicates.append(
-                    DuplicateFinding(spec.content_type, nk, tuple(ids))
-                )
+                report.duplicates.append(DuplicateFinding(spec.content_type, nk, tuple(ids)))
 
     return report
 
@@ -137,7 +133,6 @@ def run_verify_natkeys(args: argparse.Namespace) -> int:
     sys.stderr.write(f"\nfound {len(report.duplicates)} duplicate NK(s):\n")
     for finding in report.duplicates:
         sys.stderr.write(
-            f"  {finding.content_type} NK={finding.natural_key!r} "
-            f"on ids {finding.record_ids}\n"
+            f"  {finding.content_type} NK={finding.natural_key!r} on ids {finding.record_ids}\n"
         )
     return 2

@@ -34,11 +34,11 @@ def test_nb2kea_renderers_run_against_source(tmp_path: Path) -> None:
             pytest.skip(f"renderer {script} not present")
         result = subprocess.run(
             ["python", str(path)],
-            env=env, cwd=str(out_dir),
-            capture_output=True, text=True,
+            env=env,
+            cwd=str(out_dir),
+            capture_output=True,
+            text=True,
         )
-        assert result.returncode == 0, (
-            f"{script} exited {result.returncode}: {result.stderr}"
-        )
+        assert result.returncode == 0, f"{script} exited {result.returncode}: {result.stderr}"
     rendered = list(out_dir.rglob("*"))
     assert rendered, "no renderer output produced"

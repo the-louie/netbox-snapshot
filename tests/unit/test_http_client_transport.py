@@ -195,8 +195,7 @@ def test_enforce_readonly_only_called_from_send() -> None:
     assert findings, "expected at least one call to self._enforce_readonly"
     offending = [(caller, line) for caller, line in findings if caller != "_send"]
     assert not offending, (
-        "_enforce_readonly must only be called from _send, found redundant "
-        f"call sites: {offending}"
+        f"_enforce_readonly must only be called from _send, found redundant call sites: {offending}"
     )
 
 

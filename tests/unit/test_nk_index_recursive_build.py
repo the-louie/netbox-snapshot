@@ -42,15 +42,22 @@ def test_recursive_build_visits_parent_endpoints_first() -> None:
 
     reg = NKRegistry()
     # Parent CT: dcim.site, slug-based.
-    reg.register(NKSpec(
-        "dcim.site", Strategy.SLUG, (NKField("slug"),),
-    ))
+    reg.register(
+        NKSpec(
+            "dcim.site",
+            Strategy.SLUG,
+            (NKField("slug"),),
+        )
+    )
     # Child CT: dcim.location, composite (site, slug); site is
     # itself an NK against dcim.site.
-    reg.register(NKSpec(
-        "dcim.location", Strategy.COMPOSITE,
-        (NKField("site", "dcim.site"), NKField("slug")),
-    ))
+    reg.register(
+        NKSpec(
+            "dcim.location",
+            Strategy.COMPOSITE,
+            (NKField("site", "dcim.site"), NKField("slug")),
+        )
+    )
 
     calls: list[str] = []
     http = _http_recording(calls)
@@ -73,10 +80,13 @@ def test_self_referencing_nkspec_does_not_loop() -> None:
     guard, the endpoint is visited exactly once."""
 
     reg = NKRegistry()
-    reg.register(NKSpec(
-        "dcim.devicerole", Strategy.COMPOSITE,
-        (NKField("parent", "dcim.devicerole"), NKField("slug")),
-    ))
+    reg.register(
+        NKSpec(
+            "dcim.devicerole",
+            Strategy.COMPOSITE,
+            (NKField("parent", "dcim.devicerole"), NKField("slug")),
+        )
+    )
 
     calls: list[str] = []
     http = _http_recording(calls)
@@ -104,13 +114,20 @@ def test_partially_built_chain_still_builds_remaining_levels() -> None:
     not, only the child endpoint is hit."""
 
     reg = NKRegistry()
-    reg.register(NKSpec(
-        "dcim.site", Strategy.SLUG, (NKField("slug"),),
-    ))
-    reg.register(NKSpec(
-        "dcim.location", Strategy.COMPOSITE,
-        (NKField("site", "dcim.site"), NKField("slug")),
-    ))
+    reg.register(
+        NKSpec(
+            "dcim.site",
+            Strategy.SLUG,
+            (NKField("slug"),),
+        )
+    )
+    reg.register(
+        NKSpec(
+            "dcim.location",
+            Strategy.COMPOSITE,
+            (NKField("site", "dcim.site"), NKField("slug")),
+        )
+    )
 
     calls: list[str] = []
     http = _http_recording(calls)
@@ -130,15 +147,21 @@ def test_records_with_resolvable_nks_land_in_the_index() -> None:
     NK resolves cleanly gets indexed by `(ct, NK)`."""
 
     http = MagicMock()
-    http.get_all.return_value = iter([
-        {"id": 7, "slug": "hall-a", "name": "Hall A"},
-        {"id": 8, "slug": "hall-b", "name": "Hall B"},
-    ])
+    http.get_all.return_value = iter(
+        [
+            {"id": 7, "slug": "hall-a", "name": "Hall A"},
+            {"id": 8, "slug": "hall-b", "name": "Hall B"},
+        ]
+    )
 
     reg = NKRegistry()
-    reg.register(NKSpec(
-        "dcim.site", Strategy.SLUG, (NKField("slug"),),
-    ))
+    reg.register(
+        NKSpec(
+            "dcim.site",
+            Strategy.SLUG,
+            (NKField("slug"),),
+        )
+    )
 
     idx = NKIndex()
     idx.ensure_built(http, reg, "dcim.site")

@@ -40,9 +40,9 @@ def _write_min_snapshot(snapshot_dir: Path) -> None:
     # validator happy.
     schema_dir = snapshot_dir / "schema"
     schema_dir.mkdir(exist_ok=True)
-    (schema_dir / "openapi.json").write_text(json.dumps({
-        "openapi": "3.0.3", "paths": {}, "components": {"schemas": {}}
-    }))
+    (schema_dir / "openapi.json").write_text(
+        json.dumps({"openapi": "3.0.3", "paths": {}, "components": {"schemas": {}}})
+    )
 
 
 def _stub_preflight(monkeypatch, *, blocking: bool = False) -> None:
@@ -50,14 +50,10 @@ def _stub_preflight(monkeypatch, *, blocking: bool = False) -> None:
 
     fake_report = MagicMock()
     fake_report.is_blocking.return_value = blocking
-    monkeypatch.setattr(
-        "nbsnap.import_.driver.run_preflight", lambda *_a, **_k: fake_report
-    )
+    monkeypatch.setattr("nbsnap.import_.driver.run_preflight", lambda *_a, **_k: fake_report)
 
 
-def test_driver_calls_phase2_when_queue_nonempty(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_driver_calls_phase2_when_queue_nonempty(tmp_path: Path, monkeypatch) -> None:
     """If the look-ahead path filled the deferred queue, the
     driver invokes `run_phase2` with that queue."""
 
@@ -101,9 +97,9 @@ def test_driver_calls_phase2_when_queue_nonempty(
     # so _resolve_body gets called. Write a single jsonl row.
     dev_dir = tmp_path / "dcim"
     dev_dir.mkdir(exist_ok=True)
-    (dev_dir / "devices.jsonl").write_text(json.dumps({
-        "natural_key": [["h"], "d"], "body": {"name": "d"}
-    }) + "\n")
+    (dev_dir / "devices.jsonl").write_text(
+        json.dumps({"natural_key": [["h"], "d"], "body": {"name": "d"}}) + "\n"
+    )
     # And surface dcim.device in the manifest counts so the
     # planner walks it.
     manifest = json.loads((tmp_path / "manifest.json").read_text())
@@ -114,12 +110,16 @@ def test_driver_calls_phase2_when_queue_nonempty(
     fake_upsert.return_value = MagicMock(outcome=MagicMock(name="CREATED"))
     fake_upsert.return_value.outcome.__eq__ = lambda _self, _other: False
 
-    with patch("nbsnap.import_.driver._resolve_body", fake_resolve_body), \
-         patch("nbsnap.import_.driver.upsert", fake_upsert), \
-         patch("nbsnap.import_.phase2.run_phase2", side_effect=fake_phase2):
+    with (
+        patch("nbsnap.import_.driver._resolve_body", fake_resolve_body),
+        patch("nbsnap.import_.driver.upsert", fake_upsert),
+        patch("nbsnap.import_.phase2.run_phase2", side_effect=fake_phase2),
+    ):
         summary = run_import(
-            MagicMock(), tmp_path,
-            max_skew=VersionSkew.MAJOR, on_error="continue",
+            MagicMock(),
+            tmp_path,
+            max_skew=VersionSkew.MAJOR,
+            on_error="continue",
         )
 
     assert isinstance(summary, ImportSummary)
@@ -128,9 +128,7 @@ def test_driver_calls_phase2_when_queue_nonempty(
     assert captured["queue"] == [entry]
 
 
-def test_driver_skips_phase2_when_queue_empty(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_driver_skips_phase2_when_queue_empty(tmp_path: Path, monkeypatch) -> None:
     """No deferred entries means no Phase-2 call. `summary.phase2`
     stays None."""
 
@@ -140,8 +138,10 @@ def test_driver_skips_phase2_when_queue_empty(
     called = MagicMock()
     with patch("nbsnap.import_.phase2.run_phase2", called):
         summary = run_import(
-            MagicMock(), tmp_path,
-            max_skew=VersionSkew.MAJOR, on_error="continue",
+            MagicMock(),
+            tmp_path,
+            max_skew=VersionSkew.MAJOR,
+            on_error="continue",
         )
 
     called.assert_not_called()
@@ -166,9 +166,9 @@ def test_driver_stop_on_phase2_failure(tmp_path: Path, monkeypatch) -> None:
     )
     dev_dir = tmp_path / "dcim"
     dev_dir.mkdir(exist_ok=True)
-    (dev_dir / "devices.jsonl").write_text(json.dumps({
-        "natural_key": [["h"], "d"], "body": {"name": "d"}
-    }) + "\n")
+    (dev_dir / "devices.jsonl").write_text(
+        json.dumps({"natural_key": [["h"], "d"], "body": {"name": "d"}}) + "\n"
+    )
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     manifest["counts"] = {"dcim.device": 1}
     (tmp_path / "manifest.json").write_text(json.dumps(manifest))
@@ -181,11 +181,14 @@ def test_driver_stop_on_phase2_failure(tmp_path: Path, monkeypatch) -> None:
     failed_summary.counts[Phase2Outcome.FAILED] = 1
     failed_summary.failures.append((entry, "HTTP 400 bad"))
 
-    with patch("nbsnap.import_.driver._resolve_body", fake_resolve_body), \
-         patch("nbsnap.import_.driver.upsert") as fake_upsert, \
-         patch("nbsnap.import_.phase2.run_phase2", return_value=failed_summary):
+    with (
+        patch("nbsnap.import_.driver._resolve_body", fake_resolve_body),
+        patch("nbsnap.import_.driver.upsert") as fake_upsert,
+        patch("nbsnap.import_.phase2.run_phase2", return_value=failed_summary),
+    ):
         # Make Phase-1 succeed so we reach Phase-2.
         from nbsnap.import_.upsert import UpsertOutcome, UpsertResult
+
         fake_upsert.return_value = UpsertResult(
             outcome=UpsertOutcome.CREATED,
             content_type="dcim.device",
@@ -193,8 +196,10 @@ def test_driver_stop_on_phase2_failure(tmp_path: Path, monkeypatch) -> None:
             destination_id=1,
         )
         summary = run_import(
-            MagicMock(), tmp_path,
-            max_skew=VersionSkew.MAJOR, on_error="stop",
+            MagicMock(),
+            tmp_path,
+            max_skew=VersionSkew.MAJOR,
+            on_error="stop",
         )
 
     assert summary.phase2 is failed_summary

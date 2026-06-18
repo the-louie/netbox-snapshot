@@ -206,18 +206,21 @@ def test_run_reset_cli_apply_path_calls_bulk_delete() -> None:
     """End-to-end: an apply-confirmed run with two sites issues
     one bulk DELETE against `dcim/sites/` and exits 0."""
 
-    http = _fake_client({"dcim/sites/": [
-        {"id": 7, "name": "Hall-D"},
-        {"id": 8, "name": "Hall-A"},
-    ]})
+    http = _fake_client(
+        {
+            "dcim/sites/": [
+                {"id": 7, "name": "Hall-D"},
+                {"id": 8, "name": "Hall-A"},
+            ]
+        }
+    )
     http._request.return_value = None  # 204
     with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http):
         rc = run_reset_cli(_args())
 
     assert rc == EXIT_OK
     # Exactly one DELETE call (bulk) and it carries both ids.
-    delete_calls = [c for c in http._request.mock_calls
-                    if c.args and c.args[0] == "DELETE"]
+    delete_calls = [c for c in http._request.mock_calls if c.args and c.args[0] == "DELETE"]
     assert len(delete_calls) == 1
     body = delete_calls[0].kwargs["json"]
     assert body == [{"id": 7}, {"id": 8}]

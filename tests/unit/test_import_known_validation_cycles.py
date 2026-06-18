@@ -96,7 +96,7 @@ def test_merge_is_additive_with_manifest_deferred_edges() -> None:
     # Both sources survived on dcim.device.
     device_fields = deferred_fields_by_ct["dcim.device"]
     assert "parent_device" in device_fields  # manifest-source
-    assert "primary_ip4" in device_fields    # curated-source
+    assert "primary_ip4" in device_fields  # curated-source
     assert "primary_ip6" in device_fields
     assert "oob_ip" in device_fields
 

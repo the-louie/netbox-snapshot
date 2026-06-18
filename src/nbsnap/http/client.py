@@ -469,25 +469,25 @@ class NetboxHTTP:
     def _follow_one_safe_hop(self, response: requests.Response) -> str:
         """Return the ``Location`` URL of a 3xx, only when the host is unchanged.
 
-        SEC-03b. SEC-03a refused every 3xx at the leaf send. The
-        absolute "never follow" is the safe default, but some
-        legitimate flows (NetBox can issue a 301 for a trailing-slash
-        canonicalisation, for example) need exactly one same-host
-        redirect to be allowed. This helper is the opt-in:
+                SEC-03b. SEC-03a refused every 3xx at the leaf send. The
+                absolute "never follow" is the safe default, but some
+                legitimate flows (NetBox can issue a 301 for a trailing-slash
+                canonicalisation, for example) need exactly one same-host
+                redirect to be allowed. This helper is the opt-in:
 
-        * Caller catches :class:`SnapshotTransportError` from a GET,
-          notices ``exc.redirect_url`` is non-None, and asks this
-          helper whether the hop is safe.
-        * The helper returns the URL only when ``(host, port)`` match
-          the client's ``base_url``. Anything else is a refusal.
+                * Caller catches :class:`SnapshotTransportError` from a GET,
+                  notices ``exc.redirect_url`` is non-None, and asks this
+                  helper whether the hop is safe.
+                * The helper returns the URL only when ``(host, port)`` match
+                  the client's ``base_url``. Anything else is a refusal.
 
-We do NOT replay the request inside the helper, the caller
-        re-issues if and only if the helper returned. Any future
-        edit that pushes the replay into this method MUST drop the
-        Authorization header before sending if the cross-host check
-        ever fails, otherwise a leaked token is the cost. As the
-        current implementation simply raises on a cross-host hit,
-        the header never reaches the wrong host.
+        We do NOT replay the request inside the helper, the caller
+                re-issues if and only if the helper returned. Any future
+                edit that pushes the replay into this method MUST drop the
+                Authorization header before sending if the cross-host check
+                ever fails, otherwise a leaked token is the cost. As the
+                current implementation simply raises on a cross-host hit,
+                the header never reaches the wrong host.
         """
 
         location = response.headers.get("Location", "")
@@ -627,8 +627,7 @@ We do NOT replay the request inside the helper, the caller
                 # legacy NetboxHTTPError; ARCH-07b deliberately does not
                 # widen the auth handling beyond 401 and 403.
                 raise SnapshotAuthError(
-                    f"{method.upper()} {url} -> HTTP {response.status_code}: "
-                    f"{response.text[:200]}",
+                    f"{method.upper()} {url} -> HTTP {response.status_code}: {response.text[:200]}",
                     status=response.status_code,
                     base_url=self._base_url,
                 )

@@ -46,9 +46,7 @@ def test_iter_jsonl_records_parse_error(tmp_path: Path) -> None:
     assert "json" in entry["message"].lower() or entry["message"]
 
 
-def test_iter_jsonl_logs_warning_without_errors_list(
-    tmp_path: Path, caplog
-) -> None:
+def test_iter_jsonl_logs_warning_without_errors_list(tmp_path: Path, caplog) -> None:
     """Even when no `errors` list is supplied, the operator gets
     a WARNING log line for the bad row."""
 
@@ -69,10 +67,7 @@ def test_snapshot_index_threads_errors(tmp_path: Path) -> None:
     sites_dir = tmp_path / "dcim"
     sites_dir.mkdir()
     sites_file = sites_dir / "sites.jsonl"
-    sites_file.write_text(
-        '{"natural_key": ["hall-a"], "body": {"name": "hall-a"}}\n'
-        '{broken\n'
-    )
+    sites_file.write_text('{"natural_key": ["hall-a"], "body": {"name": "hall-a"}}\n{broken\n')
 
     errors: list[dict] = []
     index = SnapshotIndex.from_snapshot(tmp_path, errors=errors)

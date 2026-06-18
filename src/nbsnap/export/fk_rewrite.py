@@ -81,8 +81,7 @@ def rewrite_simple_fk(
         return resolve(registry, parent_ct, value, parent_lookup=parent_lookup)
     if isinstance(value, int):
         msg = (
-            f"FK to {parent_ct} id {value} cannot be resolved; "
-            "parent_lookup is missing this record"
+            f"FK to {parent_ct} id {value} cannot be resolved; parent_lookup is missing this record"
         )
         raise ValueError(msg)
     return value

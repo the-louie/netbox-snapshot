@@ -18,7 +18,10 @@ from pathlib import Path
 import pytest
 
 from tests.integration.conftest import (
-    DEST_TOKEN, DEST_URL, SOURCE_TOKEN, SOURCE_URL,
+    DEST_TOKEN,
+    DEST_URL,
+    SOURCE_TOKEN,
+    SOURCE_URL,
 )
 
 
@@ -36,12 +39,13 @@ def _render(scripts_dir: Path, out: Path, url: str, token: str) -> None:
             pytest.skip(f"renderer {script} not present")
         result = subprocess.run(
             ["python", str(path)],
-            env=env, cwd=str(out),
-            capture_output=True, text=True,
+            env=env,
+            cwd=str(out),
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, (
-            f"{script} on {url} exited {result.returncode}: "
-            f"{result.stderr}"
+            f"{script} on {url} exited {result.returncode}: {result.stderr}"
         )
 
 
@@ -56,17 +60,33 @@ def test_roundtrip_lands_clean(tmp_path: Path) -> None:
     snap = tmp_path / "snap"
     subprocess.run(
         [
-            sys.executable, "-m", "nbsnap", "export",
-            "--url", SOURCE_URL, "--token", SOURCE_TOKEN,
-            "--out", str(snap),
+            sys.executable,
+            "-m",
+            "nbsnap",
+            "export",
+            "--url",
+            SOURCE_URL,
+            "--token",
+            SOURCE_TOKEN,
+            "--out",
+            str(snap),
         ],
         check=True,
     )
     subprocess.run(
         [
-            sys.executable, "-m", "nbsnap", "import",
-            "--url", DEST_URL, "--token", DEST_TOKEN,
-            "--in", str(snap), "--on-error", "continue",
+            sys.executable,
+            "-m",
+            "nbsnap",
+            "import",
+            "--url",
+            DEST_URL,
+            "--token",
+            DEST_TOKEN,
+            "--in",
+            str(snap),
+            "--on-error",
+            "continue",
         ],
         check=True,
     )
@@ -106,10 +126,14 @@ def test_rendered_outputs_match(tmp_path: Path) -> None:
         src_lines = _normalise(src_path.read_text(encoding="utf-8"))
         dst_lines = _normalise(dst_path.read_text(encoding="utf-8"))
         if src_lines != dst_lines:
-            diff = "\n".join(difflib.unified_diff(
-                src_lines, dst_lines,
-                fromfile=f"source/{rel}", tofile=f"destination/{rel}",
-                lineterm="",
-            ))
+            diff = "\n".join(
+                difflib.unified_diff(
+                    src_lines,
+                    dst_lines,
+                    fromfile=f"source/{rel}",
+                    tofile=f"destination/{rel}",
+                    lineterm="",
+                )
+            )
             deltas.append(diff)
     assert not deltas, "renderer output diverged:\n" + "\n\n".join(deltas)

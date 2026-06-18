@@ -75,9 +75,7 @@ def test_unpack_refuses_path_traversal_member(tmp_path: Path) -> None:
         unpack(artefact, out_dir)
 
     escape_target = tmp_path / "escape"
-    assert not escape_target.exists(), (
-        "the prepass must refuse the ../escape member before writing"
-    )
+    assert not escape_target.exists(), "the prepass must refuse the ../escape member before writing"
 
 
 def _build_symlink_escape_artefact(tmp_path: Path) -> Path:

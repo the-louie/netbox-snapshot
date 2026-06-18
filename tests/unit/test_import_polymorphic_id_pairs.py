@@ -37,38 +37,53 @@ def _minimal_schema() -> OpenAPI:
     Only the iter_endpoints / field_spec surface is exercised
     here, so a trimmed shape is enough."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Interface": {
-                    "type": "object",
-                    "properties": {"id": {}, "name": {"type": "string"}},
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Interface": {
+                        "type": "object",
+                        "properties": {"id": {}, "name": {"type": "string"}},
+                    },
+                    "PaginatedInterfaceList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Interface"},
+                            }
+                        }
+                    },
+                }
+            },
+            "paths": {
+                "/api/dcim/interfaces/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/PaginatedInterfaceList"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"name": {}}}}
+                            }
+                        }
+                    },
                 },
-                "PaginatedInterfaceList": {
-                    "properties": {"results": {
-                        "type": "array",
-                        "items": {"$ref": "#/components/schemas/Interface"},
-                    }}
-                },
-            }
-        },
-        "paths": {
-            "/api/dcim/interfaces/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedInterfaceList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"name": {}}}}
-                }}},
             },
         }
-    })
+    )
 
 
-def _call(body: dict, *, dest_index: NKIndex | None = None,
-          http: MagicMock | None = None) -> dict:
+def _call(body: dict, *, dest_index: NKIndex | None = None, http: MagicMock | None = None) -> dict:
     """Run the pre-pass with sensible defaults."""
 
     return _resolve_polymorphic_id_pairs(
@@ -216,7 +231,7 @@ def test_type_field_with_non_content_type_string_passes_through() -> None:
 
     body = {
         "weight_unit_type": "kg",  # not a content type
-        "weight_unit_id": "1.5",   # sibling that happens to exist
+        "weight_unit_id": "1.5",  # sibling that happens to exist
     }
     out = _call(body)
     # No change.
@@ -263,9 +278,7 @@ def test_audit_records_missing_from_source_when_snapshot_has_ct_but_not_nk() -> 
     snapshot_index = SnapshotIndex()
     # Seed a DIFFERENT interface NK so the content type is in
     # scope but the specific lookup misses.
-    snapshot_index._by_key[("dcim.interface", ("other", "Ethernet0"))] = {
-        "name": "Ethernet0"
-    }
+    snapshot_index._by_key[("dcim.interface", ("other", "Ethernet0"))] = {"name": "Ethernet0"}
     body = {
         "assigned_object_type": "dcim.interface",
         "assigned_object_id": ("ghost", "iface"),

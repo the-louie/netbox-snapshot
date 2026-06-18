@@ -57,9 +57,7 @@ def _fake_http(rows: list, *, base_url: str = "https://dest.example/") -> MagicM
     # the gate to suppress filtering during the pre-phase
     # window; see test_filter_passes_body_before_cf_phase below.
     http._cf_phase_complete = True
-    http.get_all.side_effect = lambda endpoint: iter(
-        rows if "custom-fields" in endpoint else []
-    )
+    http.get_all.side_effect = lambda endpoint: iter(rows if "custom-fields" in endpoint else [])
     return http
 
 
@@ -86,8 +84,7 @@ def test_registry_indexes_dict_shape() -> None:
     registry treats both shapes interchangeably."""
 
     rows = [
-        {"name": "cpu_cores_total",
-         "object_types": [{"value": "dcim.device"}]},
+        {"name": "cpu_cores_total", "object_types": [{"value": "dcim.device"}]},
     ]
     http = _fake_http(rows)
     assert _known_custom_fields_for(http, "dcim.device") == {"cpu_cores_total"}
@@ -154,8 +151,8 @@ def test_filter_drops_unknown_keys() -> None:
     body = {
         "name": "C1",
         "custom_fields": {
-            "switch_count": 4,        # known
-            "ghost_field": "drop me", # unknown
+            "switch_count": 4,  # known
+            "ghost_field": "drop me",  # unknown
         },
     }
     out = _filter_custom_fields(body, http, "dcim.rack")

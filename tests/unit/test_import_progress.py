@@ -86,10 +86,7 @@ def test_high_cardinality_phase_samples_at_stride() -> None:
         p.tick("dcim.interface", i)
 
     output = stream.getvalue()
-    tick_lines = [
-        line for line in output.splitlines()
-        if "dcim.interface " in line and "/" in line
-    ]
+    tick_lines = [line for line in output.splitlines() if "dcim.interface " in line and "/" in line]
     # We allow a little slack because of the integer ceil()
     # used to compute the stride; aim for roughly TARGET ticks.
     assert _TARGET_TICK_COUNT - 5 <= len(tick_lines) <= _TARGET_TICK_COUNT + 5
@@ -146,7 +143,10 @@ def test_periodic_audit_flush_fires_after_interval(tmp_path: Path) -> None:
     audit_path = tmp_path / "audit.jsonl"
     auditor = Auditor()
     p = ProgressReporter(
-        stream=None, auditor=auditor, audit_path=audit_path, clock=clock,
+        stream=None,
+        auditor=auditor,
+        audit_path=audit_path,
+        clock=clock,
     )
 
     # Record a drop before the interval elapses; tick once;
@@ -225,17 +225,30 @@ def test_driver_constructs_reporter_with_live_auditor(tmp_path: Path) -> None:
     from nbsnap.import_.driver import run_import
     from nbsnap.schema.status import VersionSkew
 
-    (tmp_path / "manifest.json").write_text(json.dumps({
-        "version": 1, "netbox_version": "4.6.2",
-        "counts": {}, "deferred_edges": [],
-    }))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "netbox_version": "4.6.2",
+                "counts": {},
+                "deferred_edges": [],
+            }
+        )
+    )
     schema_dir = tmp_path / "schema"
     schema_dir.mkdir()
-    (schema_dir / "openapi.json").write_text(json.dumps({
-        "openapi": "3.0.3", "paths": {}, "components": {"schemas": {}},
-    }))
+    (schema_dir / "openapi.json").write_text(
+        json.dumps(
+            {
+                "openapi": "3.0.3",
+                "paths": {},
+                "components": {"schemas": {}},
+            }
+        )
+    )
 
     import nbsnap.import_.driver as driver_mod
+
     original_preflight = driver_mod.run_preflight
     fake_report = MagicMock()
     fake_report.is_blocking.return_value = False
@@ -244,8 +257,10 @@ def test_driver_constructs_reporter_with_live_auditor(tmp_path: Path) -> None:
         audit_path = tmp_path / "audit.jsonl"
         stream = io.StringIO()
         summary = run_import(
-            MagicMock(), tmp_path,
-            max_skew=VersionSkew.MAJOR, on_error="continue",
+            MagicMock(),
+            tmp_path,
+            max_skew=VersionSkew.MAJOR,
+            on_error="continue",
             progress_stream=stream,
             progress_audit_path=audit_path,
         )
@@ -264,6 +279,7 @@ def test_audit_flushes_at_5s_cadence(tmp_path: Path) -> None:
     pending audit events to disk."""
 
     from nbsnap.import_.progress import _AUDIT_FLUSH_INTERVAL_SECONDS
+
     assert _AUDIT_FLUSH_INTERVAL_SECONDS == 5.0
 
     audit_path = tmp_path / "audit.jsonl"
@@ -272,7 +288,9 @@ def test_audit_flushes_at_5s_cadence(tmp_path: Path) -> None:
 
     clock_now = [0.0]
     p = ProgressReporter(
-        stream=None, auditor=auditor, audit_path=audit_path,
+        stream=None,
+        auditor=auditor,
+        audit_path=audit_path,
         clock=lambda: clock_now[0],
     )
     p.start_phase("dcim.site", total=1)
@@ -297,8 +315,11 @@ def test_progress_reporter_fsync_opt_in(tmp_path: Path) -> None:
 
     clock_now = [0.0]
     p = ProgressReporter(
-        stream=None, auditor=auditor, audit_path=audit_path,
-        clock=lambda: clock_now[0], fsync=True,
+        stream=None,
+        auditor=auditor,
+        audit_path=audit_path,
+        clock=lambda: clock_now[0],
+        fsync=True,
     )
     p.start_phase("dcim.site", total=1)
     clock_now[0] = 6.0

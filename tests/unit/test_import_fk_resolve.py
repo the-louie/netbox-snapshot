@@ -65,7 +65,6 @@ def test_safe_resolve_m2m_drops_missing_items() -> None:
 
     from nbsnap.import_.driver import _safe_resolve_m2m
 
-
     http = MagicMock()
     http.get_all.return_value = iter([])
     index = NKIndex()
@@ -87,7 +86,6 @@ def test_resolve_body_keeps_other_fields_when_m2m_target_missing() -> None:
 
     from nbsnap.import_.driver import _resolve_body
     from nbsnap.schema.openapi import OpenAPI
-
 
     http = MagicMock()
     http.get_all.return_value = iter([])
@@ -143,9 +141,7 @@ def test_resolve_body_keeps_other_fields_when_m2m_target_missing() -> None:
                             "200": {
                                 "content": {
                                     "application/json": {
-                                        "schema": {
-                                            "properties": {"id": {}, "slug": {}}
-                                        }
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
                                     }
                                 }
                             }
@@ -157,8 +153,6 @@ def test_resolve_body_keeps_other_fields_when_m2m_target_missing() -> None:
     )
     index = NKIndex()
     body = {"name": "d39a", "tags": [["snmpv2"]]}
-    resolved = _resolve_body(
-        "dcim.device", body, openapi, index, http, default_registry()
-    )
+    resolved = _resolve_body("dcim.device", body, openapi, index, http, default_registry())
     assert resolved["name"] == "d39a"
     assert resolved["tags"] == []

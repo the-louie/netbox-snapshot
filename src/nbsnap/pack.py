@@ -38,7 +38,6 @@ class UnsafeTarMemberError(OSError):
     """
 
 
-
 def add_pack_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("snapshot_dir", type=Path, help="snapshot directory to pack")
     parser.add_argument(

@@ -64,8 +64,7 @@ class PluginExtension(Protocol):
     name: str
     version: str
 
-    def register(self, registrar: Registrar) -> None:
-        ...
+    def register(self, registrar: Registrar) -> None: ...
 
 
 def discover(group: str = "nbsnap.plugin") -> list[PluginExtension]:
@@ -136,9 +135,7 @@ def _load_from_directory(directory: Path, registrar: Registrar) -> None:
             try:
                 plugin.register(registrar)
             except Exception as exc:  # noqa: BLE001
-                raise PluginLoadError(
-                    path, f"plugin.register() raised: {exc}"
-                ) from exc
+                raise PluginLoadError(path, f"plugin.register() raised: {exc}") from exc
     finally:
         if sys_path_added:
             sys.path.remove(str(directory))

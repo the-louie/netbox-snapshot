@@ -113,19 +113,9 @@ class Status:
         status = http.get_one("status/") or {}
         plugins_raw = http.get_one("plugins/") or {}
 
-        netbox_version = (
-            status.get("netbox-version")
-            or status.get("netbox_version")
-            or "unknown"
-        )
-        python_version = (
-            status.get("python-version")
-            or status.get("python_version")
-            or "unknown"
-        )
-        installed_apps_raw = (
-            status.get("installed-apps") or status.get("installed_apps") or []
-        )
+        netbox_version = status.get("netbox-version") or status.get("netbox_version") or "unknown"
+        python_version = status.get("python-version") or status.get("python_version") or "unknown"
+        installed_apps_raw = status.get("installed-apps") or status.get("installed_apps") or []
         # NetBox 4.1+ returns installed_apps as a dict of
         # {name: version}; older versions return a flat list of
         # "name@version" strings. Accept both shapes.

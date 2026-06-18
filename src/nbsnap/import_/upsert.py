@@ -286,6 +286,7 @@ def _classify_post_failure(content_type: str, error_text: str) -> str | None:
     """
 
     import logging
+
     log = logging.getLogger(__name__)
 
     for entry in _POST_FAILURE_SKIP_PATTERNS:
@@ -299,14 +300,13 @@ def _classify_post_failure(content_type: str, error_text: str) -> str | None:
                 "keywords but did not match the structural regex "
                 "(verified_against=%s). This may indicate NetBox "
                 "reworded the error; consider refreshing the regex.",
-                content_type, entry["verified_against"],
+                content_type,
+                entry["verified_against"],
             )
     return None
 
 
-def _record_is_structurally_incomplete(
-    content_type: str, body: Mapping[str, Any]
-) -> str | None:
+def _record_is_structurally_incomplete(content_type: str, body: Mapping[str, Any]) -> str | None:
     """Decide whether `body` is missing required structure for
     `content_type`. Returns a human-readable reason string when
     the record should be skipped, or None to proceed.
@@ -400,13 +400,14 @@ def upsert(
         # destination's known list so a look-ahead that fires
         # before the extras.customfield phase does not hit a
         # cascade of "Custom field X does not exist" rejections.
-        coerced_body, coerced_fields = _coerce_body_for_write(
-            body, drop_nones=True
-        )
+        coerced_body, coerced_fields = _coerce_body_for_write(body, drop_nones=True)
         post_body = _filter_custom_fields(coerced_body, http, content_type)
         if auditor is not None and coerced_fields:
             _record_bypass_coerced(
-                auditor, content_type, natural_key, coerced_fields,
+                auditor,
+                content_type,
+                natural_key,
+                coerced_fields,
             )
         try:
             created = http.post(endpoint, post_body)
@@ -467,7 +468,10 @@ def upsert(
         coerced_diff, patch_coerced_fields = _coerce_body_for_write(diff)
         if auditor is not None and patch_coerced_fields:
             _record_bypass_coerced(
-                auditor, content_type, natural_key, patch_coerced_fields,
+                auditor,
+                content_type,
+                natural_key,
+                patch_coerced_fields,
             )
         http.patch(
             f"{endpoint}{existing_id}/",
@@ -505,8 +509,10 @@ def _matches(current: Any, desired: Any) -> bool:
 
 
 def _record_bypass_coerced(
-    auditor: Any, content_type: str,
-    natural_key: NaturalKey, fields: list[str],
+    auditor: Any,
+    content_type: str,
+    natural_key: NaturalKey,
+    fields: list[str],
 ) -> None:
     """Emit one BYPASS_COERCED audit event per coerced field.
 
@@ -519,15 +525,17 @@ def _record_bypass_coerced(
     from nbsnap.import_.audit import DropCategory, DropEvent
 
     for field_name in fields:
-        auditor.record(DropEvent(
-            category=DropCategory.BYPASS_COERCED,
-            child_content_type=content_type,
-            child_nk=tuple(natural_key) if natural_key else (),
-            field_name=field_name,
-            target_content_type=content_type,
-            target_nk=tuple(natural_key) if natural_key else (),
-            message="snapshot value collapsed by import-side enum-dict coerce",
-        ))
+        auditor.record(
+            DropEvent(
+                category=DropCategory.BYPASS_COERCED,
+                child_content_type=content_type,
+                child_nk=tuple(natural_key) if natural_key else (),
+                field_name=field_name,
+                target_content_type=content_type,
+                target_nk=tuple(natural_key) if natural_key else (),
+                message="snapshot value collapsed by import-side enum-dict coerce",
+            )
+        )
 
 
 def _coerce_body_for_write(

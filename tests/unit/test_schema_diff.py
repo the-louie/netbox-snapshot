@@ -11,71 +11,105 @@ def _two_field_schema(target_for_region: str) -> OpenAPI:
     target content type, parameterised so we can build two
     schemas that differ only on that field."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Site": {
-                    "type": "object",
-                    "properties": {
-                        "id": {},
-                        "name": {"type": "string"},
-                        "region": {
-                            "allOf": [{"$ref": f"#/components/schemas/{target_for_region}"}],
-                            "nullable": True,
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Site": {
+                        "type": "object",
+                        "properties": {
+                            "id": {},
+                            "name": {"type": "string"},
+                            "region": {
+                                "allOf": [{"$ref": f"#/components/schemas/{target_for_region}"}],
+                                "nullable": True,
+                            },
                         },
                     },
-                },
-                "PaginatedSiteList": {
-                    "properties": {"results": {
-                        "type": "array",
-                        "items": {"$ref": "#/components/schemas/Site"},
-                    }}
-                },
-                "BriefRegion": {
-                    "type": "object",
-                    "properties": {"id": {}, "slug": {}},
-                },
-                "BriefArea": {
-                    "type": "object",
-                    "properties": {"id": {}, "slug": {}},
-                },
-            }
-        },
-        "paths": {
-            "/api/dcim/sites/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedSiteList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {
-                        "name": {}, "region": {}
-                    }}}
-                }}},
+                    "PaginatedSiteList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Site"},
+                            }
+                        }
+                    },
+                    "BriefRegion": {
+                        "type": "object",
+                        "properties": {"id": {}, "slug": {}},
+                    },
+                    "BriefArea": {
+                        "type": "object",
+                        "properties": {"id": {}, "slug": {}},
+                    },
+                }
             },
-            "/api/dcim/regions/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "slug": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}}}}
-                }}},
-            },
-            "/api/dcim/areas/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "slug": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}}}}
-                }}},
+            "paths": {
+                "/api/dcim/sites/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": "#/components/schemas/PaginatedSiteList"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"name": {}, "region": {}}}
+                                }
+                            }
+                        }
+                    },
+                },
+                "/api/dcim/regions/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"slug": {}}}}
+                            }
+                        }
+                    },
+                },
+                "/api/dcim/areas/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"slug": {}}}}
+                            }
+                        }
+                    },
+                },
             },
         }
-    })
+    )
 
 
 def test_identical_schemas_produce_no_drift() -> None:

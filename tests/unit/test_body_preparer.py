@@ -9,10 +9,13 @@ def test_enum_dict_collapse_runs_first() -> None:
     """An enum-dict status becomes a flat string after prepare."""
 
     bp = BodyPreparer()
-    out, coerced = bp.prepare("dcim.site", {
-        "name": "Hall-A",
-        "status": {"value": "active", "label": "Active"},
-    })
+    out, coerced = bp.prepare(
+        "dcim.site",
+        {
+            "name": "Hall-A",
+            "status": {"value": "active", "label": "Active"},
+        },
+    )
     assert out["status"] == "active"
     assert coerced == ["status"]
 
@@ -23,11 +26,14 @@ def test_none_drop_when_opted_in() -> None:
     POST do not fire."""
 
     bp = BodyPreparer(drop_nones=True)
-    out, _ = bp.prepare("dcim.cable", {
-        "type": "cat6",
-        "profile": None,
-        "length": None,
-    })
+    out, _ = bp.prepare(
+        "dcim.cable",
+        {
+            "type": "cat6",
+            "profile": None,
+            "length": None,
+        },
+    )
     assert "profile" not in out
     assert "length" not in out
     assert out["type"] == "cat6"
@@ -46,11 +52,14 @@ def test_chain_handles_enum_dict_and_none_drop_together() -> None:
     """Both transforms apply when drop_nones=True."""
 
     bp = BodyPreparer(drop_nones=True)
-    out, coerced = bp.prepare("dcim.device", {
-        "name": "d",
-        "status": {"value": "active", "label": "Active"},
-        "tenant": None,
-    })
+    out, coerced = bp.prepare(
+        "dcim.device",
+        {
+            "name": "d",
+            "status": {"value": "active", "label": "Active"},
+            "tenant": None,
+        },
+    )
     assert out["status"] == "active"
     assert "tenant" not in out
     assert coerced == ["status"]

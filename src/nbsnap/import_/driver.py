@@ -135,7 +135,8 @@ def run_import(
     # for the FEAT-46b schema-drift comparison.
     snapshot_openapi = OpenAPI.load(snapshot_dir / SCHEMA_PATH)
     preflight = run_preflight(
-        http, manifest,
+        http,
+        manifest,
         snapshot_dir=snapshot_dir,
         snapshot_openapi=snapshot_openapi,
     )
@@ -175,9 +176,7 @@ def run_import(
     from nbsnap.import_.lookahead import DeferredFK
     from nbsnap.import_.snapshot_index import SnapshotIndex
 
-    snapshot_index = SnapshotIndex.from_snapshot(
-        snapshot_dir, errors=summary.parse_errors
-    )
+    snapshot_index = SnapshotIndex.from_snapshot(snapshot_dir, errors=summary.parse_errors)
     deferred_queue: list[DeferredFK] = []
     processing_stack: set[tuple[str, tuple[Any, ...]]] = set()
     # Cache of `(content_type, NK)` pairs whose look-ahead
@@ -214,6 +213,7 @@ def run_import(
     # here makes Phase-1 strip them and queue them for Phase-2
     # the same way it would for a planner-detected cycle.
     from nbsnap.graph.polymorphic import known_validation_cycle_fields
+
     for ct, fields in known_validation_cycle_fields().items():
         deferred_fields_by_ct.setdefault(ct, set()).update(fields)
 
@@ -226,6 +226,7 @@ def run_import(
     # _try_lookahead/resolve_or_create to read from ctx lands in
     # REFACTOR-01b.
     from nbsnap.import_.resolve_context import ResolveContext
+
     ctx = ResolveContext(
         http=http,
         index=index,
@@ -249,6 +250,7 @@ def run_import(
     # the auditor in the driver" flow.
     if progress is None and progress_stream is not None:
         from nbsnap.import_.progress import ProgressReporter
+
         progress = ProgressReporter(
             stream=progress_stream,
             auditor=auditor,
@@ -261,9 +263,7 @@ def run_import(
     # manifest. We do not re-plan here; the snapshot is the
     # contract and the manifest is the order.
     for ct in _content_type_order(manifest, snapshot_dir):
-        file_path = snapshot_dir / CONTENT_TYPE_FILES.get(
-            ct, f"{ct.replace('.', '/')}.jsonl"
-        )
+        file_path = snapshot_dir / CONTENT_TYPE_FILES.get(ct, f"{ct.replace('.', '/')}.jsonl")
         if not file_path.exists():
             continue
 
@@ -318,15 +318,17 @@ def run_import(
                 # rescue loop's Phase-3 mining can attribute the
                 # SKIPPED count back to specific NKs. Summary count
                 # and audit count are cross-checked at end-of-run.
-                auditor.record(DropEvent(
-                    category=DropCategory.SKIPPED,
-                    child_content_type=ct,
-                    child_nk=tuple(nk) if nk else (),
-                    field_name="",
-                    target_content_type="",
-                    target_nk=(),
-                    message=result.message or "",
-                ))
+                auditor.record(
+                    DropEvent(
+                        category=DropCategory.SKIPPED,
+                        child_content_type=ct,
+                        child_nk=tuple(nk) if nk else (),
+                        field_name="",
+                        target_content_type="",
+                        target_nk=(),
+                        message=result.message or "",
+                    )
+                )
             if progress is not None:
                 progress.tick(ct, row_index)
             if result.outcome is UpsertOutcome.FAILED:
@@ -581,7 +583,13 @@ def _resolve_body(
             continue
         if spec.is_m2m:
             resolved[field_name] = _safe_resolve_m2m(
-                value, spec.fk_target, index, http, registry, content_type, field_name,
+                value,
+                spec.fk_target,
+                index,
+                http,
+                registry,
+                content_type,
+                field_name,
                 snapshot_index=snapshot_index,
                 auditor=auditor,
                 current_nk=current_nk,
@@ -596,8 +604,10 @@ def _resolve_body(
                 )
             except (KeyError, ValueError) as exc:
                 _warn_dropped(
-                    content_type, field_name,
-                    value.get("object_type", "?"), exc,
+                    content_type,
+                    field_name,
+                    value.get("object_type", "?"),
+                    exc,
                     warn_dedup=warn_dedup,
                 )
             continue
@@ -606,9 +616,7 @@ def _resolve_body(
                 value, spec.fk_target, index, http=http, registry=registry
             )
         except (KeyError, ValueError) as exc:
-            queue_size_before = (
-                len(deferred_queue) if deferred_queue is not None else 0
-            )
+            queue_size_before = len(deferred_queue) if deferred_queue is not None else 0
             recovered, was_deferred = _try_lookahead(
                 value=value,
                 target_ct=spec.fk_target,
@@ -661,7 +669,10 @@ def _resolve_body(
             # the noisier-but-safer path.
             if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                 _warn_dropped(
-                    content_type, field_name, spec.fk_target, exc,
+                    content_type,
+                    field_name,
+                    spec.fk_target,
+                    exc,
                     category=category,
                     warn_dedup=warn_dedup,
                 )
@@ -730,8 +741,7 @@ def _strip_deferred_fields_and_queue(
     # Phase-2's work and (worse) PATCHing twice if the second
     # PATCH had a different value.
     existing_keys = {
-        (entry.child_content_type, entry.child_nk, entry.field_name)
-        for entry in deferred_queue
+        (entry.child_content_type, entry.child_nk, entry.field_name) for entry in deferred_queue
     }
 
     out = resolved
@@ -786,14 +796,16 @@ def _strip_deferred_fields_and_queue(
             )
         )
         if auditor is not None:
-            auditor.record(DropEvent(
-                category=DropCategory.DEFERRED_TO_PHASE2,
-                child_content_type=content_type,
-                child_nk=current_nk,
-                field_name=field_name,
-                target_content_type=target_ct,
-                target_nk=target_nk,
-            ))
+            auditor.record(
+                DropEvent(
+                    category=DropCategory.DEFERRED_TO_PHASE2,
+                    child_content_type=content_type,
+                    child_nk=current_nk,
+                    field_name=field_name,
+                    target_content_type=target_ct,
+                    target_nk=target_nk,
+                )
+            )
     return out
 
 
@@ -895,9 +907,7 @@ def _resolve_polymorphic_id_pairs(
 
         # Try resolving against the destination index first.
         try:
-            rid = resolve_simple_fk(
-                raw_id, target_ct, index, http=http, registry=registry
-            )
+            rid = resolve_simple_fk(raw_id, target_ct, index, http=http, registry=registry)
             if rid is None:
                 # Resolver returned None without raising
                 # (e.g. value is not list-shaped). Same fix as
@@ -909,9 +919,7 @@ def _resolve_polymorphic_id_pairs(
             new_body[id_field] = rid
             continue
         except (KeyError, ValueError) as exc:
-            queue_size_before = (
-                len(deferred_queue) if deferred_queue is not None else 0
-            )
+            queue_size_before = len(deferred_queue) if deferred_queue is not None else 0
             # Try the look-ahead path so the parent can be
             # created on demand from the snapshot.
             recovered, was_deferred = _try_lookahead(
@@ -951,7 +959,11 @@ def _resolve_polymorphic_id_pairs(
             )
             if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                 _warn_dropped(
-                    owner_ct, id_field, target_ct, exc, category=category,
+                    owner_ct,
+                    id_field,
+                    target_ct,
+                    exc,
+                    category=category,
                     warn_dedup=warn_dedup,
                 )
             new_body.pop(id_field, None)
@@ -1022,9 +1034,7 @@ def _resolve_termination_lists(
         # list-of-dict shapes (e.g. tags carrying brief refs)
         # are left alone.
         if not any(
-            isinstance(item, dict)
-            and "object_natural_key" in item
-            and "object_type" in item
+            isinstance(item, dict) and "object_natural_key" in item and "object_type" in item
             for item in value
         ):
             continue
@@ -1044,17 +1054,16 @@ def _resolve_termination_lists(
 
             # Resolve against the destination index first.
             try:
-                rid = resolve_simple_fk(
-                    raw_nk, target_ct, index, http=http, registry=registry
+                rid = resolve_simple_fk(raw_nk, target_ct, index, http=http, registry=registry)
+                resolved_items.append(
+                    {
+                        "object_type": target_ct,
+                        "object_id": rid,
+                    }
                 )
-                resolved_items.append({
-                    "object_type": target_ct, "object_id": rid,
-                })
                 continue
             except (KeyError, ValueError) as exc:
-                queue_size_before = (
-                    len(deferred_queue) if deferred_queue is not None else 0
-                )
+                queue_size_before = len(deferred_queue) if deferred_queue is not None else 0
                 # Look-ahead path so the target interface can be
                 # created from the snapshot if it is in scope.
                 recovered, was_deferred = _try_lookahead(
@@ -1075,9 +1084,12 @@ def _resolve_termination_lists(
                     deferred_fields_by_ct=deferred_fields_by_ct,
                 )
                 if recovered is not None:
-                    resolved_items.append({
-                        "object_type": target_ct, "object_id": recovered,
-                    })
+                    resolved_items.append(
+                        {
+                            "object_type": target_ct,
+                            "object_id": recovered,
+                        }
+                    )
                     continue
                 # Total miss, record the drop and skip the item.
                 category = _record_drop(
@@ -1094,7 +1106,10 @@ def _resolve_termination_lists(
                 )
                 if category not in (DropCategory.OUT_OF_SCOPE, DropCategory.DEFERRED_TO_PHASE2):
                     _warn_dropped(
-                        owner_ct, field_name, target_ct, exc,
+                        owner_ct,
+                        field_name,
+                        target_ct,
+                        exc,
                         category=category,
                         warn_dedup=warn_dedup,
                     )
@@ -1165,25 +1180,17 @@ def _record_drop(
     # field. The proxy is kept as a fallback for callers that
     # have not been threaded yet.
     if was_deferred is None:
-        deferred_grew = (
-            deferred_queue is not None and len(deferred_queue) > queue_size_before
-        )
+        deferred_grew = deferred_queue is not None and len(deferred_queue) > queue_size_before
     else:
         deferred_grew = was_deferred
     if deferred_grew:
         category = DropCategory.DEFERRED_TO_PHASE2
-    elif (
-        transient_keys is not None
-        and (target_ct, target_nk) in transient_keys
-    ):
+    elif transient_keys is not None and (target_ct, target_nk) in transient_keys:
         # FEAT-45b: 5xx from the destination at the look-ahead
         # site. Distinct bucket so the operator sees this is
         # environment, not data quality.
         category = DropCategory.UPSERT_FAILED_TRANSIENT
-    elif (
-        failed_keys is not None
-        and (target_ct, target_nk) in failed_keys
-    ):
+    elif failed_keys is not None and (target_ct, target_nk) in failed_keys:
         # A previous look-ahead create attempt for this exact
         # target NK already FAILED. The operator-meaningful
         # signal is "upsert refused", not "missing from source".
@@ -1193,14 +1200,16 @@ def _record_drop(
     else:
         category = DropCategory.MISSING_FROM_SOURCE
 
-    auditor.record(DropEvent(
-        category=category,
-        child_content_type=child_ct,
-        child_nk=child_nk,
-        field_name=field_name,
-        target_content_type=target_ct,
-        target_nk=target_nk,
-    ))
+    auditor.record(
+        DropEvent(
+            category=category,
+            child_content_type=child_ct,
+            child_nk=child_nk,
+            field_name=field_name,
+            target_content_type=target_ct,
+            target_nk=target_nk,
+        )
+    )
     return category
 
 
@@ -1250,7 +1259,9 @@ def _try_lookahead(
     # unchanged.
     if ctx is not None:
         snapshot_index = snapshot_index if snapshot_index is not None else ctx.snapshot_index
-        processing_stack = processing_stack if processing_stack is not None else ctx.processing_stack
+        processing_stack = (
+            processing_stack if processing_stack is not None else ctx.processing_stack
+        )
         deferred_queue = deferred_queue if deferred_queue is not None else ctx.deferred_queue
         openapi = openapi if openapi is not None else ctx.openapi
         auditor = auditor if auditor is not None else ctx.auditor
@@ -1261,11 +1272,7 @@ def _try_lookahead(
         if deferred_fields_by_ct is None:
             deferred_fields_by_ct = ctx.deferred_fields_by_ct
 
-    if (
-        snapshot_index is None
-        or processing_stack is None
-        or deferred_queue is None
-    ):
+    if snapshot_index is None or processing_stack is None or deferred_queue is None:
         return None, False
 
     # The snapshot stores NKs as lists; the resolver wants
@@ -1360,7 +1367,10 @@ def _safe_resolve_m2m(
                 failed_keys=failed_keys,
             )
             _warn_dropped(
-                content_type, field_name, parent_ct, exc,
+                content_type,
+                field_name,
+                parent_ct,
+                exc,
                 warn_dedup=warn_dedup,
             )
             continue
@@ -1491,16 +1501,25 @@ def _warn_dropped(
             "%s.%s -> %s, the target is not in the snapshot or "
             "on the destination (%s). Rebuild the snapshot from "
             "a freshly-exported source.",
-            content_type, field_name, target, detail,
+            content_type,
+            field_name,
+            target,
+            detail,
         )
     elif category is DropCategory.UPSERT_FAILED:
         log.warning(
             "destination NetBox refused the create for "
             "%s.%s -> %s (%s). See audit log for the failure body.",
-            content_type, field_name, target, detail,
+            content_type,
+            field_name,
+            target,
+            detail,
         )
     else:
         log.warning(
             "dropping FK %s.%s -> %s, %s",
-            content_type, field_name, target, detail,
+            content_type,
+            field_name,
+            target,
+            detail,
         )

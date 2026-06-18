@@ -82,9 +82,7 @@ def test_with_plugins_directory_raises_on_broken_plugin(tmp_path: Path) -> None:
     assert "broken.py" in str(exc.value)
 
 
-def test_with_plugins_env_var_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_with_plugins_env_var_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """If no directory is passed, the env var picks up the slack."""
 
     plugins = tmp_path / "plugins"

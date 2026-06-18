@@ -30,7 +30,10 @@ def warn_dedup() -> set[tuple[str, str, str]]:
 def test_missing_from_source_warning_points_at_source(caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            KeyError("nope"),
             category=DropCategory.MISSING_FROM_SOURCE,
         )
     msg = caplog.messages[-1]
@@ -42,7 +45,10 @@ def test_missing_from_source_warning_points_at_source(caplog) -> None:
 def test_upsert_failed_warning_points_at_destination(caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", RuntimeError("HTTP 400"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            RuntimeError("HTTP 400"),
             category=DropCategory.UPSERT_FAILED,
         )
     msg = caplog.messages[-1]
@@ -53,7 +59,10 @@ def test_upsert_failed_warning_points_at_destination(caplog) -> None:
 def test_unknown_category_keeps_legacy_text(caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            KeyError("nope"),
             category=None,
         )
     msg = caplog.messages[-1]
@@ -68,12 +77,18 @@ def test_warning_is_emitted_once_per_triple(caplog, warn_dedup) -> None:
 
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            KeyError("nope"),
             category=DropCategory.MISSING_FROM_SOURCE,
             warn_dedup=warn_dedup,
         )
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            KeyError("nope"),
             category=DropCategory.UPSERT_FAILED,
             warn_dedup=warn_dedup,
         )
@@ -90,12 +105,18 @@ def test_two_summaries_dedup_independently(caplog) -> None:
     set_b: set[tuple[str, str, str]] = set()
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            KeyError("nope"),
             category=DropCategory.MISSING_FROM_SOURCE,
             warn_dedup=set_a,
         )
         _warn_dropped(
-            "dcim.device", "site", "dcim.site", KeyError("nope"),
+            "dcim.device",
+            "site",
+            "dcim.site",
+            KeyError("nope"),
             category=DropCategory.MISSING_FROM_SOURCE,
             warn_dedup=set_b,
         )

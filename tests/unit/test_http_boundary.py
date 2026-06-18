@@ -32,9 +32,7 @@ def _python_files_outside_http() -> list[Path]:
     return [
         p
         for p in ROOT.rglob("*.py")
-        if "__pycache__" not in p.parts
-        and HTTP_PACKAGE not in p.parents
-        and p != HTTP_PACKAGE
+        if "__pycache__" not in p.parts and HTTP_PACKAGE not in p.parents and p != HTTP_PACKAGE
     ]
 
 
@@ -44,9 +42,7 @@ def test_no_requests_imports_outside_http_package() -> None:
         source = py_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(py_path))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
-                "requests"
-            ):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("requests"):
                 offenders.append((py_path, node.lineno, f"from {node.module}"))
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -54,6 +50,5 @@ def test_no_requests_imports_outside_http_package() -> None:
                         offenders.append((py_path, node.lineno, f"import {alias.name}"))
 
     assert not offenders, (
-        "nbsnap modules outside nbsnap.http must not import requests. "
-        f"Offenders: {offenders}"
+        f"nbsnap modules outside nbsnap.http must not import requests. Offenders: {offenders}"
     )

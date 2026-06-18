@@ -51,16 +51,23 @@ def test_renderer_minimum_endpoints_are_hit(tmp_path: Path) -> None:
     # (a missing endpoint means no rows were written for it).
     subprocess.run(
         [
-            sys.executable, "-m", "nbsnap", "export",
-            "--url", SOURCE_URL,
-            "--token", SOURCE_TOKEN,
-            "--out", str(out),
+            sys.executable,
+            "-m",
+            "nbsnap",
+            "export",
+            "--url",
+            SOURCE_URL,
+            "--token",
+            SOURCE_TOKEN,
+            "--out",
+            str(out),
         ],
         check=True,
     )
 
     missing: set[str] = set()
     from nbsnap.snapshot import CONTENT_TYPE_FILES
+
     rel_paths = {
         CONTENT_TYPE_FILES.get(ct.replace("/", ".").rstrip("."), ct)
         for ct in RENDERER_MINIMUM_ENDPOINTS
@@ -68,14 +75,11 @@ def test_renderer_minimum_endpoints_are_hit(tmp_path: Path) -> None:
     # Direct check: every expected endpoint has its jsonl on disk.
     for endpoint in RENDERER_MINIMUM_ENDPOINTS:
         ct_guess = endpoint.replace("/", ".").rstrip(".").replace("-", "")
-        candidates = list((out).rglob(
-            endpoint.rstrip("/").split("/")[-1].replace("-", "_") + ".jsonl"
-        ))
+        candidates = list(
+            (out).rglob(endpoint.rstrip("/").split("/")[-1].replace("-", "_") + ".jsonl")
+        )
         if not candidates:
             missing.add(endpoint)
     _ = rel_paths  # surface for diagnostic; not asserted here
 
-    assert not missing, (
-        "renderer-minimum endpoints with no rows on the export: "
-        f"{sorted(missing)}"
-    )
+    assert not missing, f"renderer-minimum endpoints with no rows on the export: {sorted(missing)}"

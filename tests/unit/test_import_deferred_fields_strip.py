@@ -39,57 +39,88 @@ def _device_schema() -> OpenAPI:
     to ipam.ipaddress. Enough surface for the strip helper to
     resolve the target content type via `field_spec`."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Device": {
-                    "type": "object",
-                    "properties": {
-                        "id": {},
-                        "name": {"type": "string"},
-                        "primary_ip4": {
-                            "allOf": [{"$ref": "#/components/schemas/BriefIPAddress"}],
-                            "nullable": True,
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Device": {
+                        "type": "object",
+                        "properties": {
+                            "id": {},
+                            "name": {"type": "string"},
+                            "primary_ip4": {
+                                "allOf": [{"$ref": "#/components/schemas/BriefIPAddress"}],
+                                "nullable": True,
+                            },
                         },
                     },
-                },
-                "PaginatedDeviceList": {
-                    "properties": {"results": {
-                        "type": "array",
-                        "items": {"$ref": "#/components/schemas/Device"},
-                    }}
-                },
-                "BriefIPAddress": {
-                    "type": "object",
-                    "properties": {"id": {}, "address": {}},
-                },
-            }
-        },
-        "paths": {
-            "/api/dcim/devices/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedDeviceList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {
-                        "name": {}, "primary_ip4": {},
-                    }}}
-                }}},
+                    "PaginatedDeviceList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Device"},
+                            }
+                        }
+                    },
+                    "BriefIPAddress": {
+                        "type": "object",
+                        "properties": {"id": {}, "address": {}},
+                    },
+                }
             },
-            "/api/ipam/ip-addresses/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "address": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"address": {}}}}
-                }}},
+            "paths": {
+                "/api/dcim/devices/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/PaginatedDeviceList"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "properties": {
+                                            "name": {},
+                                            "primary_ip4": {},
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                },
+                "/api/ipam/ip-addresses/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "address": {}}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"address": {}}}}
+                            }
+                        }
+                    },
+                },
             },
         }
-    })
+    )
 
 
 def test_strip_deferred_field_and_queue_entry() -> None:
@@ -100,8 +131,7 @@ def test_strip_deferred_field_and_queue_entry() -> None:
     original_body = {
         "name": "d39a",
         # The original snapshot value is the IPAddress NK tuple.
-        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
-                        [[["d"], "D39A"], "Vlan600"]],
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface", [[["d"], "D39A"], "Vlan600"]],
     }
     resolved = {
         "name": "d39a",
@@ -235,8 +265,7 @@ def test_dedupe_does_not_push_duplicate_deferred_fk() -> None:
 
     original_body = {
         "name": "d39a",
-        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
-                        [[["d"], "D39A"], "Vlan600"]],
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface", [[["d"], "D39A"], "Vlan600"]],
     }
     queue: list = []
 
@@ -295,9 +324,11 @@ def test_lookahead_path_also_strips_deferred_field() -> None:
     # Capture the POST body so we can assert primary_ip4 is
     # stripped.
     posted_bodies: list = []
+
     def fake_post(endpoint, body):
         posted_bodies.append((endpoint, body))
         return {"id": 1}
+
     http.post.side_effect = fake_post
 
     # Seed the destination index so the IPAddress NK resolves
@@ -305,21 +336,23 @@ def test_lookahead_path_also_strips_deferred_field() -> None:
     # primary_ip4 before the strip pass even sees it, and the
     # test would not exercise the bug we are guarding against.
     dest = NKIndex()
-    target_nk = ("172.16.1.10/24", "dcim.interface",
-                 ((("d",), "D39A"), "Vlan600"))
+    target_nk = ("172.16.1.10/24", "dcim.interface", ((("d",), "D39A"), "Vlan600"))
     dest.insert("ipam.ipaddress", target_nk, 77)
     dest._built_cts.add("ipam.ipaddress")
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("dcim.device", (("hall-d",), "d39a"))] = {
-        "name": "d39a", "slug": "d39a",
+        "name": "d39a",
+        "slug": "d39a",
         # The deferred field that #31 must strip.
-        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
-                        [[["d"], "D39A"], "Vlan600"]],
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface", [[["d"], "D39A"], "Vlan600"]],
     }
     queue: list = []
     rid = resolve_or_create(
-        http, snapshot_index, dest, default_registry(),
+        http,
+        snapshot_index,
+        dest,
+        default_registry(),
         content_type="dcim.device",
         natural_key=(("hall-d",), "d39a"),
         processing_stack=set(),
@@ -360,19 +393,20 @@ def test_resolve_body_strips_deferred_field_and_queues_entry() -> None:
     dest = NKIndex()
     # Use a tuple-shape NK that matches what normalise_nk
     # produces from the snapshot's list-shape value.
-    target_nk = ("172.16.1.10/24", "dcim.interface",
-                 ((("d",), "D39A"), "Vlan600"))
+    target_nk = ("172.16.1.10/24", "dcim.interface", ((("d",), "D39A"), "Vlan600"))
     dest.insert("ipam.ipaddress", target_nk, 99)
 
     body = {
         "name": "d39a",
-        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
-                        [[["d"], "D39A"], "Vlan600"]],
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface", [[["d"], "D39A"], "Vlan600"]],
     }
     queue: list = []
     out = _resolve_body(
-        "dcim.device", body, _device_schema(),
-        dest, MagicMock(get_all=MagicMock(return_value=iter([]))),
+        "dcim.device",
+        body,
+        _device_schema(),
+        dest,
+        MagicMock(get_all=MagicMock(return_value=iter([]))),
         default_registry(),
         snapshot_index=SnapshotIndex(),
         processing_stack=set(),
@@ -411,13 +445,15 @@ def test_strip_queues_even_when_target_unresolvable() -> None:
     dest = NKIndex()
     body = {
         "name": "d39a",
-        "primary_ip4": ["172.16.1.10/24", "dcim.interface",
-                        [[["d"], "D39A"], "Vlan600"]],
+        "primary_ip4": ["172.16.1.10/24", "dcim.interface", [[["d"], "D39A"], "Vlan600"]],
     }
     queue: list = []
     out = _resolve_body(
-        "dcim.device", body, _device_schema(),
-        dest, MagicMock(get_all=MagicMock(return_value=iter([]))),
+        "dcim.device",
+        body,
+        _device_schema(),
+        dest,
+        MagicMock(get_all=MagicMock(return_value=iter([]))),
         default_registry(),
         snapshot_index=SnapshotIndex(),
         processing_stack=set(),

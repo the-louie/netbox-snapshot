@@ -51,17 +51,21 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _build_snapshot(tmp_path: Path) -> Path:
-    (tmp_path / "manifest.json").write_text(json.dumps({
-        "version": 1,
-        "netbox_version": "4.6.2",
-        "counts": {},
-        "deferred_edges": [],
-    }))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "netbox_version": "4.6.2",
+                "counts": {},
+                "deferred_edges": [],
+            }
+        )
+    )
     schema_dir = tmp_path / "schema"
     schema_dir.mkdir()
-    (schema_dir / "openapi.json").write_text(json.dumps({
-        "openapi": "3.0.3", "paths": {}, "components": {"schemas": {}}
-    }))
+    (schema_dir / "openapi.json").write_text(
+        json.dumps({"openapi": "3.0.3", "paths": {}, "components": {"schemas": {}}})
+    )
     return tmp_path
 
 
@@ -71,17 +75,13 @@ def _fake_preflight_with_issues() -> MagicMock:
     pre.version_skew = VersionSkew.NONE
     pre.missing_content_types = set()
     pre.snapshot_format_issues = [
-        {"path": f"dcim/devices-{i}.jsonl",
-         "field": "status",
-         "rows_affected": 1}
+        {"path": f"dcim/devices-{i}.jsonl", "field": "status", "rows_affected": 1}
         for i in range(12)
     ]
     return pre
 
 
-def test_bypass_active_suppresses_verbose_list(
-    tmp_path: Path, capsys, monkeypatch
-) -> None:
+def test_bypass_active_suppresses_verbose_list(tmp_path: Path, capsys, monkeypatch) -> None:
     snap = _build_snapshot(tmp_path)
 
     fake_pre = _fake_preflight_with_issues()
@@ -95,8 +95,10 @@ def test_bypass_active_suppresses_verbose_list(
     fake_summary.failures = []
     fake_summary.parse_errors = []
 
-    with patch("nbsnap.import_cli.run_import", return_value=fake_summary), \
-         patch("nbsnap.import_cli.NetboxHTTP"):
+    with (
+        patch("nbsnap.import_cli.run_import", return_value=fake_summary),
+        patch("nbsnap.import_cli.NetboxHTTP"),
+    ):
         run_import_cli(_args(snap, allow_enum_dict_bypass=True))
 
     err = capsys.readouterr().err
@@ -110,9 +112,7 @@ def test_bypass_active_suppresses_verbose_list(
     assert len(rows) == 12
 
 
-def test_bypass_inactive_still_emits_verbose_block(
-    tmp_path: Path, capsys, monkeypatch
-) -> None:
+def test_bypass_inactive_still_emits_verbose_block(tmp_path: Path, capsys, monkeypatch) -> None:
     snap = _build_snapshot(tmp_path)
 
     fake_pre = _fake_preflight_with_issues()
@@ -126,8 +126,10 @@ def test_bypass_inactive_still_emits_verbose_block(
     fake_summary.failures = []
     fake_summary.parse_errors = []
 
-    with patch("nbsnap.import_cli.run_import", return_value=fake_summary), \
-         patch("nbsnap.import_cli.NetboxHTTP"):
+    with (
+        patch("nbsnap.import_cli.run_import", return_value=fake_summary),
+        patch("nbsnap.import_cli.NetboxHTTP"),
+    ):
         run_import_cli(_args(snap, allow_enum_dict_bypass=False))
 
     err = capsys.readouterr().err

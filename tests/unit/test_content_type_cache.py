@@ -44,9 +44,7 @@ def test_fetch_prefers_modern_endpoint_first() -> None:
     """NetBox 4.1+ install: `core/object-types/` is the first probe."""
 
     http = MagicMock()
-    http.get_all.return_value = iter(
-        [{"app_label": "dcim", "model": "device", "id": 17}]
-    )
+    http.get_all.return_value = iter([{"app_label": "dcim", "model": "device", "id": 17}])
 
     cache = ContentTypeCache.fetch(http)
     assert cache.endpoint_used == "core/object-types/"

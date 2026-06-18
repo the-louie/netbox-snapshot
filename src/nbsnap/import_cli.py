@@ -92,42 +92,42 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help="(SEC-06a) write the preflight-bypass detail JSONL to this path "
-             "(default: <snapshot_dir>/preflight-bypass.jsonl). Independent "
-             "of --audit-out so the bypass record stays next to the snapshot "
-             "even when audit output is redirected elsewhere.",
+        "(default: <snapshot_dir>/preflight-bypass.jsonl). Independent "
+        "of --audit-out so the bypass record stays next to the snapshot "
+        "even when audit output is redirected elsewhere.",
     )
     parser.add_argument(
         "--allow-enum-dict-bypass",
         action="store_true",
         help="(power user) proceed even if the snapshot carries "
-             "the legacy {value, label} enum shape on a field. The "
-             "import-side coerce should still recover, but the "
-             "snapshot will not round-trip cleanly.",
+        "the legacy {value, label} enum shape on a field. The "
+        "import-side coerce should still recover, but the "
+        "snapshot will not round-trip cleanly.",
     )
     parser.add_argument(
         "--max-parse-errors",
         type=int,
         default=0,
         help="exit with EXIT_ROW_FAILURES when the snapshot has "
-             "more than N malformed JSONL rows; default 0 (any "
-             "parse error fails the run)",
+        "more than N malformed JSONL rows; default 0 (any "
+        "parse error fails the run)",
     )
     parser.add_argument(
         "--audit-summary-limit",
         type=int,
         default=10,
         help="show at most N top-offending (content_type, field) "
-             "lines in the end-of-run audit block; default 10. "
-             "The full set is always available in the audit log.",
+        "lines in the end-of-run audit block; default 10. "
+        "The full set is always available in the audit log.",
     )
     parser.add_argument(
         "--max-skipped",
         type=int,
         default=-1,
         help="exit EXIT_SKIPPED_OVER_THRESHOLD (6) when the run "
-             "skipped more than N rows in total; default -1 means "
-             "unbounded. Per-content-type overrides via "
-             "--max-skipped-<content_type> always take precedence.",
+        "skipped more than N rows in total; default -1 means "
+        "unbounded. Per-content-type overrides via "
+        "--max-skipped-<content_type> always take precedence.",
     )
     parser.add_argument(
         "--max-skipped-ct",
@@ -135,32 +135,32 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         default=[],
         metavar="<content_type>=<N>",
         help="per-content-type skip threshold, e.g. "
-             "`--max-skipped-ct ipam.ipaddress=5`. Repeatable. "
-             "Triggers EXIT_SKIPPED_OVER_THRESHOLD (6) when any "
-             "listed content type's SKIPPED count exceeds its N.",
+        "`--max-skipped-ct ipam.ipaddress=5`. Repeatable. "
+        "Triggers EXIT_SKIPPED_OVER_THRESHOLD (6) when any "
+        "listed content type's SKIPPED count exceeds its N.",
     )
     parser.add_argument(
         "--no-phase2-verify",
         action="store_true",
         help="trust the 2xx response of every Phase-2 PATCH "
-             "without inspecting the returned field. Default is "
-             "to verify (BUG-07).",
+        "without inspecting the returned field. Default is "
+        "to verify (BUG-07).",
     )
     parser.add_argument(
         "--no-timestamps",
         action="store_true",
         help="omit HH:MM:SS prefixes from progress output. "
-             "Default on; useful for log aggregators that add "
-             "their own timestamps.",
+        "Default on; useful for log aggregators that add "
+        "their own timestamps.",
     )
     parser.add_argument(
         "--no-lookahead-failure-cache",
         action="store_true",
         help="disable the cache that short-circuits a look-ahead "
-             "after the destination has refused a parent's "
-             "create. Useful when the destination's refusal is "
-             "transient and the operator wants every sibling to "
-             "retry. See FEAT-45b.",
+        "after the destination has refused a parent's "
+        "create. Useful when the destination's refusal is "
+        "transient and the operator wants every sibling to "
+        "retry. See FEAT-45b.",
     )
     parser.add_argument(
         "--plugins-dir",
@@ -177,18 +177,18 @@ def add_import_args(parser: argparse.ArgumentParser) -> None:
         "--strict-schema",
         action="store_true",
         help="exit EXIT_PREFLIGHT_BLOCKED when the destination's "
-             "OpenAPI schema differs from the snapshot's at any "
-             "in-scope (content_type, field) FK shape. Default "
-             "is informational. See FEAT-46c.",
+        "OpenAPI schema differs from the snapshot's at any "
+        "in-scope (content_type, field) FK shape. Default "
+        "is informational. See FEAT-46c.",
     )
     parser.add_argument(
         "--use-destination-schema",
         action="store_true",
         help="resolve FKs against the destination's OpenAPI "
-             "(fetched at preflight) instead of the snapshot's. "
-             "Useful when the destination has drifted to a "
-             "newer NetBox and the snapshot's schema is stale. "
-             "See FEAT-46c.",
+        "(fetched at preflight) instead of the snapshot's. "
+        "Useful when the destination has drifted to a "
+        "newer NetBox and the snapshot's schema is stale. "
+        "See FEAT-46c.",
     )
 
 
@@ -246,7 +246,8 @@ def run_import_cli(args: argparse.Namespace) -> int:
 
     try:
         summary = run_import(
-            http, in_dir,
+            http,
+            in_dir,
             max_skew=max_skew,
             on_error=args.on_error,
             allow_enum_dict_bypass=args.allow_enum_dict_bypass,
@@ -289,14 +290,11 @@ def run_import_cli(args: argparse.Namespace) -> int:
         return EXIT_DESTINATION_UNREACHABLE
     except NetboxHTTPError as exc:
         sys.stderr.write(
-            f"nbsnap import: destination returned HTTP {exc.status}: "
-            f"{exc.body[:200]}\n"
+            f"nbsnap import: destination returned HTTP {exc.status}: {exc.body[:200]}\n"
         )
         return EXIT_DESTINATION_UNREACHABLE
     except (json.JSONDecodeError, OSError) as exc:
-        sys.stderr.write(
-            f"nbsnap import: snapshot is unreadable, {type(exc).__name__}: {exc}\n"
-        )
+        sys.stderr.write(f"nbsnap import: snapshot is unreadable, {type(exc).__name__}: {exc}\n")
         return EXIT_BAD_INVOCATION
     except Exception as exc:  # noqa: BLE001 - last-resort catch
         sys.stderr.write(
@@ -320,8 +318,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
         )
     if summary.preflight.missing_content_types:
         sys.stderr.write(
-            "  missing content types: "
-            f"{sorted(summary.preflight.missing_content_types)}\n"
+            f"  missing content types: {sorted(summary.preflight.missing_content_types)}\n"
         )
     if summary.preflight.snapshot_format_issues:
         if args.allow_enum_dict_bypass:
@@ -346,9 +343,7 @@ def run_import_cli(args: argparse.Namespace) -> int:
                     fp.write(json.dumps(issue, sort_keys=True) + "\n")
             sys.stderr.write(f"  bypass detail: {bypass_path}\n")
         else:
-            sys.stderr.write(
-                "nbsnap import: snapshot format issues detected:\n"
-            )
+            sys.stderr.write("nbsnap import: snapshot format issues detected:\n")
             for issue in summary.preflight.snapshot_format_issues[:10]:
                 sys.stderr.write(f"  {_format_issue(issue)}\n")
             sys.stderr.write(
@@ -390,27 +385,18 @@ def run_import_cli(args: argparse.Namespace) -> int:
                 total = sum(reasons.values())
                 if len(reasons) == 1:
                     only = next(iter(reasons))
-                    sys.stderr.write(
-                        f"    {ct}: {total} ({only})\n"
-                    )
+                    sys.stderr.write(f"    {ct}: {total} ({only})\n")
                 else:
-                    pretty = ", ".join(
-                        f"{r}={n}" for r, n in sorted(reasons.items())
-                    )
-                    sys.stderr.write(
-                        f"    {ct}: {total} ({pretty})\n"
-                    )
-    sys.stderr.write(
-        summary.auditor.render_summary(limit=args.audit_summary_limit)
-    )
+                    pretty = ", ".join(f"{r}={n}" for r, n in sorted(reasons.items()))
+                    sys.stderr.write(f"    {ct}: {total} ({pretty})\n")
+    sys.stderr.write(summary.auditor.render_summary(limit=args.audit_summary_limit))
     # BUG-13 cross-check: the SKIPPED upsert count and the
     # number of `category=skipped` audit events must agree.
     # They diverge only on an emission bug; surface that to the
     # operator instead of silently miscounting.
     skipped_count = summary.counts.get(UpsertOutcome.SKIPPED, 0)
     audit_skipped_count = sum(
-        1 for ev in summary.auditor.events
-        if ev.category is DropCategory.SKIPPED
+        1 for ev in summary.auditor.events if ev.category is DropCategory.SKIPPED
     )
     if skipped_count != audit_skipped_count:
         sys.stderr.write(
@@ -428,18 +414,15 @@ def run_import_cli(args: argparse.Namespace) -> int:
             f"failed={summary.phase2.counts.get(Phase2Outcome.FAILED, 0)} "
             f"verified_mismatch={summary.phase2.counts.get(Phase2Outcome.VERIFIED_MISMATCH, 0)}\n"
         )
-    sys.stderr.write(
-        f"  snapshot parse errors: {len(summary.parse_errors)}\n"
-    )
+    sys.stderr.write(f"  snapshot parse errors: {len(summary.parse_errors)}\n")
     for entry in summary.parse_errors[:5]:
-        sys.stderr.write(
-            f"    {entry['path']}:{entry['lineno']}: {entry['message']}\n"
-        )
+        sys.stderr.write(f"    {entry['path']}:{entry['lineno']}: {entry['message']}\n")
     if len(summary.parse_errors) > 5:
         remaining = len(summary.parse_errors) - 5
         sys.stderr.write(f"    ... and {remaining} more\n")
     return _compute_exit_code(
-        summary, max_skew,
+        summary,
+        max_skew,
         allow_enum_dict_bypass=args.allow_enum_dict_bypass,
         max_parse_errors=args.max_parse_errors,
         max_skipped=args.max_skipped,
@@ -469,8 +452,7 @@ def _install_termination_handlers(audit_path: Path) -> None:
 
     def _handler(signum: int, _frame) -> None:  # noqa: ANN001
         sys.stderr.write(
-            f"\nnbsnap import: received signal {signum}; "
-            f"partial audit at {audit_path}\n"
+            f"\nnbsnap import: received signal {signum}; partial audit at {audit_path}\n"
         )
         sys.exit(130 if signum == signal.SIGINT else 143)
 
@@ -577,22 +559,12 @@ def _compute_exit_code(
         else 0
     )
     missing_from_source = sum(
-        1 for ev in summary.auditor.events
-        if ev.category is DropCategory.MISSING_FROM_SOURCE
+        1 for ev in summary.auditor.events if ev.category is DropCategory.MISSING_FROM_SOURCE
     )
-    parse_errors_over_threshold = (
-        len(summary.parse_errors) > max_parse_errors
-    )
-    if (
-        summary.failures
-        or phase2_failures
-        or missing_from_source
-        or parse_errors_over_threshold
-    ):
+    parse_errors_over_threshold = len(summary.parse_errors) > max_parse_errors
+    if summary.failures or phase2_failures or missing_from_source or parse_errors_over_threshold:
         if summary.failures:
-            sys.stderr.write(
-                f"  first failure: {summary.failures[0].message}\n"
-            )
+            sys.stderr.write(f"  first failure: {summary.failures[0].message}\n")
         return EXIT_ROW_FAILURES
 
     # FEAT-41: SKIPPED gating. Per-ct thresholds win over the
@@ -600,13 +572,8 @@ def _compute_exit_code(
     # ipam.ipaddress skip, tolerate up to 10 dcim.cable skips"
     # with one flag invocation each.
     per_ct = max_skipped_ct or {}
-    skipped_totals = {
-        ct: sum(reasons.values())
-        for ct, reasons in summary.skipped_by_ct.items()
-    }
-    over_per_ct = any(
-        skipped_totals.get(ct, 0) > limit for ct, limit in per_ct.items()
-    )
+    skipped_totals = {ct: sum(reasons.values()) for ct, reasons in summary.skipped_by_ct.items()}
+    over_per_ct = any(skipped_totals.get(ct, 0) > limit for ct, limit in per_ct.items())
     total_skipped = sum(skipped_totals.values())
     over_global = max_skipped >= 0 and total_skipped > max_skipped
     if over_per_ct or over_global:
@@ -616,8 +583,7 @@ def _compute_exit_code(
     # log shows BYPASS_COERCED events; the exit code keeps the
     # signal visible to a CI gate without parsing logs.
     if allow_enum_dict_bypass and any(
-        ev.category.value == "bypass_coerced"
-        for ev in summary.auditor.events
+        ev.category.value == "bypass_coerced" for ev in summary.auditor.events
     ):
         return EXIT_BYPASS_USED
     return EXIT_OK

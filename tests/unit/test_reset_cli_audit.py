@@ -69,9 +69,7 @@ def test_audit_records_deleted_outcome_on_bulk_success() -> None:
 
     http = MagicMock()
     http._request.return_value = None  # 204 No Content
-    failures, audit = _delete_ids_with_audit(
-        http, "dcim/sites/", [1, 2, 3], "dcim.site"
-    )
+    failures, audit = _delete_ids_with_audit(http, "dcim/sites/", [1, 2, 3], "dcim.site")
     assert failures == []
     assert len(audit) == 3
     parsed = [json.loads(line) for line in audit]
@@ -90,9 +88,7 @@ def test_audit_records_deleted_fallback_on_4xx_bulk() -> None:
         None,  # per-id DELETE for id=1
         None,  # per-id DELETE for id=2
     ]
-    failures, audit = _delete_ids_with_audit(
-        http, "dcim/sites/", [1, 2], "dcim.site"
-    )
+    failures, audit = _delete_ids_with_audit(http, "dcim/sites/", [1, 2], "dcim.site")
     assert failures == []
     parsed = [json.loads(line) for line in audit]
     assert {row["outcome"] for row in parsed} == {"deleted-fallback"}
@@ -109,9 +105,7 @@ def test_audit_records_failed_with_truncated_message() -> None:
         NetboxHTTPError("DELETE", "dcim/sites/", 409, "bulk-conflict"),
         NetboxHTTPError("DELETE", "dcim/sites/1/", 409, long_body),
     ]
-    failures, audit = _delete_ids_with_audit(
-        http, "dcim/sites/", [1], "dcim.site"
-    )
+    failures, audit = _delete_ids_with_audit(http, "dcim/sites/", [1], "dcim.site")
     assert len(failures) == 1
     parsed = [json.loads(line) for line in audit]
     assert parsed[0]["outcome"] == "failed"
@@ -126,9 +120,7 @@ def test_audit_records_5xx_failure_without_per_id_retries() -> None:
     http._request.side_effect = [
         NetboxHTTPError("DELETE", "dcim/sites/", 503, "service unavailable"),
     ]
-    failures, audit = _delete_ids_with_audit(
-        http, "dcim/sites/", [1, 2], "dcim.site"
-    )
+    failures, audit = _delete_ids_with_audit(http, "dcim/sites/", [1, 2], "dcim.site")
     assert len(failures) == 2
     parsed = [json.loads(line) for line in audit]
     assert {row["outcome"] for row in parsed} == {"failed"}
@@ -199,18 +191,13 @@ def test_run_reset_cli_persists_audit_when_path_given(
     http = MagicMock()
     http.is_source.return_value = False
     http.base_url = "https://dest.example/"
-    http.get_all.side_effect = lambda _ep: iter(
-        [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
-    )
+    http.get_all.side_effect = lambda _ep: iter([{"id": 1, "name": "A"}, {"id": 2, "name": "B"}])
     http._request.return_value = None
 
     with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http):
         run_reset_cli(_args(audit_out=audit_path))
 
-    rows = [
-        json.loads(line)
-        for line in audit_path.read_text(encoding="utf-8").splitlines()
-    ]
+    rows = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
     assert {row["id"] for row in rows} == {1, 2}
     assert {row["outcome"] for row in rows} == {"deleted"}
 
@@ -235,9 +222,6 @@ def test_run_reset_cli_persists_audit_on_stop_path(
     with patch("nbsnap.reset_cli.NetboxHTTP.from_env", return_value=http):
         run_reset_cli(_args(on_error="stop", audit_out=audit_path))
 
-    rows = [
-        json.loads(line)
-        for line in audit_path.read_text(encoding="utf-8").splitlines()
-    ]
+    rows = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
     assert rows[0]["outcome"] == "failed"
     assert rows[0]["id"] == 9

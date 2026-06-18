@@ -79,9 +79,7 @@ def _offending_imports(
 def test_snapshot_does_not_import_from_pipeline_sides() -> None:
     """nbsnap.snapshot must not depend on export/ or import_/."""
 
-    findings = _offending_imports(
-        SNAPSHOT, forbidden_prefixes=("nbsnap.export", "nbsnap.import_")
-    )
+    findings = _offending_imports(SNAPSHOT, forbidden_prefixes=("nbsnap.export", "nbsnap.import_"))
     assert not findings, (
         "nbsnap.snapshot is a shared contract; it must not import from a "
         f"pipeline side. Offenders: {findings}"
@@ -92,10 +90,7 @@ def test_export_does_not_import_from_import_() -> None:
     """nbsnap.export and nbsnap.import_ are peers; no cross-side imports."""
 
     findings = _offending_imports(EXPORT, forbidden_prefixes=("nbsnap.import_",))
-    assert not findings, (
-        "nbsnap.export must not import from nbsnap.import_. "
-        f"Offenders: {findings}"
-    )
+    assert not findings, f"nbsnap.export must not import from nbsnap.import_. Offenders: {findings}"
 
 
 def test_import_does_not_import_from_export() -> None:
@@ -103,7 +98,4 @@ def test_import_does_not_import_from_export() -> None:
     failure reports against the right side cleanly."""
 
     findings = _offending_imports(IMPORT_, forbidden_prefixes=("nbsnap.export",))
-    assert not findings, (
-        "nbsnap.import_ must not import from nbsnap.export. "
-        f"Offenders: {findings}"
-    )
+    assert not findings, f"nbsnap.import_ must not import from nbsnap.export. Offenders: {findings}"

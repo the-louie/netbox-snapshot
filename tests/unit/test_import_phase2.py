@@ -76,9 +76,7 @@ def test_run_phase2_patches_each_entry(dest_index: NKIndex, registry) -> None:
 
     assert summary.counts[Phase2Outcome.PATCHED] == 1
     assert summary.is_clean()
-    http.patch.assert_called_once_with(
-        "dcim/devices/99/", {"primary_ip4": 7}
-    )
+    http.patch.assert_called_once_with("dcim/devices/99/", {"primary_ip4": 7})
 
 
 def test_run_phase2_no_entries_is_noop(dest_index: NKIndex, registry) -> None:
@@ -92,9 +90,7 @@ def test_run_phase2_no_entries_is_noop(dest_index: NKIndex, registry) -> None:
     http.patch.assert_not_called()
 
 
-def test_run_phase2_handles_multiple_entries(
-    dest_index: NKIndex, registry
-) -> None:
+def test_run_phase2_handles_multiple_entries(dest_index: NKIndex, registry) -> None:
     """Each entry fires its own one-field PATCH."""
 
     dest_index.insert("dcim.device", (("hall-d",), "d1"), 1)
@@ -119,9 +115,7 @@ def test_run_phase2_handles_multiple_entries(
 # ---------------------------------------------------------------------------
 
 
-def test_run_phase2_skips_when_child_missing(
-    dest_index: NKIndex, registry
-) -> None:
+def test_run_phase2_skips_when_child_missing(dest_index: NKIndex, registry) -> None:
     """If the child NK is not on the destination, the entry is
     skipped. The Phase-1 summary already records the upstream
     upsert failure that caused this."""
@@ -132,18 +126,14 @@ def test_run_phase2_skips_when_child_missing(
     http = MagicMock()
     http.get_all.return_value = iter([])
 
-    summary = run_phase2(
-        http, [_entry()], dest_index=dest_index, registry=registry
-    )
+    summary = run_phase2(http, [_entry()], dest_index=dest_index, registry=registry)
 
     assert summary.counts[Phase2Outcome.SKIPPED] == 1
     assert summary.counts.get(Phase2Outcome.PATCHED, 0) == 0
     http.patch.assert_not_called()
 
 
-def test_run_phase2_skips_when_target_missing(
-    dest_index: NKIndex, registry
-) -> None:
+def test_run_phase2_skips_when_target_missing(dest_index: NKIndex, registry) -> None:
     """The child exists but the target does not. Skip; do not
     raise. The look-ahead resolver should have created the target
     during Phase-1; reaching this branch means that upsert failed
@@ -156,17 +146,13 @@ def test_run_phase2_skips_when_target_missing(
     http = MagicMock()
     http.get_all.return_value = iter([])
 
-    summary = run_phase2(
-        http, [_entry()], dest_index=dest_index, registry=registry
-    )
+    summary = run_phase2(http, [_entry()], dest_index=dest_index, registry=registry)
 
     assert summary.counts[Phase2Outcome.SKIPPED] == 1
     http.patch.assert_not_called()
 
 
-def test_run_phase2_skips_unknown_content_type(
-    dest_index: NKIndex, registry
-) -> None:
+def test_run_phase2_skips_unknown_content_type(dest_index: NKIndex, registry) -> None:
     """If a deferred entry references a child content type not
     in CONTENT_TYPE_ENDPOINTS, skip rather than crash. This
     cannot occur if the look-ahead resolver only emits entries
@@ -179,9 +165,7 @@ def test_run_phase2_skips_unknown_content_type(
     http = MagicMock()
     http.get_all.return_value = iter([])
     entry = _entry(child_ct="nonsense.thing", child_nk=(("x",), "y"))
-    summary = run_phase2(
-        http, [entry], dest_index=dest_index, registry=registry
-    )
+    summary = run_phase2(http, [entry], dest_index=dest_index, registry=registry)
     assert summary.counts[Phase2Outcome.SKIPPED] == 1
 
 
@@ -190,9 +174,7 @@ def test_run_phase2_skips_unknown_content_type(
 # ---------------------------------------------------------------------------
 
 
-def test_run_phase2_records_patch_failure(
-    dest_index: NKIndex, registry
-) -> None:
+def test_run_phase2_records_patch_failure(dest_index: NKIndex, registry) -> None:
     """A PATCH that raises NetboxHTTPError lands on
     `summary.failures` with the entry and the error message."""
 
@@ -202,13 +184,13 @@ def test_run_phase2_records_patch_failure(
     http = MagicMock()
     http.get_all.return_value = iter([])
     http.patch.side_effect = NetboxHTTPError(
-        "PATCH", "dcim/devices/99/", 400,
+        "PATCH",
+        "dcim/devices/99/",
+        400,
         '{"primary_ip4":"does not belong"}',
     )
 
-    summary = run_phase2(
-        http, [_entry()], dest_index=dest_index, registry=registry
-    )
+    summary = run_phase2(http, [_entry()], dest_index=dest_index, registry=registry)
 
     assert summary.counts[Phase2Outcome.FAILED] == 1
     assert not summary.is_clean()
@@ -218,9 +200,7 @@ def test_run_phase2_records_patch_failure(
     assert "400" in msg
 
 
-def test_run_phase2_continues_after_one_failure(
-    dest_index: NKIndex, registry
-) -> None:
+def test_run_phase2_continues_after_one_failure(dest_index: NKIndex, registry) -> None:
     """A single failed PATCH does not abort subsequent entries.
     The driver, not Phase-2, applies the on_error policy."""
 
@@ -295,8 +275,10 @@ def test_run_phase2_verify_false_skips_check(dest_index, registry) -> None:
 
     queue = [_entry()]
     summary = run_phase2(
-        http, queue,
-        dest_index=dest_index, registry=registry,
+        http,
+        queue,
+        dest_index=dest_index,
+        registry=registry,
         verify=False,
     )
     assert summary.counts[Phase2Outcome.PATCHED] == 1

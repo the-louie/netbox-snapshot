@@ -104,10 +104,7 @@ def test_phase2_failure_fails_the_run() -> None:
     """A Phase-2 PATCH failure surfaces via EXIT_ROW_FAILURES
     even when Phase-1 was clean."""
 
-    assert (
-        _compute_exit_code(_summary(phase2_failed=2), VersionSkew.MINOR)
-        == EXIT_ROW_FAILURES
-    )
+    assert _compute_exit_code(_summary(phase2_failed=2), VersionSkew.MINOR) == EXIT_ROW_FAILURES
 
 
 def test_phase1_failure_fails_the_run() -> None:
@@ -135,10 +132,12 @@ def test_mixed_audit_categories_only_missing_matters() -> None:
     """A run with a mix of categories fails only when at least
     one MISSING_FROM_SOURCE is present."""
 
-    s = _summary(audit_events=[
-        _drop(DropCategory.OUT_OF_SCOPE, ("a",)),
-        _drop(DropCategory.DEFERRED_TO_PHASE2, ("b",)),
-    ])
+    s = _summary(
+        audit_events=[
+            _drop(DropCategory.OUT_OF_SCOPE, ("a",)),
+            _drop(DropCategory.DEFERRED_TO_PHASE2, ("b",)),
+        ]
+    )
     assert _compute_exit_code(s, VersionSkew.MINOR) == EXIT_OK
     s.auditor.record(_drop(DropCategory.MISSING_FROM_SOURCE, ("c",)))
     assert _compute_exit_code(s, VersionSkew.MINOR) == EXIT_ROW_FAILURES
@@ -153,20 +152,14 @@ def test_parse_errors_over_threshold_fails_run() -> None:
     # Default threshold (0) treats any parse error as failure.
     assert _compute_exit_code(s, VersionSkew.MINOR) == EXIT_ROW_FAILURES
     # Raising the threshold above the count keeps the run clean.
-    assert (
-        _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=1)
-        == EXIT_OK
-    )
+    assert _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=1) == EXIT_OK
 
 
 def test_no_parse_errors_does_not_fail() -> None:
     """A clean run with zero parse errors stays OK at any threshold."""
 
     s = _summary()
-    assert (
-        _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=0)
-        == EXIT_OK
-    )
+    assert _compute_exit_code(s, VersionSkew.MINOR, max_parse_errors=0) == EXIT_OK
 
 
 def test_max_skipped_global_threshold_fires() -> None:
@@ -174,6 +167,7 @@ def test_max_skipped_global_threshold_fires() -> None:
     EXIT_SKIPPED_OVER_THRESHOLD (6)."""
 
     from nbsnap.import_cli import EXIT_SKIPPED_OVER_THRESHOLD
+
     s = _summary()
     s.skipped_by_ct = {"dcim.cable": {"no resolvable terminations": 4}}
     code = _compute_exit_code(s, VersionSkew.MINOR, max_skipped=3)
@@ -194,10 +188,12 @@ def test_max_skipped_per_ct_fires_independently() -> None:
     threshold is comfortable."""
 
     from nbsnap.import_cli import EXIT_SKIPPED_OVER_THRESHOLD
+
     s = _summary()
     s.skipped_by_ct = {"ipam.ipaddress": {"duplicate IP": 19}}
     code = _compute_exit_code(
-        s, VersionSkew.MINOR,
+        s,
+        VersionSkew.MINOR,
         max_skipped=-1,
         max_skipped_ct={"ipam.ipaddress": 5},
     )
@@ -210,7 +206,8 @@ def test_max_skipped_per_ct_under_threshold_is_ok() -> None:
     s = _summary()
     s.skipped_by_ct = {"dcim.cable": {"no resolvable terminations": 4}}
     code = _compute_exit_code(
-        s, VersionSkew.MINOR,
+        s,
+        VersionSkew.MINOR,
         max_skipped_ct={"dcim.cable": 10},
     )
     assert code == EXIT_OK
@@ -222,13 +219,16 @@ def test_strict_schema_blocks_when_drift_present() -> None:
     flag the drift is informational and the run completes."""
 
     from nbsnap.schema.diff import FieldDrift
+
     s = _summary()
     s.preflight.is_blocking.return_value = True  # mock to honour strict_schema
     s.preflight.schema_drift = [
         FieldDrift("dcim.site", "region", "dcim.region", "dcim.area"),
     ]
     code = _compute_exit_code(
-        s, VersionSkew.MINOR, strict_schema=True,
+        s,
+        VersionSkew.MINOR,
+        strict_schema=True,
     )
     assert code == EXIT_PREFLIGHT_BLOCKED
 
@@ -239,21 +239,21 @@ def test_bypass_used_exit_code() -> None:
     EXIT_BYPASS_USED instead of EXIT_OK."""
 
     from nbsnap.import_cli import EXIT_BYPASS_USED
-    s = _summary(audit_events=[
-        DropEvent(
-            category=DropCategory.BYPASS_COERCED,
-            child_content_type="dcim.site",
-            child_nk=("hall-a",),
-            field_name="status",
-            target_content_type="dcim.site",
-            target_nk=("hall-a",),
-            message="coerced",
-        ),
-    ])
-    assert (
-        _compute_exit_code(s, VersionSkew.MINOR, allow_enum_dict_bypass=True)
-        == EXIT_BYPASS_USED
+
+    s = _summary(
+        audit_events=[
+            DropEvent(
+                category=DropCategory.BYPASS_COERCED,
+                child_content_type="dcim.site",
+                child_nk=("hall-a",),
+                field_name="status",
+                target_content_type="dcim.site",
+                target_nk=("hall-a",),
+                message="coerced",
+            ),
+        ]
     )
+    assert _compute_exit_code(s, VersionSkew.MINOR, allow_enum_dict_bypass=True) == EXIT_BYPASS_USED
 
 
 def test_no_bypass_event_returns_ok_even_with_flag() -> None:
@@ -262,7 +262,4 @@ def test_no_bypass_event_returns_ok_even_with_flag() -> None:
     run with the flag set but no coercions returns OK."""
 
     s = _summary()
-    assert (
-        _compute_exit_code(s, VersionSkew.MINOR, allow_enum_dict_bypass=True)
-        == EXIT_OK
-    )
+    assert _compute_exit_code(s, VersionSkew.MINOR, allow_enum_dict_bypass=True) == EXIT_OK

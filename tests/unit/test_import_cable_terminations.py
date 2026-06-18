@@ -39,17 +39,19 @@ def _minimal_schema() -> OpenAPI:
     field_spec / iter_endpoints surface for the look-ahead
     callout."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Cable": {
-                    "type": "object",
-                    "properties": {"id": {}},
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Cable": {
+                        "type": "object",
+                        "properties": {"id": {}},
+                    }
                 }
-            }
-        },
-        "paths": {}
-    })
+            },
+            "paths": {},
+        }
+    )
 
 
 def _call(body: dict, dest: NKIndex | None = None) -> dict:
@@ -77,14 +79,18 @@ def test_terminations_with_resolvable_nk_get_object_id() -> None:
     dest.insert("dcim.interface", (("dist-a",), "Ethernet0"), 42)
 
     body = {
-        "a_terminations": [{
-            "object_natural_key": (("dist-a",), "Ethernet0"),
-            "object_type": "dcim.interface",
-        }],
-        "b_terminations": [{
-            "object_natural_key": (("dist-b",), "Ethernet1"),
-            "object_type": "dcim.interface",
-        }],
+        "a_terminations": [
+            {
+                "object_natural_key": (("dist-a",), "Ethernet0"),
+                "object_type": "dcim.interface",
+            }
+        ],
+        "b_terminations": [
+            {
+                "object_natural_key": (("dist-b",), "Ethernet1"),
+                "object_type": "dcim.interface",
+            }
+        ],
         "label": "Cable-1",
     }
     dest.insert("dcim.interface", (("dist-b",), "Ethernet1"), 43)
@@ -108,10 +114,12 @@ def test_terminations_with_all_misses_drop_the_field() -> None:
     cleaner "required" error message."""
 
     body = {
-        "a_terminations": [{
-            "object_natural_key": (("ghost",), "Ethernet0"),
-            "object_type": "dcim.interface",
-        }],
+        "a_terminations": [
+            {
+                "object_natural_key": (("ghost",), "Ethernet0"),
+                "object_type": "dcim.interface",
+            }
+        ],
     }
     out = _call(body)
     assert "a_terminations" not in out
@@ -128,10 +136,8 @@ def test_terminations_with_some_misses_keeps_resolvable_items() -> None:
 
     body = {
         "a_terminations": [
-            {"object_natural_key": (("dist-a",), "ok-iface"),
-             "object_type": "dcim.interface"},
-            {"object_natural_key": (("ghost",), "missing"),
-             "object_type": "dcim.interface"},
+            {"object_natural_key": (("dist-a",), "ok-iface"), "object_type": "dcim.interface"},
+            {"object_natural_key": (("ghost",), "missing"), "object_type": "dcim.interface"},
         ],
     }
     out = _call(body, dest=dest)
@@ -166,8 +172,7 @@ def test_malformed_item_skipped_when_sibling_is_valid() -> None:
     body = {
         "a_terminations": [
             # Valid termination dict.
-            {"object_natural_key": (("dist-a",), "ok-iface"),
-             "object_type": "dcim.interface"},
+            {"object_natural_key": (("dist-a",), "ok-iface"), "object_type": "dcim.interface"},
             # Malformed: missing object_type.
             {"object_natural_key": (("dist-b",), "missing-type")},
             # Malformed: not a dict at all.

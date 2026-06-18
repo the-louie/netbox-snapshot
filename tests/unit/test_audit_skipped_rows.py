@@ -37,16 +37,20 @@ def test_skipped_distinct_rows_each_emit_one_audit_line() -> None:
     must produce two audit entries, not collapse to one."""
 
     a = Auditor()
-    a.record(_skipped(
-        "ipam.ipaddress",
-        ("172.16.255.5/32", "dcim.interface", ((("d",), "D-MIRAGE-PALACE-SW"), "lo0.0")),
-        message="ip-address refused due to a duplicate already on the destination.",
-    ))
-    a.record(_skipped(
-        "ipam.ipaddress",
-        ("172.16.255.6/32", "dcim.interface", ((("d",), "D-Neon-District-SW"), "lo0.0")),
-        message="ip-address refused due to a duplicate already on the destination.",
-    ))
+    a.record(
+        _skipped(
+            "ipam.ipaddress",
+            ("172.16.255.5/32", "dcim.interface", ((("d",), "D-MIRAGE-PALACE-SW"), "lo0.0")),
+            message="ip-address refused due to a duplicate already on the destination.",
+        )
+    )
+    a.record(
+        _skipped(
+            "ipam.ipaddress",
+            ("172.16.255.6/32", "dcim.interface", ((("d",), "D-Neon-District-SW"), "lo0.0")),
+            message="ip-address refused due to a duplicate already on the destination.",
+        )
+    )
     assert len(a.events) == 2
     assert all(e.category is DropCategory.SKIPPED for e in a.events)
 
@@ -84,14 +88,16 @@ def test_skipped_does_not_collide_with_fk_drop_dedup() -> None:
 
     a = Auditor()
     a.record(_skipped("ipam.ipaddress", ("10.0.0.1/32",), message="duplicate"))
-    a.record(DropEvent(
-        category=DropCategory.MISSING_FROM_SOURCE,
-        child_content_type="ipam.ipaddress",
-        child_nk=("10.0.0.1/32",),
-        field_name="assigned_object",
-        target_content_type="dcim.interface",
-        target_nk=(("device-a",), "eth0"),
-    ))
+    a.record(
+        DropEvent(
+            category=DropCategory.MISSING_FROM_SOURCE,
+            child_content_type="ipam.ipaddress",
+            child_nk=("10.0.0.1/32",),
+            field_name="assigned_object",
+            target_content_type="dcim.interface",
+            target_nk=(("device-a",), "eth0"),
+        )
+    )
     assert len(a.events) == 2
 
 
@@ -102,11 +108,13 @@ def test_skipped_audit_serialises_to_jsonl(tmp_path) -> None:
     import json
 
     a = Auditor()
-    a.record(_skipped(
-        "ipam.ipaddress",
-        ("172.16.255.5/32",),
-        message="duplicate already on destination",
-    ))
+    a.record(
+        _skipped(
+            "ipam.ipaddress",
+            ("172.16.255.5/32",),
+            message="duplicate already on destination",
+        )
+    )
     out = tmp_path / "audit.jsonl"
     a.write_jsonl(out)
     lines = [json.loads(line) for line in out.read_text().splitlines()]

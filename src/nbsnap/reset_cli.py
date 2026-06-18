@@ -209,16 +209,18 @@ def run_reset_cli(args: argparse.Namespace) -> int:
             continue
         progress = _ResetProgress(ct, total, quiet=quiet)
         ct_failures, ct_audit = _delete_ids_with_audit(
-            http, endpoint, ids, ct, on_batch=progress.tick,
+            http,
+            endpoint,
+            ids,
+            ct,
+            on_batch=progress.tick,
         )
         progress.finish()
         audit_lines.extend(ct_audit)
         for rid, msg in ct_failures:
             failures.append((ct, rid, msg))
             if args.on_error == "stop":
-                sys.stderr.write(
-                    f"  STOP, first failure: {ct} id={rid} {msg[:160]}\n"
-                )
+                sys.stderr.write(f"  STOP, first failure: {ct} id={rid} {msg[:160]}\n")
                 _flush_audit(args.audit_out, audit_lines)
                 return EXIT_DELETE_FAILURES
 
@@ -325,10 +327,12 @@ def _delete_ids_with_audit(
         try:
             _bulk_delete(http, endpoint, batch)
             for rid in batch:
-                audit.append(json.dumps(
-                    {"content_type": content_type, "id": rid, "outcome": "deleted"},
-                    sort_keys=True,
-                ))
+                audit.append(
+                    json.dumps(
+                        {"content_type": content_type, "id": rid, "outcome": "deleted"},
+                        sort_keys=True,
+                    )
+                )
             if on_batch is not None:
                 on_batch(len(batch))
             continue
@@ -337,10 +341,17 @@ def _delete_ids_with_audit(
                 msg = f"bulk {exc.status}: {exc.body[:160]}"
                 for rid in batch:
                     failures.append((rid, msg))
-                    audit.append(json.dumps({
-                        "content_type": content_type, "id": rid,
-                        "outcome": "failed", "message": msg,
-                    }, sort_keys=True))
+                    audit.append(
+                        json.dumps(
+                            {
+                                "content_type": content_type,
+                                "id": rid,
+                                "outcome": "failed",
+                                "message": msg,
+                            },
+                            sort_keys=True,
+                        )
+                    )
                 if on_batch is not None:
                     on_batch(len(batch))
                 continue
@@ -350,15 +361,28 @@ def _delete_ids_with_audit(
                     http._request("DELETE", f"{endpoint}{rid}/")
                 except NetboxHTTPError as one_exc:
                     failures.append((rid, str(one_exc)))
-                    audit.append(json.dumps({
-                        "content_type": content_type, "id": rid,
-                        "outcome": "failed", "message": str(one_exc)[:200],
-                    }, sort_keys=True))
+                    audit.append(
+                        json.dumps(
+                            {
+                                "content_type": content_type,
+                                "id": rid,
+                                "outcome": "failed",
+                                "message": str(one_exc)[:200],
+                            },
+                            sort_keys=True,
+                        )
+                    )
                 else:
-                    audit.append(json.dumps({
-                        "content_type": content_type, "id": rid,
-                        "outcome": "deleted-fallback",
-                    }, sort_keys=True))
+                    audit.append(
+                        json.dumps(
+                            {
+                                "content_type": content_type,
+                                "id": rid,
+                                "outcome": "deleted-fallback",
+                            },
+                            sort_keys=True,
+                        )
+                    )
             if on_batch is not None:
                 on_batch(len(batch))
     return failures, audit
@@ -424,10 +448,7 @@ class _ResetProgress:
                 # so a content type whose final batch exactly
                 # hits N does not double-print 100%.
                 break
-            sys.stderr.write(
-                f"  {self.ct}: {self.done}/{self.total} "
-                f"({self.next_boundary}%)\n"
-            )
+            sys.stderr.write(f"  {self.ct}: {self.done}/{self.total} ({self.next_boundary}%)\n")
             self.next_boundary += 10
 
     def finish(self) -> None:
@@ -451,13 +472,9 @@ class _ResetProgress:
             sys.stderr.write(f"  {self.ct}: 0/0 (done)\n")
             return
         if self.total < self._SMALL_N:
-            sys.stderr.write(
-                f"  {self.ct}: {self.total}/{self.total} (done)\n"
-            )
+            sys.stderr.write(f"  {self.ct}: {self.total}/{self.total} (done)\n")
             return
-        sys.stderr.write(
-            f"  {self.ct}: {self.total}/{self.total} (100%)\n"
-        )
+        sys.stderr.write(f"  {self.ct}: {self.total}/{self.total} (100%)\n")
 
 
 def _flush_audit(path: Path | None, lines: list[str]) -> None:
@@ -482,9 +499,7 @@ def _flush_audit(path: Path | None, lines: list[str]) -> None:
     path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
-def _delete_ids(
-    http: NetboxHTTP, endpoint: str, ids: list[int]
-) -> list[tuple[int, str]]:
+def _delete_ids(http: NetboxHTTP, endpoint: str, ids: list[int]) -> list[tuple[int, str]]:
     """Delete every id, return the per-id failure list.
 
     Strategy: try the bulk endpoint first. NetBox 4.x accepts
@@ -573,5 +588,3 @@ def _enumerate_ids(
         if name in keep_names:
             continue
         yield rid
-
-

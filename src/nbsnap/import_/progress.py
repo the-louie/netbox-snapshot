@@ -150,9 +150,7 @@ class ProgressReporter:
         self._current_total = total
         # ceil so even a tiny `total` produces at least one tick
         # at row 1. For total <= TARGET we tick every row.
-        self._current_tick_every = max(
-            1, math.ceil(total / _TARGET_TICK_COUNT)
-        )
+        self._current_tick_every = max(1, math.ceil(total / _TARGET_TICK_COUNT))
         self._phase_started_at = self._clock()
         self._phase_warned_rate = False
         self._write(f"# Importing {content_type} ({total} records)\n")
@@ -165,9 +163,7 @@ class ProgressReporter:
         if self._current_total <= 0:
             return
         elapsed = max(0.0, self._clock() - self._phase_started_at)
-        rate = (
-            self._current_total / elapsed if elapsed > 0 else 0.0
-        )
+        rate = self._current_total / elapsed if elapsed > 0 else 0.0
         # Compact human duration. Prefer Hh Mm Ss, then Mm Ss,
         # then Ss for short phases.
         secs = int(elapsed)
@@ -202,16 +198,11 @@ class ProgressReporter:
 
         is_first = row_index == 1
         is_last = row_index == self._current_total
-        is_stride_hit = (
-            self._current_tick_every > 0
-            and row_index % self._current_tick_every == 0
-        )
+        is_stride_hit = self._current_tick_every > 0 and row_index % self._current_tick_every == 0
         if not (is_first or is_last or is_stride_hit):
             return
 
-        self._write(
-            f"#   {content_type} {row_index}/{self._current_total}\n"
-        )
+        self._write(f"#   {content_type} {row_index}/{self._current_total}\n")
 
     # ------------------------------------------------------------------
     # Audit flush
@@ -244,11 +235,11 @@ class ProgressReporter:
         on its own before a hard kill.
         """
         import os
+
         if self._audit_path is None or not self._audit_path.exists():
             return
         with self._audit_path.open("rb") as fp:
             os.fsync(fp.fileno())
-
 
     def close(self) -> None:
         """Final audit flush, called at the end of `run_import`.

@@ -142,16 +142,24 @@ def test_non_deferred_categories_keep_quadruple_dedup() -> None:
 def test_render_summary_counts_per_category() -> None:
     a = Auditor()
     a.record(_event(category=DropCategory.OUT_OF_SCOPE))
-    a.record(_event(
-        category=DropCategory.MISSING_FROM_SOURCE,
-        child_ct="dcim.device", field_name="platform",
-        target_ct="dcim.platform", target_nk=("ghost",),
-    ))
-    a.record(_event(
-        category=DropCategory.DEFERRED_TO_PHASE2,
-        child_ct="dcim.device", field_name="primary_ip4",
-        target_ct="ipam.ipaddress", target_nk=("172.16.1.10/24",),
-    ))
+    a.record(
+        _event(
+            category=DropCategory.MISSING_FROM_SOURCE,
+            child_ct="dcim.device",
+            field_name="platform",
+            target_ct="dcim.platform",
+            target_nk=("ghost",),
+        )
+    )
+    a.record(
+        _event(
+            category=DropCategory.DEFERRED_TO_PHASE2,
+            child_ct="dcim.device",
+            field_name="primary_ip4",
+            target_ct="ipam.ipaddress",
+            target_nk=("172.16.1.10/24",),
+        )
+    )
     text = a.render_summary()
     assert "out_of_scope: 1" in text
     assert "missing_from_source: 1" in text
@@ -185,16 +193,15 @@ def test_render_summary_caps_at_limit_with_trailer() -> None:
     a = Auditor()
     # 15 distinct (ct, field) pairs so the cap kicks in.
     for i in range(15):
-        a.record(_event(
-            child_ct=f"dcim.thing{i}",
-            field_name="field",
-            target_nk=(f"t-{i}",),
-        ))
+        a.record(
+            _event(
+                child_ct=f"dcim.thing{i}",
+                field_name="field",
+                target_nk=(f"t-{i}",),
+            )
+        )
     text = a.render_summary(limit=10)
-    pair_lines = [
-        line for line in text.splitlines()
-        if line.strip().startswith("dcim.thing")
-    ]
+    pair_lines = [line for line in text.splitlines() if line.strip().startswith("dcim.thing")]
     assert len(pair_lines) == 10
     assert "and 5 more" in text
 
@@ -204,11 +211,13 @@ def test_render_summary_no_trailer_when_under_limit() -> None:
 
     a = Auditor()
     for i in range(3):
-        a.record(_event(
-            child_ct=f"dcim.thing{i}",
-            field_name="field",
-            target_nk=(f"t-{i}",),
-        ))
+        a.record(
+            _event(
+                child_ct=f"dcim.thing{i}",
+                field_name="field",
+                target_nk=(f"t-{i}",),
+            )
+        )
     text = a.render_summary(limit=10)
     assert "more (see audit log)" not in text
 
@@ -223,11 +232,15 @@ def test_write_jsonl_emits_one_object_per_line(tmp_path: Path) -> None:
 
     a = Auditor()
     a.record(_event())
-    a.record(_event(
-        category=DropCategory.MISSING_FROM_SOURCE,
-        child_ct="dcim.device", field_name="platform",
-        target_ct="dcim.platform", target_nk=("ghost",),
-    ))
+    a.record(
+        _event(
+            category=DropCategory.MISSING_FROM_SOURCE,
+            child_ct="dcim.device",
+            field_name="platform",
+            target_ct="dcim.platform",
+            target_nk=("ghost",),
+        )
+    )
     path = tmp_path / "audit.jsonl"
     a.write_jsonl(path)
 
@@ -409,10 +422,7 @@ def test_bypass_coerced_emits_one_event_per_field() -> None:
         registry=MagicMock(),
         auditor=auditor,
     )
-    bypass = [
-        ev for ev in auditor.events
-        if ev.category is DropCategory.BYPASS_COERCED
-    ]
+    bypass = [ev for ev in auditor.events if ev.category is DropCategory.BYPASS_COERCED]
     assert len(bypass) == 1
     assert bypass[0].field_name == "status"
     assert bypass[0].child_content_type == "dcim.site"

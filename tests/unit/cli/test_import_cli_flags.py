@@ -25,9 +25,7 @@ def test_import_cli_exposes_no_verify_tls() -> None:
 
 
 def test_import_cli_exposes_audit_out_and_fsync() -> None:
-    ns = _parser().parse_args(
-        ["--in", "/tmp/snap", "--audit-out", "/tmp/a.jsonl", "--audit-fsync"]
-    )
+    ns = _parser().parse_args(["--in", "/tmp/snap", "--audit-out", "/tmp/a.jsonl", "--audit-fsync"])
     assert ns.audit_out == Path("/tmp/a.jsonl")
     assert ns.audit_fsync is True
 

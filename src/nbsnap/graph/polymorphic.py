@@ -62,9 +62,7 @@ def discover_via_options(http: NetboxHTTP, endpoint: str, field: str) -> list[st
     return out or None
 
 
-def discover_via_post_probe(
-    http: NetboxHTTP, endpoint: str, field: str
-) -> list[str] | None:
+def discover_via_post_probe(http: NetboxHTTP, endpoint: str, field: str) -> list[str] | None:
     """Destination-only fallback when OPTIONS does not surface choices.
 
     Sends a deliberately-invalid POST with a sentinel content type
@@ -172,9 +170,13 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
         "owner_ct": _ct("dcim.cable"),
         "field": "a_terminations",
         "targets": [
-            _ct("dcim.interface"), _ct("dcim.frontport"), _ct("dcim.rearport"),
-            _ct("dcim.consoleport"), _ct("dcim.consoleserverport"),
-            _ct("dcim.powerport"), _ct("dcim.poweroutlet"),
+            _ct("dcim.interface"),
+            _ct("dcim.frontport"),
+            _ct("dcim.rearport"),
+            _ct("dcim.consoleport"),
+            _ct("dcim.consoleserverport"),
+            _ct("dcim.powerport"),
+            _ct("dcim.poweroutlet"),
             _ct("circuits.circuittermination"),
         ],
         "verified_against": "netbox 4.6.2",
@@ -183,9 +185,13 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
         "owner_ct": _ct("dcim.cable"),
         "field": "b_terminations",
         "targets": [
-            _ct("dcim.interface"), _ct("dcim.frontport"), _ct("dcim.rearport"),
-            _ct("dcim.consoleport"), _ct("dcim.consoleserverport"),
-            _ct("dcim.powerport"), _ct("dcim.poweroutlet"),
+            _ct("dcim.interface"),
+            _ct("dcim.frontport"),
+            _ct("dcim.rearport"),
+            _ct("dcim.consoleport"),
+            _ct("dcim.consoleserverport"),
+            _ct("dcim.powerport"),
+            _ct("dcim.poweroutlet"),
             _ct("circuits.circuittermination"),
         ],
         "verified_against": "netbox 4.6.2",
@@ -194,7 +200,8 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
         "owner_ct": _ct("ipam.ipaddress"),
         "field": "assigned_object",
         "targets": [
-            _ct("dcim.interface"), _ct("virtualization.vminterface"),
+            _ct("dcim.interface"),
+            _ct("virtualization.vminterface"),
             _ct("ipam.fhrpgroup"),
         ],
         "verified_against": "netbox 4.6.2",
@@ -203,7 +210,8 @@ POLYMORPHIC_HINTS: list[dict[str, Any]] = [
         "owner_ct": _ct("ipam.service"),
         "field": "parent",
         "targets": [
-            _ct("dcim.device"), _ct("virtualization.virtualmachine"),
+            _ct("dcim.device"),
+            _ct("virtualization.virtualmachine"),
             _ct("ipam.fhrpgroup"),
         ],
         "verified_against": "netbox 4.6.2",

@@ -261,9 +261,7 @@ def _netbox_4_6_paginated_with_refs() -> dict:
                         "200": {
                             "content": {
                                 "application/json": {
-                                    "schema": {
-                                        "$ref": "#/components/schemas/PaginatedDeviceList"
-                                    }
+                                    "schema": {"$ref": "#/components/schemas/PaginatedDeviceList"}
                                 }
                             }
                         }

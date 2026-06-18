@@ -29,9 +29,7 @@ class Flag:
     reason: str
 
 
-def is_install_local(
-    content_type: str, record: Mapping[str, Any], source_url: str
-) -> Flag | None:
+def is_install_local(content_type: str, record: Mapping[str, Any], source_url: str) -> Flag | None:
     """Return a Flag when the record is install-local, else None.
 
     Network-only scope per CLAUDE.md: the only install-local check

@@ -27,26 +27,34 @@ def _minimal_cable_interface_schema() -> dict:
     return {
         "paths": {
             "/api/dcim/interfaces/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "name": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"name": {}}
-                    }}
-                }}},
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"id": {}, "name": {}}}
+                                }
+                            }
+                        }
+                    }
+                },
+                "post": {
+                    "requestBody": {
+                        "content": {"application/json": {"schema": {"properties": {"name": {}}}}}
+                    }
+                },
             },
             "/api/dcim/cables/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {}}}
-                }}},
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {"application/json": {"schema": {"properties": {"id": {}}}}}
+                        }
+                    }
+                },
+                "post": {
+                    "requestBody": {"content": {"application/json": {"schema": {"properties": {}}}}}
+                },
             },
         }
     }
@@ -94,6 +102,7 @@ def test_hint_edges_carry_field_suffix_and_targets_tuple() -> None:
     full `polymorphic_targets` tuple is preserved on each."""
 
     from nbsnap.graph.model import Graph
+
     graph = Graph()
     for ct in {"dcim.cable", "dcim.interface", "dcim.frontport"}:
         graph.add_node(Node(ct))
@@ -118,6 +127,7 @@ def test_hints_marked_nullable_so_cycle_breaker_can_defer() -> None:
     cycle-breaking pass can defer them when a true cycle exists."""
 
     from nbsnap.graph.model import Graph
+
     graph = Graph()
     for ct in {"dcim.cable", "dcim.interface"}:
         graph.add_node(Node(ct))
@@ -154,22 +164,31 @@ def test_cable_orders_after_interface() -> None:
     schema_path = Path("/workspace/snapshot-source-frozen/schema/openapi.json")
     if not schema_path.exists():
         import pytest
+
         pytest.skip("frozen snapshot schema not available in this sandbox")
 
     schema = OpenAPI.load(schema_path)
     # Use the renderer-minimum scope so the SCC is non-trivial.
     scope = {
-        "dcim.site", "dcim.location", "dcim.rack",
-        "dcim.manufacturer", "dcim.devicetype", "dcim.devicerole",
-        "dcim.platform", "dcim.device", "dcim.interface",
+        "dcim.site",
+        "dcim.location",
+        "dcim.rack",
+        "dcim.manufacturer",
+        "dcim.devicetype",
+        "dcim.devicerole",
+        "dcim.platform",
+        "dcim.device",
+        "dcim.interface",
         "dcim.cable",
-        "ipam.vlan", "ipam.prefix", "ipam.ipaddress", "ipam.iprange",
+        "ipam.vlan",
+        "ipam.prefix",
+        "ipam.ipaddress",
+        "ipam.iprange",
     }
     graph = build_graph(schema, scope)
     p = plan(graph)
     iface_idx = p.order.index("dcim.interface")
     cable_idx = p.order.index("dcim.cable")
     assert iface_idx < cable_idx, (
-        f"expected dcim.interface ({iface_idx}) to precede "
-        f"dcim.cable ({cable_idx}) in plan order"
+        f"expected dcim.interface ({iface_idx}) to precede dcim.cable ({cable_idx}) in plan order"
     )

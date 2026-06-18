@@ -82,9 +82,7 @@ class Manifest:
     def write(self, path: Path) -> None:
         """Write the manifest as canonical JSON."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(
-            json.dumps(asdict(self), sort_keys=True, indent=2), encoding="utf-8"
-        )
+        Path(path).write_text(json.dumps(asdict(self), sort_keys=True, indent=2), encoding="utf-8")
 
     @classmethod
     def load(cls, path: Path) -> Manifest:

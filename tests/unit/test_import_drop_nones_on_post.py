@@ -39,7 +39,7 @@ def test_coerce_post_path_drops_none_values() -> None:
     body = {
         "name": "Cable-1",
         "type": "cat6",
-        "profile": None,   # the canonical bug case
+        "profile": None,  # the canonical bug case
         "length": None,
     }
     out, _coerced = _coerce_body_for_write(body, drop_nones=True)

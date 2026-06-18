@@ -85,8 +85,7 @@ def test_unknown_content_type_refused_with_clear_message(
         f"expected EXIT_PREFLIGHT_BLOCKED (1), got {rc}; stderr was: {err!r}"
     )
     assert "dcim.devic" in err, (
-        "stderr must name the offending content type for the operator; "
-        f"got stderr: {err!r}"
+        f"stderr must name the offending content type for the operator; got stderr: {err!r}"
     )
     # The unknown CT is detected pre-network, so no HTTP-shaped error
     # should appear; a connectivity failure would suggest the check

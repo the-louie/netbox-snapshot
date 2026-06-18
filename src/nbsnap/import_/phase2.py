@@ -112,7 +112,8 @@ def run_phase2(
         if child_id is None:
             logger.warning(
                 "Phase-2: child %s NK=%r not on destination, skipping",
-                entry.child_content_type, entry.child_nk,
+                entry.child_content_type,
+                entry.child_nk,
             )
             summary.counts[Phase2Outcome.SKIPPED] += 1
             continue
@@ -124,8 +125,10 @@ def run_phase2(
         if target_id is None:
             logger.warning(
                 "Phase-2: target %s NK=%r still missing, skipping %s.%s",
-                entry.target_content_type, entry.target_nk,
-                entry.child_content_type, entry.field_name,
+                entry.target_content_type,
+                entry.target_nk,
+                entry.child_content_type,
+                entry.field_name,
             )
             summary.counts[Phase2Outcome.SKIPPED] += 1
             continue
@@ -142,9 +145,7 @@ def run_phase2(
             continue
 
         try:
-            response = http.patch(
-                f"{endpoint}{child_id}/", {entry.field_name: target_id}
-            )
+            response = http.patch(f"{endpoint}{child_id}/", {entry.field_name: target_id})
         except NetboxHTTPError as exc:
             # ARCH-07d: NetboxHTTPError is a nbsnap-domain exception
             # exported from nbsnap.http; catching it here keeps the
@@ -154,8 +155,11 @@ def run_phase2(
             # already redacted (SEC-05b).
             logger.warning(
                 "Phase-2 PATCH failed for %s id=%d field=%s: HTTP %d %s",
-                entry.child_content_type, child_id, entry.field_name,
-                exc.status, exc.body[:160],
+                entry.child_content_type,
+                child_id,
+                entry.field_name,
+                exc.status,
+                exc.body[:160],
             )
             summary.counts[Phase2Outcome.FAILED] += 1
             summary.failures.append((entry, str(exc)))
@@ -181,22 +185,30 @@ def run_phase2(
                     "Phase-2 PATCH for %s id=%d field=%s returned 2xx "
                     "but field value is %r, expected %d. NetBox may "
                     "have silently rejected the update.",
-                    entry.child_content_type, child_id,
-                    entry.field_name, actual, target_id,
+                    entry.child_content_type,
+                    child_id,
+                    entry.field_name,
+                    actual,
+                    target_id,
                 )
                 summary.counts[Phase2Outcome.VERIFIED_MISMATCH] += 1
-                summary.failures.append((
-                    entry,
-                    f"verified mismatch: field={entry.field_name} "
-                    f"expected={target_id} actual={actual}",
-                ))
+                summary.failures.append(
+                    (
+                        entry,
+                        f"verified mismatch: field={entry.field_name} "
+                        f"expected={target_id} actual={actual}",
+                    )
+                )
                 continue
 
         summary.counts[Phase2Outcome.PATCHED] += 1
         logger.info(
             "Phase-2 PATCH %s id=%d %s -> %s id=%d",
-            entry.child_content_type, child_id, entry.field_name,
-            entry.target_content_type, target_id,
+            entry.child_content_type,
+            child_id,
+            entry.field_name,
+            entry.target_content_type,
+            target_id,
         )
 
     return summary

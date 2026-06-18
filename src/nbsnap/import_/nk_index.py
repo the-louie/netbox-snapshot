@@ -78,7 +78,9 @@ class NKIndex:
             for field_spec in spec.fields:
                 if field_spec.parent_content_type is not None:
                     self.ensure_built(
-                        http, registry, field_spec.parent_content_type,
+                        http,
+                        registry,
+                        field_spec.parent_content_type,
                         _building=_building,
                     )
 

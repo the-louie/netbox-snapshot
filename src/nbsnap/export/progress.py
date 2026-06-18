@@ -22,9 +22,7 @@ class ProgressLog:
         self._path = Path(path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append(
-        self, content_type: str, natural_key: Any, status: str
-    ) -> None:
+    def append(self, content_type: str, natural_key: Any, status: str) -> None:
         payload = {
             "content_type": content_type,
             "natural_key": natural_key,

@@ -60,8 +60,7 @@ class UnknownContentTypeError(KeyError):
     def __init__(self, content_type: str) -> None:
         self.content_type = content_type
         super().__init__(
-            f"unknown content type {content_type!r}; expected one of "
-            f"{sorted(CONTENT_TYPE_FILES)}"
+            f"unknown content type {content_type!r}; expected one of {sorted(CONTENT_TYPE_FILES)}"
         )
 
 

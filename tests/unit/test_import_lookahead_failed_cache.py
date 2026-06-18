@@ -37,7 +37,8 @@ def _fixture():
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("dcim.site", ("hall-d",))] = {
-        "name": "Hall-D", "slug": "hall-d",
+        "name": "Hall-D",
+        "slug": "hall-d",
     }
     http = MagicMock()
     http.get_all.return_value = iter([])
@@ -60,8 +61,10 @@ def test_first_failed_attempt_populates_failed_keys() -> None:
     failed_keys: set = set()
 
     rid = resolve_or_create(
-        state["http"], state["snapshot_index"],
-        state["dest_index"], state["registry"],
+        state["http"],
+        state["snapshot_index"],
+        state["dest_index"],
+        state["registry"],
         content_type="dcim.site",
         natural_key=("hall-d",),
         processing_stack=set(),
@@ -83,8 +86,10 @@ def test_second_attempt_short_circuits_via_failed_keys() -> None:
     failed_keys = {("dcim.site", ("hall-d",))}
 
     rid = resolve_or_create(
-        state["http"], state["snapshot_index"],
-        state["dest_index"], state["registry"],
+        state["http"],
+        state["snapshot_index"],
+        state["dest_index"],
+        state["registry"],
         content_type="dcim.site",
         natural_key=("hall-d",),
         processing_stack=set(),
@@ -106,8 +111,10 @@ def test_legacy_caller_without_failed_keys_keeps_retrying() -> None:
 
     # First call: fails.
     resolve_or_create(
-        state["http"], state["snapshot_index"],
-        state["dest_index"], state["registry"],
+        state["http"],
+        state["snapshot_index"],
+        state["dest_index"],
+        state["registry"],
         content_type="dcim.site",
         natural_key=("hall-d",),
         processing_stack=set(),
@@ -116,8 +123,10 @@ def test_legacy_caller_without_failed_keys_keeps_retrying() -> None:
     # Second call WITHOUT failed_keys: fails again, http.post
     # called a second time.
     resolve_or_create(
-        state["http"], state["snapshot_index"],
-        state["dest_index"], state["registry"],
+        state["http"],
+        state["snapshot_index"],
+        state["dest_index"],
+        state["registry"],
         content_type="dcim.site",
         natural_key=("hall-d",),
         processing_stack=set(),
@@ -133,7 +142,8 @@ def test_successful_upsert_does_not_populate_failed_keys() -> None:
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("dcim.site", ("hall-d",))] = {
-        "name": "Hall-D", "slug": "hall-d",
+        "name": "Hall-D",
+        "slug": "hall-d",
     }
     http = MagicMock()
     http.get_all.return_value = iter([])
@@ -141,7 +151,10 @@ def test_successful_upsert_does_not_populate_failed_keys() -> None:
 
     failed_keys: set = set()
     rid = resolve_or_create(
-        http, snapshot_index, NKIndex(), default_registry(),
+        http,
+        snapshot_index,
+        NKIndex(),
+        default_registry(),
         content_type="dcim.site",
         natural_key=("hall-d",),
         processing_stack=set(),
@@ -172,7 +185,10 @@ def test_destination_lookup_runs_before_failed_keys_short_circuit() -> None:
     http.get_all.return_value = iter([])
 
     rid = resolve_or_create(
-        http, SnapshotIndex(), dest, default_registry(),
+        http,
+        SnapshotIndex(),
+        dest,
+        default_registry(),
         content_type="dcim.site",
         natural_key=("hall-d",),
         processing_stack=set(),

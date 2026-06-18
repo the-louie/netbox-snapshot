@@ -152,9 +152,11 @@ def test_malformed_line_does_not_crash_loader(tmp_path: Path) -> None:
     path = tmp_path / "dcim/sites.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"natural_key": ["ok"], "body": {"name": "Good"}}) + "\n"
+        json.dumps({"natural_key": ["ok"], "body": {"name": "Good"}})
+        + "\n"
         + "this is not valid json\n"
-        + json.dumps({"natural_key": ["also-ok"], "body": {"name": "Also"}}) + "\n",
+        + json.dumps({"natural_key": ["also-ok"], "body": {"name": "Also"}})
+        + "\n",
         encoding="utf-8",
     )
 
@@ -170,9 +172,7 @@ def test_blank_lines_are_skipped(tmp_path: Path) -> None:
     path = tmp_path / "dcim/sites.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "\n"
-        + json.dumps({"natural_key": ["site"], "body": {}}) + "\n"
-        + "\n\n",
+        "\n" + json.dumps({"natural_key": ["site"], "body": {}}) + "\n" + "\n\n",
         encoding="utf-8",
     )
 

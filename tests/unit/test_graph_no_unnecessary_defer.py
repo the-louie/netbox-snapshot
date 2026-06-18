@@ -26,8 +26,12 @@ from nbsnap.graph.model import Edge, Graph, Node
 
 def _edge(child: str, parent: str, *, nullable: bool = False, m2m: bool = False) -> Edge:
     return Edge(
-        child=child, parent=parent, field="x",
-        nullable=nullable, required=not nullable, is_m2m=m2m,
+        child=child,
+        parent=parent,
+        field="x",
+        nullable=nullable,
+        required=not nullable,
+        is_m2m=m2m,
     )
 
 
@@ -67,10 +71,12 @@ def test_two_node_cycle_defers_one_edge() -> None:
     nullable side and the planner emits a topo order without
     it."""
 
-    g = _graph_with([
-        _edge("A", "B", nullable=True),
-        _edge("B", "A"),
-    ])
+    g = _graph_with(
+        [
+            _edge("A", "B", nullable=True),
+            _edge("B", "A"),
+        ]
+    )
     sccs = strongly_connected_components(g)
     cycle_scc = next(s for s in sccs if len(s) == 2)
     deferred = pick_deferred_edges(g, cycle_scc)
@@ -82,10 +88,12 @@ def test_three_node_dag_with_nullable_middle_edge() -> None:
     """A -> B (nullable) -> C is a pure DAG; no defers happen
     even though the middle edge is nullable."""
 
-    g = _graph_with([
-        _edge("A", "B", nullable=True),
-        _edge("B", "C"),
-    ])
+    g = _graph_with(
+        [
+            _edge("A", "B", nullable=True),
+            _edge("B", "C"),
+        ]
+    )
     p = plan(g)
     assert p.deferred == []
     assert p.order.index("C") < p.order.index("B") < p.order.index("A")
@@ -110,11 +118,13 @@ def test_self_edge_within_larger_scc_still_eligible() -> None:
     cycle with B, both kinds of back-edge are deferral
     candidates. The picker chooses the cheapest."""
 
-    g = _graph_with([
-        _edge("A", "A", nullable=True),  # self-loop
-        _edge("A", "B", nullable=True),
-        _edge("B", "A"),
-    ])
+    g = _graph_with(
+        [
+            _edge("A", "A", nullable=True),  # self-loop
+            _edge("A", "B", nullable=True),
+            _edge("B", "A"),
+        ]
+    )
     p = plan(g)
     # At minimum the self-loop OR a cycle-closer is deferred so
     # the topo sort can succeed; if no defer happened, the order

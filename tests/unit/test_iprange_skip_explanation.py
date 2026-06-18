@@ -17,10 +17,7 @@ from __future__ import annotations
 from nbsnap.import_.upsert import _classify_post_failure
 
 
-_NETBOX_OVERLAP_ERROR = (
-    "Addresses overlap with the range "
-    "92.33.40.137/26-92.33.40.190/26"
-)
+_NETBOX_OVERLAP_ERROR = "Addresses overlap with the range 92.33.40.137/26-92.33.40.190/26"
 
 
 def test_iprange_overlap_is_classified_as_skipped() -> None:
@@ -29,7 +26,8 @@ def test_iprange_overlap_is_classified_as_skipped() -> None:
     sees a generic FAILED instead of a SKIPPED."""
 
     explanation = _classify_post_failure(
-        "ipam.iprange", _NETBOX_OVERLAP_ERROR,
+        "ipam.iprange",
+        _NETBOX_OVERLAP_ERROR,
     )
     assert explanation is not None
 
@@ -41,7 +39,8 @@ def test_iprange_explanation_does_not_blame_enforce_global_unique() -> None:
     proven irrelevant for ranges in rescue-13."""
 
     explanation = _classify_post_failure(
-        "ipam.iprange", _NETBOX_OVERLAP_ERROR,
+        "ipam.iprange",
+        _NETBOX_OVERLAP_ERROR,
     )
     assert explanation is not None
     assert "ENFORCE_GLOBAL_UNIQUE" not in explanation or (
@@ -59,7 +58,8 @@ def test_iprange_explanation_still_mentions_overlap() -> None:
     class in audit summaries and downstream tooling."""
 
     explanation = _classify_post_failure(
-        "ipam.iprange", _NETBOX_OVERLAP_ERROR,
+        "ipam.iprange",
+        _NETBOX_OVERLAP_ERROR,
     )
     assert explanation is not None
     assert "overlap" in explanation.lower()
@@ -73,7 +73,8 @@ def test_iprange_explanation_points_at_source_side_remediation() -> None:
     looking for a destination toggle that does not exist."""
 
     explanation = _classify_post_failure(
-        "ipam.iprange", _NETBOX_OVERLAP_ERROR,
+        "ipam.iprange",
+        _NETBOX_OVERLAP_ERROR,
     )
     assert explanation is not None
     lower = explanation.lower()

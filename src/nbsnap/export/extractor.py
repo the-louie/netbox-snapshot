@@ -101,9 +101,7 @@ def extract(
 from nbsnap.snapshot.coerce import collapse_enum_dict
 
 
-def _apply_allowlist(
-    record: Mapping[str, Any], allowlist: frozenset[str]
-) -> dict[str, Any]:
+def _apply_allowlist(record: Mapping[str, Any], allowlist: frozenset[str]) -> dict[str, Any]:
     """Keep only the fields the destination will accept.
 
     Two transforms happen at this boundary:
@@ -194,9 +192,7 @@ def _rewrite_fks(
         # Category 2: m2m list of simple FK values.
         if spec.is_m2m:
             try:
-                rewritten[field_name] = rewrite_m2m(
-                    value, spec.fk_target, registry, parent_lookup
-                )
+                rewritten[field_name] = rewrite_m2m(value, spec.fk_target, registry, parent_lookup)
             except (KeyError, ValueError) as exc:
                 _warn_dropped(content_type, field_name, spec.fk_target, exc)
             continue
@@ -251,9 +247,7 @@ def _rewrite_with_fallback(
 _WARNED_UNREGISTERED: set[tuple[str, str, str]] = set()
 
 
-def _warn_dropped(
-    content_type: str, field_name: str, fk_target: str, exc: Exception
-) -> None:
+def _warn_dropped(content_type: str, field_name: str, fk_target: str, exc: Exception) -> None:
     """Log once per (ct, field, target) triple and drop the FK field."""
 
     import logging

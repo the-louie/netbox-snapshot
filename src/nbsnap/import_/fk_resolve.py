@@ -133,9 +133,7 @@ def resolve_polymorphic(
     object_nk = value.get("object_natural_key")
     if not isinstance(object_type, str):
         return None
-    resolved = resolve_simple_fk(
-        object_nk, object_type, index, http=http, registry=registry
-    )
+    resolved = resolve_simple_fk(object_nk, object_type, index, http=http, registry=registry)
     if resolved is None:
         return None
     return {"object_type": object_type, "object_id": resolved}

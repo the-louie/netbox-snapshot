@@ -20,54 +20,85 @@ from nbsnap.schema.openapi import OpenAPI
 def _device_schema() -> OpenAPI:
     """Minimal schema with a Device that has an FK to Site."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Device": {
-                    "type": "object",
-                    "properties": {
-                        "id": {},
-                        "name": {"type": "string"},
-                        "site": {"$ref": "#/components/schemas/BriefSite"},
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Device": {
+                        "type": "object",
+                        "properties": {
+                            "id": {},
+                            "name": {"type": "string"},
+                            "site": {"$ref": "#/components/schemas/BriefSite"},
+                        },
+                    },
+                    "PaginatedDeviceList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Device"},
+                            }
+                        }
+                    },
+                    "BriefSite": {
+                        "type": "object",
+                        "properties": {"id": {}, "slug": {}},
+                    },
+                }
+            },
+            "paths": {
+                "/api/dcim/devices/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/PaginatedDeviceList"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "properties": {
+                                            "name": {},
+                                            "site": {},
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
                 },
-                "PaginatedDeviceList": {
-                    "properties": {
-                        "results": {
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/Device"},
+                "/api/dcim/sites/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
+                                    }
+                                }
+                            }
                         }
-                    }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"slug": {}}}}
+                            }
+                        }
+                    },
                 },
-                "BriefSite": {
-                    "type": "object",
-                    "properties": {"id": {}, "slug": {}},
-                },
-            }
-        },
-        "paths": {
-            "/api/dcim/devices/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedDeviceList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {
-                        "name": {}, "site": {},
-                    }}}
-                }}},
-            },
-            "/api/dcim/sites/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {"properties": {"id": {}, "slug": {}}}}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}}}}
-                }}},
             },
         }
-    })
+    )
 
 
 def test_lookahead_creates_missing_parent_during_resolve_body() -> None:
@@ -82,7 +113,8 @@ def test_lookahead_creates_missing_parent_during_resolve_body() -> None:
 
     snapshot_index = SnapshotIndex()
     snapshot_index._by_key[("dcim.site", ("hall-d",))] = {
-        "name": "Hall-D", "slug": "hall-d",
+        "name": "Hall-D",
+        "slug": "hall-d",
     }
 
     dest_index = NKIndex()
@@ -117,9 +149,6 @@ def test_lookahead_creates_missing_parent_during_resolve_body() -> None:
 def test_lookahead_drops_unrecoverable_fk_with_warning() -> None:
     """Both indexes miss, the FK gets dropped via the existing
     warn-and-drop path. No exception, no new DeferredFK."""
-
-
-
 
     http = MagicMock()
     http.get_all.return_value = iter([])

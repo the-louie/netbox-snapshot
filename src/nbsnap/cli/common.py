@@ -46,8 +46,7 @@ class _ScopeFlagAction(argparse.Action):
     ) -> None:
         if option_string == "--only":
             sys.stderr.write(
-                "warning: --only is deprecated, use --content-types instead "
-                "(ARCH-10e)\n"
+                "warning: --only is deprecated, use --content-types instead (ARCH-10e)\n"
             )
         setattr(namespace, self.dest, values)
 
@@ -110,10 +109,7 @@ def add_audit_flags(parser: argparse.ArgumentParser) -> None:
         "--audit-out",
         type=Path,
         default=None,
-        help=(
-            "write the per-row audit JSONL to this path "
-            "(default: <snapshot_dir>/audit.jsonl)."
-        ),
+        help=("write the per-row audit JSONL to this path (default: <snapshot_dir>/audit.jsonl)."),
     )
     parser.add_argument(
         "--audit-fsync",

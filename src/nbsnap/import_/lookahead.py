@@ -186,7 +186,9 @@ def resolve_or_create(
     if depth >= MAX_DEPTH:
         logger.warning(
             "look-ahead depth %d hit at %s NK=%r; dropping",
-            MAX_DEPTH, content_type, natural_key,
+            MAX_DEPTH,
+            content_type,
+            natural_key,
         )
         return None
 
@@ -195,8 +197,7 @@ def resolve_or_create(
     # child_nk, field_name) it was processing when the cycle
     # surfaced.
     if key in processing_stack:
-        logger.debug("cycle at %s NK=%r, deferring to Phase-2",
-                     content_type, natural_key)
+        logger.debug("cycle at %s NK=%r, deferring to Phase-2", content_type, natural_key)
         return None
 
     # Step 3, destination tier. Build the per-CT index lazily
@@ -223,7 +224,8 @@ def resolve_or_create(
     if failed_keys is not None and key in failed_keys:
         logger.debug(
             "look-ahead skip %s NK=%r, previous attempt failed",
-            content_type, natural_key,
+            content_type,
+            natural_key,
         )
         return None
 
@@ -276,9 +278,7 @@ def resolve_or_create(
                 warn_dedup=None,
                 current_nk=natural_key,
             )
-            resolved_body = _resolve_body_via_ctx(
-                content_type, dict(snapshot_body), inner_ctx
-            )
+            resolved_body = _resolve_body_via_ctx(content_type, dict(snapshot_body), inner_ctx)
         else:
             # Backwards-compat for callers that have not yet
             # threaded the openapi handle through. The unresolved
@@ -334,7 +334,9 @@ def resolve_or_create(
         # enable DEBUG logging.
         logger.debug(
             "look-ahead upsert failed for %s NK=%r: %s",
-            content_type, natural_key, result.message,
+            content_type,
+            natural_key,
+            result.message,
         )
         return None
     return result.destination_id

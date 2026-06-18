@@ -81,9 +81,7 @@ def test_add_audit_flags_explicit() -> None:
         (add_audit_flags, "audit"),
     ],
 )
-def test_each_builder_emits_descriptive_help(
-    builder, expected_substring: str
-) -> None:
+def test_each_builder_emits_descriptive_help(builder, expected_substring: str) -> None:
     """The canonical help text mentions the human-readable concept.
 
     A future refactor that copy-pastes the builder elsewhere is

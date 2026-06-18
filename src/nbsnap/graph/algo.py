@@ -174,7 +174,9 @@ def pick_deferred_edges(graph: Graph, scc: list[Node]) -> list[Edge]:
             not e.nullable,
             e.field.endswith("__hint"),
             not e.is_m2m,
-            e.child, e.field, e.parent,
+            e.child,
+            e.field,
+            e.parent,
         )
     )
     return [candidates[0]]
@@ -298,7 +300,9 @@ def _pick_one_back_edge_in_cycle(
             e.field.endswith("__hint"),
             not e.nullable,
             not e.is_m2m,
-            e.child, e.field, e.parent,
+            e.child,
+            e.field,
+            e.parent,
         )
     )
     return candidates[0]

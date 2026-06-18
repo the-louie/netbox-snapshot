@@ -50,9 +50,7 @@ _REMAINING_STUBS = sorted(
 )
 
 
-@pytest.mark.skipif(
-    not _REMAINING_STUBS, reason="all sub-commands implemented; no stubs remain"
-)
+@pytest.mark.skipif(not _REMAINING_STUBS, reason="all sub-commands implemented; no stubs remain")
 @pytest.mark.parametrize("command", _REMAINING_STUBS or ["__none__"])
 def test_stub_subcommand_reports_ticket(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     """Each stub sub-command exits 2 and names its tracking ticket."""

@@ -23,9 +23,7 @@ from nbsnap.snapshot.layout import CONTENT_TYPE_FILES, relative_path
 
 def test_every_path_has_jsonl_suffix_and_two_components() -> None:
     for content_type, path in CONTENT_TYPE_FILES.items():
-        assert path.endswith(".jsonl"), (
-            f"{content_type!r} maps to {path!r}, expected .jsonl"
-        )
+        assert path.endswith(".jsonl"), f"{content_type!r} maps to {path!r}, expected .jsonl"
         head, _, _ = path.partition("/")
         assert head, f"{content_type!r} maps to {path!r}, expected app/<plural>"
 

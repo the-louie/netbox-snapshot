@@ -44,9 +44,14 @@ _SAMPLE_BYTES = 4096
 # Audit/output files that are not record streams; the enum-dict
 # check must skip them so it does not mis-classify on their
 # different shape.
-_AUDIT_FILES = frozenset({
-    "flags.jsonl", "progress.jsonl", "_deferred.jsonl", "audit.jsonl",
-})
+_AUDIT_FILES = frozenset(
+    {
+        "flags.jsonl",
+        "progress.jsonl",
+        "_deferred.jsonl",
+        "audit.jsonl",
+    }
+)
 
 
 @dataclass
@@ -141,10 +146,7 @@ def sample_enum_dict_check(snapshot_dir: Path) -> list[dict[str, Any]]:
                     continue
                 row_has_enum_dict = False
                 for field_name, value in body.items():
-                    if (
-                        isinstance(value, dict)
-                        and frozenset(value.keys()) == _ENUM_DICT_KEYS
-                    ):
+                    if isinstance(value, dict) and frozenset(value.keys()) == _ENUM_DICT_KEYS:
                         if first_field is None:
                             first_field = field_name
                         row_has_enum_dict = True
@@ -153,11 +155,13 @@ def sample_enum_dict_check(snapshot_dir: Path) -> list[dict[str, Any]]:
                     rows_affected += 1
         if rows_affected > 0:
             rel = jsonl.relative_to(snapshot_dir).as_posix()
-            issues.append({
-                "path": rel,
-                "field": first_field,
-                "rows_affected": rows_affected,
-            })
+            issues.append(
+                {
+                    "path": rel,
+                    "field": first_field,
+                    "rows_affected": rows_affected,
+                }
+            )
     return issues
 
 
@@ -210,16 +214,19 @@ def run_preflight(
         try:
             from nbsnap.schema.diff import diff_schemas
             from nbsnap.schema.openapi import OpenAPI as _OpenAPI
+
             dest_schema = _OpenAPI.fetch(http)
             scope = {ct for ct in manifest.counts if isinstance(ct, str)}
             report.schema_drift = diff_schemas(
-                snapshot_openapi, dest_schema, scope,
+                snapshot_openapi,
+                dest_schema,
+                scope,
             )
         except Exception:  # noqa: BLE001 - best effort, log only
             import logging
+
             logging.getLogger(__name__).info(
-                "schema-drift check skipped: destination /api/schema/ "
-                "unavailable or unreadable"
+                "schema-drift check skipped: destination /api/schema/ unavailable or unreadable"
             )
 
     # ------------------------------------------------------------------

@@ -34,52 +34,81 @@ def _site_schema() -> OpenAPI:
     case where region is intentionally out of scope per the
     network-only banner."""
 
-    return OpenAPI({
-        "components": {
-            "schemas": {
-                "Site": {
-                    "type": "object",
-                    "properties": {
-                        "id": {},
-                        "slug": {"type": "string"},
-                        "region": {"allOf": [{"$ref": "#/components/schemas/BriefRegion"}], "nullable": True},
+    return OpenAPI(
+        {
+            "components": {
+                "schemas": {
+                    "Site": {
+                        "type": "object",
+                        "properties": {
+                            "id": {},
+                            "slug": {"type": "string"},
+                            "region": {
+                                "allOf": [{"$ref": "#/components/schemas/BriefRegion"}],
+                                "nullable": True,
+                            },
+                        },
+                    },
+                    "PaginatedSiteList": {
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Site"},
+                            }
+                        }
+                    },
+                    "BriefRegion": {
+                        "type": "object",
+                        "properties": {"id": {}, "slug": {}},
+                    },
+                }
+            },
+            "paths": {
+                "/api/dcim/sites/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": "#/components/schemas/PaginatedSiteList"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"properties": {"slug": {}, "region": {}}}
+                                }
+                            }
+                        }
                     },
                 },
-                "PaginatedSiteList": {
-                    "properties": {"results": {
-                        "type": "array",
-                        "items": {"$ref": "#/components/schemas/Site"},
-                    }}
+                "/api/dcim/regions/": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"properties": {"id": {}, "slug": {}}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"properties": {"slug": {}}}}
+                            }
+                        }
+                    },
                 },
-                "BriefRegion": {
-                    "type": "object",
-                    "properties": {"id": {}, "slug": {}},
-                },
-            }
-        },
-        "paths": {
-            "/api/dcim/sites/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "$ref": "#/components/schemas/PaginatedSiteList"
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}, "region": {}}}}
-                }}},
-            },
-            "/api/dcim/regions/": {
-                "get": {"responses": {"200": {"content": {
-                    "application/json": {"schema": {
-                        "properties": {"id": {}, "slug": {}}
-                    }}
-                }}}},
-                "post": {"requestBody": {"content": {
-                    "application/json": {"schema": {"properties": {"slug": {}}}}
-                }}},
             },
         }
-    })
+    )
 
 
 def test_out_of_scope_drop_does_not_emit_warning(caplog: pytest.LogCaptureFixture) -> None:
@@ -93,8 +122,12 @@ def test_out_of_scope_drop_does_not_emit_warning(caplog: pytest.LogCaptureFixtur
 
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         out = _resolve_body(
-            "dcim.site", body, _site_schema(),
-            NKIndex(), http, default_registry(),
+            "dcim.site",
+            body,
+            _site_schema(),
+            NKIndex(),
+            http,
+            default_registry(),
             snapshot_index=SnapshotIndex(),  # empty -> OUT_OF_SCOPE
             processing_stack=set(),
             deferred_queue=[],
@@ -107,10 +140,7 @@ def test_out_of_scope_drop_does_not_emit_warning(caplog: pytest.LogCaptureFixtur
     assert auditor.events[0].category is DropCategory.OUT_OF_SCOPE
 
     # No `dropping FK` warning landed on stderr/log.
-    drop_warnings = [
-        r for r in caplog.records
-        if "dropping FK" in r.getMessage()
-    ]
+    drop_warnings = [r for r in caplog.records if "dropping FK" in r.getMessage()]
     assert drop_warnings == []
 
     # Region field was dropped from the resolved body.
@@ -128,9 +158,7 @@ def test_missing_from_source_drop_still_emits_warning(
     # Seed the snapshot with a different region NK so the
     # classifier picks MISSING_FROM_SOURCE.
     snapshot_index = SnapshotIndex()
-    snapshot_index._by_key[("dcim.region", ("other-region",))] = {
-        "slug": "other-region"
-    }
+    snapshot_index._by_key[("dcim.region", ("other-region",))] = {"slug": "other-region"}
 
     auditor = Auditor()
     body = {"slug": "hall-d", "region": ["elmia"]}
@@ -138,8 +166,12 @@ def test_missing_from_source_drop_still_emits_warning(
 
     with caplog.at_level(logging.WARNING, logger="nbsnap.import_.driver"):
         _resolve_body(
-            "dcim.site", body, _site_schema(),
-            NKIndex(), http, default_registry(),
+            "dcim.site",
+            body,
+            _site_schema(),
+            NKIndex(),
+            http,
+            default_registry(),
             snapshot_index=snapshot_index,
             processing_stack=set(),
             deferred_queue=[],
@@ -151,7 +183,8 @@ def test_missing_from_source_drop_still_emits_warning(
     # BUG-08: MISSING_FROM_SOURCE drops emit a category-aware
     # warning that points the operator at the source NetBox.
     drop_warnings = [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if "source NetBox has a stale or broken reference" in r.getMessage()
     ]
     assert drop_warnings

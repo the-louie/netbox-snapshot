@@ -17,7 +17,10 @@ import pytest
 import requests
 
 from tests.integration.conftest import (
-    DEST_TOKEN, DEST_URL, SOURCE_TOKEN, SOURCE_URL,
+    DEST_TOKEN,
+    DEST_URL,
+    SOURCE_TOKEN,
+    SOURCE_URL,
 )
 
 
@@ -29,10 +32,16 @@ def test_primary_ip4_cycle_round_trips(tmp_path: Path) -> None:
     snap = tmp_path / "snap"
     subprocess.run(
         [
-            sys.executable, "-m", "nbsnap", "export",
-            "--url", SOURCE_URL,
-            "--token", SOURCE_TOKEN,
-            "--out", str(snap),
+            sys.executable,
+            "-m",
+            "nbsnap",
+            "export",
+            "--url",
+            SOURCE_URL,
+            "--token",
+            SOURCE_TOKEN,
+            "--out",
+            str(snap),
         ],
         check=True,
     )
@@ -46,7 +55,8 @@ def test_primary_ip4_cycle_round_trips(tmp_path: Path) -> None:
         timeout=10,
     ).json()["results"]
     target_device = next(
-        (d for d in source_devices if d.get("primary_ip4")), None,
+        (d for d in source_devices if d.get("primary_ip4")),
+        None,
     )
     if target_device is None:
         pytest.skip("source stack has no device with primary_ip4")
@@ -57,11 +67,18 @@ def test_primary_ip4_cycle_round_trips(tmp_path: Path) -> None:
     # Import to the destination.
     subprocess.run(
         [
-            sys.executable, "-m", "nbsnap", "import",
-            "--url", DEST_URL,
-            "--token", DEST_TOKEN,
-            "--in", str(snap),
-            "--on-error", "continue",
+            sys.executable,
+            "-m",
+            "nbsnap",
+            "import",
+            "--url",
+            DEST_URL,
+            "--token",
+            DEST_TOKEN,
+            "--in",
+            str(snap),
+            "--on-error",
+            "continue",
         ],
         check=True,
     )
@@ -76,10 +93,7 @@ def test_primary_ip4_cycle_round_trips(tmp_path: Path) -> None:
     ).json()["results"]
     assert dest_devices, f"device {device_name} did not land on destination"
     dest_primary = dest_devices[0].get("primary_ip4")
-    assert dest_primary is not None, (
-        f"primary_ip4 was not set after Phase-2 on {device_name}"
-    )
+    assert dest_primary is not None, f"primary_ip4 was not set after Phase-2 on {device_name}"
     assert dest_primary["address"] == expected_address, (
-        f"primary_ip4 drift: source={expected_address} "
-        f"destination={dest_primary['address']}"
+        f"primary_ip4 drift: source={expected_address} destination={dest_primary['address']}"
     )

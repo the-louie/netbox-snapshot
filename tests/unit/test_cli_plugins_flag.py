@@ -21,9 +21,7 @@ def _parser(builder) -> argparse.ArgumentParser:
 
 
 def test_export_cli_exposes_plugins_dir() -> None:
-    ns = _parser(add_export_args).parse_args(
-        ["--out", "/tmp/x", "--plugins-dir", "/tmp/plugins"]
-    )
+    ns = _parser(add_export_args).parse_args(["--out", "/tmp/x", "--plugins-dir", "/tmp/plugins"])
     assert ns.plugins_dir == Path("/tmp/plugins")
 
 
@@ -33,9 +31,7 @@ def test_export_cli_plugins_dir_defaults_to_none() -> None:
 
 
 def test_import_cli_exposes_plugins_dir() -> None:
-    ns = _parser(add_import_args).parse_args(
-        ["--in", "/tmp/snap", "--plugins-dir", "/tmp/plugins"]
-    )
+    ns = _parser(add_import_args).parse_args(["--in", "/tmp/snap", "--plugins-dir", "/tmp/plugins"])
     assert ns.plugins_dir == Path("/tmp/plugins")
 
 

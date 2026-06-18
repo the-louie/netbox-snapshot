@@ -121,8 +121,7 @@ class ContentType:
         if raw not in _ENDPOINTS:
             raise InvalidContentTypeError(
                 raw,
-                "unknown content type; expected one of "
-                f"{sorted(_ENDPOINTS)}",
+                f"unknown content type; expected one of {sorted(_ENDPOINTS)}",
             )
         return cls(app=app, model=model)
 

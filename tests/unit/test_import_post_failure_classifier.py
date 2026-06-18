@@ -45,7 +45,7 @@ def test_iprange_overlap_error_classified_as_skip() -> None:
     that the audit log will carry."""
 
     body = (
-        'HTTP 400 from POST ipam/ip-ranges/: '
+        "HTTP 400 from POST ipam/ip-ranges/: "
         '{"__all__":["Defined addresses overlap with range '
         '92.33.40.1-47.255/21 in VRF None"]}'
     )
@@ -63,7 +63,7 @@ def test_ipaddress_duplicate_error_classified_as_skip() -> None:
     a tool bug."""
 
     body = (
-        'HTTP 400 from POST ipam/ip-addresses/: '
+        "HTTP 400 from POST ipam/ip-addresses/: "
         '{"address":["Duplicate IP address found in global table: '
         '172.16.255.13/24"]}'
     )
@@ -136,9 +136,7 @@ def test_upsert_keeps_failed_outcome_for_unclassified_errors() -> None:
 
     http = MagicMock()
     http.get_all.return_value = iter([])
-    http.post.side_effect = RuntimeError(
-        "POST ipam/ip-ranges/ -> HTTP 500: server unavailable"
-    )
+    http.post.side_effect = RuntimeError("POST ipam/ip-ranges/ -> HTTP 500: server unavailable")
 
     result = upsert(
         http,
@@ -190,6 +188,7 @@ def test_near_miss_logs_info_and_returns_none(caplog) -> None:
     maintainer notices NetBox drifted."""
 
     import logging
+
     msg = "wrap of the addresses showed overlap but not against any range"
     with caplog.at_level(logging.INFO, logger="nbsnap.import_.upsert"):
         result = _classify_post_failure("ipam.iprange", msg)

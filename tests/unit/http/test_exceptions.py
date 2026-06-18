@@ -45,9 +45,7 @@ def test_transport_error_carries_base_url_and_redirect_url() -> None:
 def test_auth_error_carries_status() -> None:
     """SnapshotAuthError remembers the 401/403 status separately."""
 
-    err = SnapshotAuthError(
-        "token rejected", status=401, base_url="https://dest.example/"
-    )
+    err = SnapshotAuthError("token rejected", status=401, base_url="https://dest.example/")
     assert err.status == 401
     assert err.base_url == "https://dest.example/"
     assert isinstance(err, SnapshotTransportError)
