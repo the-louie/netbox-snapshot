@@ -19,6 +19,7 @@ from collections.abc import Iterator
 import pytest
 
 from nbsnap.http.client import NetboxHTTP
+from nbsnap.http.exceptions import SnapshotConnectivityError
 from nbsnap.http.guard import SourceWriteForbidden
 
 
@@ -84,13 +85,12 @@ def test_write_verb_raises_before_socket_open(
 def test_get_is_allowed_against_source(source_client: NetboxHTTP) -> None:
     """A GET against the source IS allowed, even when it ends up failing.
 
-    We expect a `ConnectionError` (because the synthetic URL does
-    not resolve). The key assertion is that the failure is from
-    the network layer, NOT from `SourceWriteForbidden`, the guard
-    rail does not refuse GET.
+    We expect a `SnapshotConnectivityError` (the ARCH-07b wrapper
+    over the underlying `requests.ConnectionError` raised when the
+    synthetic URL does not resolve). The key assertion is that the
+    failure is from the network layer, NOT from
+    `SourceWriteForbidden`, the guard rail does not refuse GET.
     """
 
-    import requests
-
-    with pytest.raises(requests.ConnectionError):
+    with pytest.raises(SnapshotConnectivityError):
         source_client.get_one("status/")
