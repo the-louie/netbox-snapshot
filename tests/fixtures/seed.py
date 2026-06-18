@@ -164,10 +164,18 @@ def _apply_row(base: str, token: str, row: dict[str, Any]) -> tuple[str, str]:
     )
     if resp.status_code in (200, 201):
         return " OK ", "POST"
-    # Treat unique-constraint as a soft warning so the seeder is
-    # idempotent: a second run finds the rows already present.
-    if resp.status_code == 400 and "unique" in resp.text.lower():
-        return "WARN", "already present (unique constraint)"
+    # Treat duplicate-row responses as a soft warning so the
+    # seeder stays idempotent. NetBox phrases the same condition
+    # in several ways depending on the model and the constraint
+    # involved: "unique", "already exists", "duplicate", and the
+    # IPAM-specific "overlap" message for ranges. Cover all of
+    # them so the same fixture set can be reapplied without
+    # turning the second invocation into a hard failure.
+    text = resp.text.lower()
+    if resp.status_code == 400 and any(
+        marker in text for marker in ("unique", "already exists", "duplicate", "overlap")
+    ):
+        return "WARN", "already present"
     return "FAIL", f"POST {resp.status_code}: {resp.text[:200]}"
 
 
