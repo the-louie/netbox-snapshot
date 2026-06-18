@@ -64,20 +64,18 @@ def test_renderer_minimum_endpoints_are_hit(tmp_path: Path) -> None:
         check=True,
     )
 
+    # Each expected endpoint becomes a JSONL file under the
+    # snapshot tree. The file basename mirrors the URL path's last
+    # segment with the trailing slash trimmed; `dcim/device-roles/`
+    # maps to `device-roles.jsonl`. (An earlier version of this
+    # test stripped the hyphens out of the basename, which
+    # silently looked for `device_roles.jsonl` and never found
+    # the actual files. Confirm with `nbsnap.snapshot.CONTENT_TYPE_FILES`.)
     missing: set[str] = set()
-    from nbsnap.snapshot import CONTENT_TYPE_FILES
-
-    rel_paths = {
-        CONTENT_TYPE_FILES.get(ct.replace("/", ".").rstrip("."), ct)
-        for ct in RENDERER_MINIMUM_ENDPOINTS
-    }
-    # Direct check: every expected endpoint has its jsonl on disk.
     for endpoint in RENDERER_MINIMUM_ENDPOINTS:
-        candidates = list(
-            (out).rglob(endpoint.rstrip("/").split("/")[-1].replace("-", "_") + ".jsonl")
-        )
+        filename = endpoint.rstrip("/").split("/")[-1] + ".jsonl"
+        candidates = list(out.rglob(filename))
         if not candidates:
             missing.add(endpoint)
-    _ = rel_paths  # surface for diagnostic; not asserted here
 
     assert not missing, f"renderer-minimum endpoints with no rows on the export: {sorted(missing)}"
