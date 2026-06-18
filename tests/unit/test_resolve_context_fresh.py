@@ -12,6 +12,8 @@ Pins three things:
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from nbsnap.import_.resolve_context import ResolveContext
@@ -55,6 +57,5 @@ def test_fresh_bundle_reference_is_immutable() -> None:
     """
 
     ctx = ResolveContext.fresh()
-    # dataclasses.FrozenInstanceError inherits AttributeError in 3.11.
-    with pytest.raises(AttributeError):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         ctx.current_nk = ("nope",)  # type: ignore[misc]
