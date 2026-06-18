@@ -195,6 +195,14 @@ def topological_order(graph: Graph, deferred: list[Edge]) -> list[str]:
     the stdlib; we removed the deferred edges already so the
     sorter sees a DAG.
 
+    The graph is fed in sorted order and each "ready" batch from
+    the sorter is also sorted before emission. `static_order` does
+    not promise a stable output across runs even for identical
+    input, which made `progress.jsonl` and any downstream
+    iteration order vary between two consecutive exports. Manual
+    `prepare`/`get_ready`/`done` with a sort gives byte-stable
+    output without changing the topological invariant.
+
     Raises `ValueError` (graphlib's `CycleError` subclass) if the
     graph still contains a cycle after deferred-edge removal.
     """
@@ -202,9 +210,9 @@ def topological_order(graph: Graph, deferred: list[Edge]) -> list[str]:
     deferred_keys = {(e.child, e.parent, e.field) for e in deferred}
 
     ts: TopologicalSorter[str] = TopologicalSorter()
-    for node in graph.nodes():
+    for node in sorted(graph.nodes(), key=lambda n: n.content_type):
         ts.add(node.content_type)
-        for edge in graph.out_edges(node):
+        for edge in sorted(graph.out_edges(node), key=lambda e: (e.child, e.parent, e.field)):
             key = (edge.child, edge.parent, edge.field)
             if key in deferred_keys:
                 continue
@@ -213,7 +221,14 @@ def topological_order(graph: Graph, deferred: list[Edge]) -> list[str]:
             # on parent.
             ts.add(edge.child, edge.parent)
 
-    return list(ts.static_order())
+    ts.prepare()
+    order: list[str] = []
+    while ts.is_active():
+        ready = sorted(ts.get_ready())
+        order.extend(ready)
+        for node_name in ready:
+            ts.done(node_name)
+    return order
 
 
 # ---------------------------------------------------------------------------
