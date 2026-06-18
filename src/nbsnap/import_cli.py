@@ -30,6 +30,7 @@ import logging
 import signal
 import sys
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 from nbsnap.cli.common import add_audit_flags, add_tls_flags
@@ -451,7 +452,7 @@ def _install_termination_handlers(audit_path: Path) -> None:
     if _TERMINATION_HANDLER_INSTALLED:
         return
 
-    def _handler(signum: int, _frame: object) -> None:
+    def _handler(signum: int, _frame: FrameType | None) -> None:
         sys.stderr.write(
             f"\nnbsnap import: received signal {signum}; partial audit at {audit_path}\n"
         )
