@@ -82,15 +82,32 @@ stack-wait:
 # `Authorization: Token <40-char>` header. v1 tokens skip the
 # pepper/key plumbing that the netbox-docker v2 path requires and
 # match the header format the rest of the test code already uses.
-# `update_or_create` keeps this idempotent across re-runs.
+#
+# Why the `Token.objects.create(..., token=...)` shape instead of
+# `update_or_create(..., plaintext=...)`: NetBox's Token.save() runs
+#
+#     if self._state.adding and self.token is None:
+#         self.token = self.generate()
+#
+# which silently overwrites a manually populated `plaintext` field
+# with a fresh random value, because `plaintext` is a DB field and
+# the `token` *property* tracks the kwarg passed via `__init__`.
+# Passing `token=...` routes through the property setter, which
+# writes `self.plaintext` AND leaves `self._token` non-None so
+# `save()` keeps the value we asked for.
+#
+# Idempotency: delete any existing v1 token for the user first, so
+# re-running this target replaces stale rows. Test stacks only, so
+# wiping a token row each invocation is fine.
+#
 # The Python command is single-line on purpose; multi-line via
 # shell backslash continuation preserves Make's recipe indentation
 # and Python then raises `IndentationError: unexpected indent`.
 stack-bootstrap:
 	@printf 'creating v1 admin token on source stack\n'
-	@$(SOURCE_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.update_or_create(user=u, plaintext='$(SOURCE_TOKEN)', defaults={'version': 1})"
+	@$(SOURCE_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.filter(user=u, version=1).delete(); t = Token.objects.create(user=u, version=1, token='$(SOURCE_TOKEN)'); print('source token id', t.pk, 'plaintext', t.plaintext)"
 	@printf 'creating v1 admin token on destination stack\n'
-	@$(DEST_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.update_or_create(user=u, plaintext='$(DEST_TOKEN)', defaults={'version': 1})"
+	@$(DEST_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.filter(user=u, version=1).delete(); t = Token.objects.create(user=u, version=1, token='$(DEST_TOKEN)'); print('dest token id', t.pk, 'plaintext', t.plaintext)"
 
 stack-seed:
 	python3 tests/fixtures/seed.py --url http://localhost:8080 --token $(SOURCE_TOKEN) --dir tests/fixtures/seed
