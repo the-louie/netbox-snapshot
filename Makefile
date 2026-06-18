@@ -21,17 +21,18 @@ DEST_COMPOSE   := docker compose -f tests/fixtures/dest/docker-compose.yml   --p
 SOURCE_TOKEN ?= 0123456789abcdef0123456789abcdef01234567
 DEST_TOKEN   ?= abcdef0123456789abcdef0123456789abcdef01
 
-.PHONY: help setup stack-up stack-down stack-wait stack-seed stack-status \
+.PHONY: help setup stack-up stack-down stack-wait stack-bootstrap stack-seed stack-status \
         lint test test-unit test-integration
 
 help:
 	@printf 'nbsnap make targets\n'
-	@printf '  setup         idempotent venv + dev install via scripts/setup-dev.sh\n'
-	@printf '  stack-up      bring both NetBox test stacks up, detached\n'
-	@printf '  stack-down    tear both stacks down, including volumes\n'
-	@printf '  stack-wait    poll /api/status/ on both, fail after 90s\n'
-	@printf '  stack-seed    apply tests/fixtures/seed/*.json to both stacks\n'
-	@printf '  stack-status  docker compose ps for both stacks\n'
+	@printf '  setup            idempotent venv + dev install via scripts/setup-dev.sh\n'
+	@printf '  stack-up         bring both NetBox test stacks up, detached\n'
+	@printf '  stack-down       tear both stacks down, including volumes\n'
+	@printf '  stack-wait       poll /login/ on both, fail after 300s\n'
+	@printf '  stack-bootstrap  create a v1 admin API token on each stack\n'
+	@printf '  stack-seed       apply tests/fixtures/seed/*.json to both stacks\n'
+	@printf '  stack-status     docker compose ps for both stacks\n'
 	@printf '  lint          ruff check, ruff format --check, mypy --strict\n'
 	@printf '  test-unit     pytest tests/unit\n'
 	@printf '  test-integration  pytest tests/integration (stacks must be up)\n'
@@ -52,11 +53,10 @@ stack-down:
 # netbox-docker stack takes 2 to 4 minutes to finish migrations
 # and bind nginx, so the 90s budget the prior version used was too
 # tight for a fresh runner. Exit non-zero on timeout so make's
-# error propagation kicks in. NetBox 4.6 requires authentication on
-# `/api/status/` (the server returns HTTP 403 without a token), so
-# we pass the configured admin token. A 200 response then proves
-# three things at once: nginx is up, the django app is serving, and
-# the configured admin token has been written to the auth table.
+# error propagation kicks in. We probe `/login/` because it is the
+# one endpoint NetBox serves without authentication. The
+# subsequent `stack-bootstrap` step seeds the API token; until
+# then any /api/* path would answer 403 even on a healthy server.
 # `curl -w` writes "000" on a failed connect, which is the natural
 # sentinel for "not ready yet".
 stack-wait:
@@ -65,11 +65,9 @@ stack-wait:
 	  src=000; dst=000; \
 	  while [ $$(date +%s) -lt $$deadline ]; do \
 	    src=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-	      -H "Authorization: Token $(SOURCE_TOKEN)" \
-	      http://localhost:8080/api/status/); \
+	      http://localhost:8080/login/); \
 	    dst=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-	      -H "Authorization: Token $(DEST_TOKEN)" \
-	      http://localhost:8081/api/status/); \
+	      http://localhost:8081/login/); \
 	    if [ "$$src" = "200" ] && [ "$$dst" = "200" ]; then \
 	      echo "both stacks ready"; exit 0; \
 	    fi; \
@@ -78,6 +76,24 @@ stack-wait:
 	  done; \
 	  echo "timeout, source=$$src dest=$$dst"; exit 1 \
 	'
+
+# Create a v1 admin API token on each stack so the seeder and the
+# integration tests can authenticate with the simple legacy
+# `Authorization: Token <40-char>` header. v1 tokens skip the
+# pepper/key plumbing that the netbox-docker v2 path requires and
+# match the header format the rest of the test code already uses.
+# `update_or_create` keeps this idempotent across re-runs.
+stack-bootstrap:
+	@printf 'creating v1 admin token on source stack\n'
+	@$(SOURCE_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c " \
+from users.models import User, Token; \
+u = User.objects.get(username='admin'); \
+Token.objects.update_or_create(user=u, plaintext='$(SOURCE_TOKEN)', defaults={'version': 1});"
+	@printf 'creating v1 admin token on destination stack\n'
+	@$(DEST_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c " \
+from users.models import User, Token; \
+u = User.objects.get(username='admin'); \
+Token.objects.update_or_create(user=u, plaintext='$(DEST_TOKEN)', defaults={'version': 1});"
 
 stack-seed:
 	python3 tests/fixtures/seed.py --url http://localhost:8080 --token $(SOURCE_TOKEN) --dir tests/fixtures/seed

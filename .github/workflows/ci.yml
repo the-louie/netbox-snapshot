@@ -131,7 +131,7 @@ jobs:
 
       - name: Bring NetBox test stacks up and seed them
         if: steps.fixtures.outputs.have_fixtures == 'true'
-        run: make stack-up stack-wait stack-seed
+        run: make stack-up stack-wait stack-bootstrap stack-seed
 
       - name: Pytest integration
         if: steps.fixtures.outputs.have_fixtures == 'true'
