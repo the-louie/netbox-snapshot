@@ -28,7 +28,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from nbsnap.http.client import NetboxHTTP
 from nbsnap.import_.nk_index import NKIndex
@@ -141,8 +141,7 @@ def _known_custom_fields_for(http: NetboxHTTP, content_type: str) -> set[str] | 
         return None
     cached = getattr(http, "_cf_cache", None)
     if cached is not None:
-        result: set[str] = cached.get(content_type, set())
-        return result
+        return cast("set[str]", cached.get(content_type, set()))
 
     try:
         by_ct = _load_destination_customfields(http)
@@ -294,8 +293,7 @@ def _classify_post_failure(content_type: str, error_text: str) -> str | None:
         if entry["content_type"] != content_type:
             continue
         if entry["regex"].search(error_text):
-            explanation: str = entry["explanation"]
-            return explanation
+            return cast("str", entry["explanation"])
         if all(kw.lower() in error_text.lower() for kw in entry["keywords"]):
             log.info(
                 "BUG-05 near miss: %s error contains all pattern "
