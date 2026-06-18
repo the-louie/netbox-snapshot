@@ -9,6 +9,7 @@ running the suite locally does not get a cryptic ConnectionError.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -22,19 +23,36 @@ DEST_TOKEN = "abcdef0123456789abcdef0123456789abcdef01"
 
 
 def _is_alive(url: str, token: str) -> bool:
-    """Best-effort liveness probe; returns False on any error."""
+    """Best-effort liveness probe; returns False on any error.
 
-    try:
-        import requests
+    Retries up to three times with a one second pause between
+    attempts. NetBox right after `make stack-bootstrap` can be
+    warm but still slow on the first call from a new client; a
+    single 2s timeout was producing false negatives that
+    session-cached and skipped every `require_stack` test.
+    Surface the last failure cause via `print` so a CI log shows
+    what the probe actually saw if it ever returns False.
+    """
 
-        resp = requests.get(
-            f"{url}/api/status/",
-            headers={"Authorization": f"Token {token}"},
-            timeout=2,
-        )
-        return resp.status_code == 200
-    except Exception:  # noqa: BLE001 - any failure is "not alive"
-        return False
+    import requests
+
+    last_err: str = "no attempts made"
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                f"{url}/api/status/",
+                headers={"Authorization": f"Token {token}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return True
+            last_err = f"HTTP {resp.status_code}: {resp.text[:120]!r}"
+        except Exception as exc:  # noqa: BLE001 - any failure is "not alive"
+            last_err = f"{type(exc).__name__}: {exc}"
+        if attempt < 2:
+            time.sleep(1.0)
+    print(f"stack probe FAILED for {url}: {last_err}")
+    return False
 
 
 @pytest.fixture(scope="session")
