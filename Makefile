@@ -83,17 +83,14 @@ stack-wait:
 # pepper/key plumbing that the netbox-docker v2 path requires and
 # match the header format the rest of the test code already uses.
 # `update_or_create` keeps this idempotent across re-runs.
+# The Python command is single-line on purpose; multi-line via
+# shell backslash continuation preserves Make's recipe indentation
+# and Python then raises `IndentationError: unexpected indent`.
 stack-bootstrap:
 	@printf 'creating v1 admin token on source stack\n'
-	@$(SOURCE_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c " \
-from users.models import User, Token; \
-u = User.objects.get(username='admin'); \
-Token.objects.update_or_create(user=u, plaintext='$(SOURCE_TOKEN)', defaults={'version': 1});"
+	@$(SOURCE_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.update_or_create(user=u, plaintext='$(SOURCE_TOKEN)', defaults={'version': 1})"
 	@printf 'creating v1 admin token on destination stack\n'
-	@$(DEST_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c " \
-from users.models import User, Token; \
-u = User.objects.get(username='admin'); \
-Token.objects.update_or_create(user=u, plaintext='$(DEST_TOKEN)', defaults={'version': 1});"
+	@$(DEST_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.update_or_create(user=u, plaintext='$(DEST_TOKEN)', defaults={'version': 1})"
 
 stack-seed:
 	python3 tests/fixtures/seed.py --url http://localhost:8080 --token $(SOURCE_TOKEN) --dir tests/fixtures/seed
