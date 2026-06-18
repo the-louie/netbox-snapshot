@@ -21,7 +21,7 @@ DEST_COMPOSE   := docker compose -f tests/fixtures/dest/docker-compose.yml   --p
 SOURCE_TOKEN ?= 0123456789abcdef0123456789abcdef01234567
 DEST_TOKEN   ?= abcdef0123456789abcdef0123456789abcdef01
 
-.PHONY: help setup stack-up stack-down stack-wait stack-bootstrap stack-seed stack-status \
+.PHONY: help setup stack-up stack-down stack-wait stack-bootstrap stack-seed stack-seed-dest stack-status \
         lint test test-unit test-integration
 
 help:
@@ -31,7 +31,8 @@ help:
 	@printf '  stack-down       tear both stacks down, including volumes\n'
 	@printf '  stack-wait       poll /login/ on both, fail after 300s\n'
 	@printf '  stack-bootstrap  create a v1 admin API token on each stack\n'
-	@printf '  stack-seed       apply tests/fixtures/seed/*.json to both stacks\n'
+	@printf '  stack-seed       apply tests/fixtures/seed/*.json to the source stack only\n'
+	@printf '  stack-seed-dest  apply tests/fixtures/seed/*.json to the destination stack\n'
 	@printf '  stack-status     docker compose ps for both stacks\n'
 	@printf '  lint          ruff check, ruff format --check, mypy --strict\n'
 	@printf '  test-unit     pytest tests/unit\n'
@@ -109,9 +110,21 @@ stack-bootstrap:
 	@printf 'creating v1 admin token on destination stack\n'
 	@$(DEST_COMPOSE) exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from users.models import User, Token; u = User.objects.get(username='admin'); Token.objects.filter(user=u, version=1).delete(); t = Token.objects.create(user=u, version=1, token='$(DEST_TOKEN)'); print('dest token id', t.pk, 'plaintext', t.plaintext)"
 
+# Seed the source stack only. The destination is intentionally
+# left empty so the round-trip integration tests (export from
+# source, import to destination) start from a known empty state.
+# Tests that need pre-populated destination data (such as the
+# reset_destination suite) arrange that via fixtures.
 stack-seed:
 	python3 tests/fixtures/seed.py --url http://localhost:8080 --token $(SOURCE_TOKEN) --dir tests/fixtures/seed
-	python3 tests/fixtures/seed.py --url http://localhost:8081 --token $(DEST_TOKEN)   --dir tests/fixtures/seed
+
+# Seed the destination stack from the same fixture set. Used by
+# tests/integration/conftest.py to populate the destination on
+# demand for the reset_destination suite. Keeping this target
+# separate from `stack-seed` means the default CI flow leaves the
+# destination empty.
+stack-seed-dest:
+	python3 tests/fixtures/seed.py --url http://localhost:8081 --token $(DEST_TOKEN) --dir tests/fixtures/seed
 
 stack-status:
 	-$(SOURCE_COMPOSE) ps

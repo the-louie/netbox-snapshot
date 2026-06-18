@@ -9,8 +9,11 @@ running the suite locally does not get a cryptic ConnectionError.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -69,3 +72,39 @@ def require_stack(stack_available: bool) -> None:
 
     if not stack_available:
         pytest.skip("netbox-docker stack is not running; start with `make stack-up stack-wait`")
+
+
+@pytest.fixture(scope="session")
+def seeded_destination(stack_available: bool) -> Iterator[None]:
+    """Populate the destination stack with the seed fixtures once.
+
+    The default `make stack-seed` only seeds the source so the
+    round-trip import tests start from a known empty destination.
+    Tests that need the destination pre-populated (the
+    `reset_destination` suite) request this fixture, which runs
+    the seeder against `localhost:8081` exactly once per session.
+    Re-running the seeder is idempotent at the API level
+    (duplicate POSTs surface as `WARN`), so this is safe even if
+    the destination already has some rows from a previous test.
+    """
+
+    if not stack_available:
+        yield
+        return
+
+    seeder = Path(__file__).resolve().parents[1] / "fixtures" / "seed.py"
+    seed_dir = seeder.parent / "seed"
+    subprocess.run(
+        [
+            sys.executable,
+            str(seeder),
+            "--url",
+            DEST_URL,
+            "--token",
+            DEST_TOKEN,
+            "--dir",
+            str(seed_dir),
+        ],
+        check=True,
+    )
+    yield

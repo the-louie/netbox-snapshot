@@ -54,7 +54,7 @@ def _site_count() -> int:
     return int(resp.json()["count"])
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "seeded_destination")
 def test_reset_clears_seeded_destination(tmp_path: Path) -> None:
     """After running the reset against a seeded dest, the in-scope
     endpoints return zero rows."""
@@ -79,7 +79,7 @@ def test_reset_clears_seeded_destination(tmp_path: Path) -> None:
     assert all(r["outcome"] in {"deleted", "deleted-fallback"} for r in site_rows)
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "seeded_destination")
 def test_reset_keep_flag_preserves_named_record() -> None:
     """`--keep <slug>` survives the wipe. We re-seed first via
     the existing fixture and then assert the kept site is still
