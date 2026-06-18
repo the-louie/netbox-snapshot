@@ -137,6 +137,27 @@ jobs:
         if: steps.fixtures.outputs.have_fixtures == 'true'
         run: pytest tests/integration -q --strict-markers
 
+      # Surface container state when the readiness wait or any
+      # later step failed. Without this dump the runner only shows
+      # `docker compose up` create lines and the host poll output,
+      # which is not enough to tell whether NetBox crashed on
+      # startup, hung on migrations, or simply needed more time.
+      - name: Dump NetBox container logs on failure
+        if: failure() && steps.fixtures.outputs.have_fixtures == 'true'
+        run: |
+          echo "::group::source stack ps"
+          docker compose -f tests/fixtures/source/docker-compose.yml --project-name nbsnap-source ps || true
+          echo "::endgroup::"
+          echo "::group::source netbox container logs"
+          docker compose -f tests/fixtures/source/docker-compose.yml --project-name nbsnap-source logs --no-color --tail=400 netbox || true
+          echo "::endgroup::"
+          echo "::group::dest stack ps"
+          docker compose -f tests/fixtures/dest/docker-compose.yml --project-name nbsnap-dest ps || true
+          echo "::endgroup::"
+          echo "::group::dest netbox container logs"
+          docker compose -f tests/fixtures/dest/docker-compose.yml --project-name nbsnap-dest logs --no-color --tail=400 netbox || true
+          echo "::endgroup::"
+
       # Always tear down so a failed integration run does not leak
       # NetBox containers on the runner.
       - name: Tear down NetBox test stacks
