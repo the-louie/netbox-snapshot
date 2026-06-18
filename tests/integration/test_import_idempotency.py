@@ -18,7 +18,7 @@ from tests.integration.conftest import (
 )
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "clean_destination")
 def test_second_run_is_all_noop(tmp_path: Path) -> None:
     snap = tmp_path / "snap"
     subprocess.run(

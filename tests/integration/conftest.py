@@ -74,15 +74,59 @@ def require_stack(stack_available: bool) -> None:
         pytest.skip("netbox-docker stack is not running; start with `make stack-up stack-wait`")
 
 
-@pytest.fixture(scope="session")
-def seeded_destination(stack_available: bool) -> Iterator[None]:
-    """Populate the destination stack with the seed fixtures once.
+@pytest.fixture()
+def clean_destination(stack_available: bool) -> Iterator[None]:
+    """Wipe the destination stack before each test that requests it.
 
-    The default `make stack-seed` only seeds the source so the
-    round-trip import tests start from a known empty destination.
-    Tests that need the destination pre-populated (the
-    `reset_destination` suite) request this fixture, which runs
-    the seeder against `localhost:8081` exactly once per session.
+    The integration tests share a single destination NetBox, so a
+    test that does a round-trip import inherits whatever the
+    previous test left behind. Tests assert on counts and on
+    "second import is NOOP" expectations that only hold against a
+    known starting state. Reset the destination back to empty
+    before the test body runs.
+
+    The reset uses `nbsnap.reset_cli.run_reset_cli` with the
+    in-scope content types (no content_types filter, default
+    scope). Audit output is redirected to the OS temp dir so the
+    test cwd stays clean.
+    """
+
+    if not stack_available:
+        yield
+        return
+
+    import argparse
+
+    from nbsnap.reset_cli import run_reset_cli
+
+    rc = run_reset_cli(
+        argparse.Namespace(
+            url=DEST_URL,
+            token=DEST_TOKEN,
+            no_verify_tls=True,
+            content_types=None,
+            keep=[],
+            apply=True,
+            confirmed=True,
+            on_error="continue",
+            audit_out=None,
+        )
+    )
+    assert rc == 0, f"clean_destination reset_cli returned {rc}"
+    yield
+
+
+@pytest.fixture()
+def seeded_destination(stack_available: bool) -> Iterator[None]:
+    """Populate the destination stack with the seed fixtures.
+
+    Used by tests that need the destination pre-populated (the
+    `reset_destination` suite). The fixture is function-scoped so
+    it runs immediately before each test that requests it. That
+    matters because the `clean_destination` fixture used by the
+    import tests can wipe the destination between sessions; a
+    session-scoped seed would not survive.
+
     Re-running the seeder is idempotent at the API level
     (duplicate POSTs surface as `WARN`), so this is safe even if
     the destination already has some rows from a previous test.

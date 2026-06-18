@@ -52,7 +52,7 @@ def _normalise(text: str) -> list[str]:
     return [BANNER_RE.sub("https://NETBOX_HOST", ln) for ln in text.splitlines()]
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "clean_destination")
 def test_roundtrip_lands_clean(tmp_path: Path) -> None:
     """TEST-08c1: export and import; destination matches source counts."""
 

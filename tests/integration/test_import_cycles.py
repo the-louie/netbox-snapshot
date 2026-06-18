@@ -23,7 +23,7 @@ from tests.integration.conftest import (
 )
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "clean_destination")
 def test_primary_ip4_cycle_round_trips(tmp_path: Path) -> None:
     # Export the seeded source. We assume the test stack already
     # carries at least one device with a primary_ip4 reference;

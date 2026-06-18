@@ -113,7 +113,7 @@ def _seed_misordered_snapshot(snap: Path) -> None:
     )
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "clean_destination")
 def test_demand_driven_imports_misordered_snapshot(tmp_path: Path) -> None:
     snap = tmp_path / "snap"
     snap.mkdir()
@@ -140,7 +140,7 @@ def test_demand_driven_imports_misordered_snapshot(tmp_path: Path) -> None:
         ]
 
 
-@pytest.mark.usefixtures("require_stack")
+@pytest.mark.usefixtures("require_stack", "clean_destination")
 def test_phase2_closes_primary_ip4_cycle(tmp_path: Path) -> None:
     from nbsnap.export.driver import run_export
 
