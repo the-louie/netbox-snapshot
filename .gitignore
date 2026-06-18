@@ -18,6 +18,7 @@
 .claude/file-history/
 .claude/.last-cleanup
 .claude/mcp-needs-auth-cache.json
+.claude/*.pat
 
 # Snapshot outputs (the tool's deliverable)
 /snapshot/
