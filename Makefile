@@ -7,7 +7,7 @@
 # NetBox image tag, see tests/fixtures/README.md for the pinning
 # policy. Change in a dedicated PR that re-runs the integration
 # suite.
-NETBOX_DOCKER_TAG ?= v4.6-3.4.1
+NETBOX_DOCKER_TAG ?= v4.6.3
 export NETBOX_DOCKER_TAG
 
 # Compose project names keep concurrent dev runs from colliding.

@@ -15,15 +15,19 @@ seeder or any integration test at the production URL.
 ## NetBox image tag
 
 Pinned in the top-level `Makefile` as `NETBOX_DOCKER_TAG`. The
-current value is `v4.6-3.4.1` (netbox-docker tag for
-NetBox 4.6.x). Bumping the tag is a dedicated PR that re-runs the
-integration suite and updates the date below.
+current value is `v4.6.3`, which selects NetBox 4.6.3 and lets the
+`netbox-docker` companion image float at whatever Docker Hub
+publishes alongside it. The earlier two part shape (`v4.6-3.4.1`,
+NetBox plus a pinned companion patch) was retired upstream when the
+companion bumped to the 5.0.x series, so the old pin no longer
+resolves on Docker Hub. Bumping the tag is a dedicated PR that
+re-runs the integration suite and updates the date below.
 
 | Field | Value |
 | :--- | :--- |
-| Pinned tag | `v4.6-3.4.1` |
-| NetBox version it carries | 4.6.x |
-| Date pinned | 2026-06-14 |
+| Pinned tag | `v4.6.3` |
+| NetBox version it carries | 4.6.3 |
+| Date pinned | 2026-06-18 |
 
 ## Layout
 
