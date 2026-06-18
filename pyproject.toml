@@ -63,6 +63,11 @@ dev = [
     "mypy>=1.10",
     "pytest>=8",
     "pytest-cov>=5",
+    # A renderer or import test that hangs on a retry loop or
+    # interactive prompt must not be allowed to stall the whole
+    # 30 minute integration job. pytest-timeout caps every test
+    # at the value declared in `tool.pytest.ini_options.timeout`.
+    "pytest-timeout>=2.3",
     "pre-commit>=3.7",
     "responses>=0.25",
     "types-requests>=2.31",
@@ -141,5 +146,13 @@ addopts = "-ra --strict-markers --strict-config"
 pythonpath = ["src"]
 testpaths = ["tests"]
 xfail_strict = true
+# Cap any single test at 120 seconds. The integration tests that
+# subprocess into the nb2kea renderers, the bulk import path, or
+# the reset_destination sweep can run slow on a cold CI runner,
+# but none of them should legitimately exceed two minutes against
+# our minimal seed fixture. Without a cap, a single hang stalls
+# the whole 30 minute integration job.
+timeout = 120
+timeout_method = "thread"
 
 
