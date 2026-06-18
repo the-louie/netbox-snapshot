@@ -582,9 +582,12 @@ def _enumerate_ids(
         # NetBox surfaces `name` on most content types and
         # `slug` on the ones that have a slug (Site, DeviceRole,
         # Manufacturer, etc.). Match against both so an operator
-        # can `--keep hall-d` regardless of which field carries
-        # the value.
-        name = row.get("name") or row.get("slug") or ""
-        if name in keep_names:
+        # can `--keep hall-d` (the slug) on a site whose name is
+        # "Hall D". The previous shape used
+        # `row.get("name") or row.get("slug")` and matched only
+        # the first non empty value, which silently skipped the
+        # slug check whenever the name was truthy.
+        candidates = {row.get("name"), row.get("slug")} - {None, ""}
+        if candidates & keep_names:
             continue
         yield rid
