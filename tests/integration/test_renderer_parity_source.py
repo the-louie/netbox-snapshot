@@ -12,13 +12,18 @@ import pytest
 
 from tests.integration.conftest import SOURCE_TOKEN, SOURCE_URL
 
-NB2KEA_SCRIPTS = Path("__reference/nb2kea/scripts")
+# The nb2kea renderers are vendored at `tests/_nb2kea/scripts/`
+# so CI has them without needing access to the upstream
+# `GlitchedInfra/netbox-utilities` repo. Local developers may also
+# clone the upstream into `tests/external/nb2kea/`; the vendored
+# copy in `tests/_nb2kea/` is the canonical source the tests run.
+NB2KEA_SCRIPTS = Path(__file__).resolve().parents[1] / "_nb2kea" / "scripts"
 RENDERER_SCRIPTS = ("netbox2cisco.py", "netbox2junos.py", "netbox2kea.py")
 
 
 def _skip_if_renderer_missing() -> None:
     if not NB2KEA_SCRIPTS.exists():
-        pytest.skip("__reference/nb2kea/scripts is not present")
+        pytest.skip(f"{NB2KEA_SCRIPTS} is not present")
 
 
 @pytest.mark.usefixtures("require_stack")

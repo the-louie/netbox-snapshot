@@ -24,7 +24,12 @@ from tests.integration.conftest import (
     SOURCE_URL,
 )
 
-NB2KEA_SCRIPTS = Path("__reference/nb2kea/scripts")
+# The nb2kea renderers are vendored at `tests/_nb2kea/scripts/`
+# so CI has them without needing access to the upstream
+# `GlitchedInfra/netbox-utilities` repo. Local developers may also
+# clone the upstream into `tests/external/nb2kea/`; the vendored
+# copy in `tests/_nb2kea/` is the canonical source the tests run.
+NB2KEA_SCRIPTS = Path(__file__).resolve().parents[1] / "_nb2kea" / "scripts"
 RENDERER_SCRIPTS = ("netbox2cisco.py", "netbox2junos.py", "netbox2kea.py")
 BANNER_RE = re.compile(r"https?://[^/\s]+")
 
@@ -97,7 +102,7 @@ def test_renderers_against_destination(tmp_path: Path) -> None:
     write outputs to source-rendered/ and dest-rendered/."""
 
     if not NB2KEA_SCRIPTS.exists():
-        pytest.skip("__reference/nb2kea/scripts is not present")
+        pytest.skip(f"{NB2KEA_SCRIPTS} is not present")
     _render(NB2KEA_SCRIPTS, tmp_path / "source-rendered", SOURCE_URL, SOURCE_TOKEN)
     _render(NB2KEA_SCRIPTS, tmp_path / "dest-rendered", DEST_URL, DEST_TOKEN)
 
@@ -107,7 +112,7 @@ def test_rendered_outputs_match(tmp_path: Path) -> None:
     """TEST-08c3: byte-for-byte diff modulo the NETBOX_HOST banner."""
 
     if not NB2KEA_SCRIPTS.exists():
-        pytest.skip("__reference/nb2kea/scripts is not present")
+        pytest.skip(f"{NB2KEA_SCRIPTS} is not present")
     src_out = tmp_path / "source-rendered"
     dst_out = tmp_path / "dest-rendered"
     _render(NB2KEA_SCRIPTS, src_out, SOURCE_URL, SOURCE_TOKEN)

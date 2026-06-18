@@ -66,6 +66,11 @@ dev = [
     "pre-commit>=3.7",
     "responses>=0.25",
     "types-requests>=2.31",
+    # `tests/_nb2kea/` carries the upstream nb2kea renderers
+    # which load Jinja2 templates at runtime. Pinned to the dev
+    # extra so CI can run the renderer-parity integration tests
+    # without installing the dependency by hand.
+    "jinja2>=3.1",
 ]
 
 # ---------------------------------------------------------------------------
@@ -81,7 +86,7 @@ target-version = "py311"
 # __reference/ holds the read-only nb2kea prior-art project. Linting
 # someone else's code is noise, exclude the whole subtree. .venv is
 # the dev sandbox; tmp/ holds rescue artefacts and one-off scripts.
-exclude = ["__reference", ".venv", "venv", "tmp"]
+exclude = ["__reference", ".venv", "venv", "tmp", "tests/_nb2kea", "tests/external"]
 
 [tool.ruff.lint]
 # Curated rule set:

@@ -20,6 +20,10 @@
 .claude/mcp-needs-auth-cache.json
 .claude/*.pat
 
+# Local developer mounts of external repos. The vendored copy at
+# tests/_nb2kea/ is what CI uses; tests/external/ stays local.
+tests/external/
+
 # Snapshot outputs (the tool's deliverable)
 /snapshot/
 /snapshot-*/
