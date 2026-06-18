@@ -2,5 +2,25 @@
   {
     "endpoint": "dcim/device-roles/",
     "payload": {"name": "Access Switch", "slug": "access_switch", "color": "1f6feb"}
+  },
+  {
+    "endpoint": "dcim/device-roles/",
+    "payload": {"name": "Distribution Switches", "slug": "distribution_switches", "color": "0ea5e9"}
+  },
+  {
+    "endpoint": "ipam/roles/",
+    "payload": {"name": "Kea Dist Mgmt", "slug": "kea-dist-mgmt"}
+  },
+  {
+    "endpoint": "ipam/roles/",
+    "payload": {"name": "Kea Participant", "slug": "kea-participant"}
+  },
+  {
+    "endpoint": "ipam/roles/",
+    "payload": {"name": "Kea Crew", "slug": "kea-crew"}
+  },
+  {
+    "endpoint": "ipam/roles/",
+    "payload": {"name": "Kea Bootstrap", "slug": "kea-bootstrap"}
   }
 ]
