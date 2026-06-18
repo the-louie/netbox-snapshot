@@ -40,6 +40,9 @@ class _ScopeFlagAction(argparse.Action):
 
     def __call__(
         self,
+        # `parser` is part of the `argparse.Action.__call__` contract.
+        # We do not need it here, but the positional must stay so the
+        # parser can dispatch to this action.
         parser: argparse.ArgumentParser,  # noqa: ARG002
         namespace: argparse.Namespace,
         values: Any,
