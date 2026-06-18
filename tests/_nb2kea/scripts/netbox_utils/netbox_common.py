@@ -108,27 +108,33 @@ HTTP_TIMEOUT_SECONDS = 30
 NETBOX_CA_BUNDLE = os.environ.get("NETBOX_CA_BUNDLE")
 
 
-def _parse_netbox_url(url: str) -> tuple[str, int]:
+def _parse_netbox_url(url: str) -> tuple[str, int, str]:
     """
-    Parse `NB_URL` into a `(host, port)` pair. Accepts either a bare
-    `host:port` or a full `https://host:port` form, defaults the port
-    to 443 when the URL omits it. Raises RuntimeError on a malformed
-    value so the operator sees a clear cause rather than a curl
-    failure.
+    Parse `NB_URL` into a `(host, port, scheme)` triple. Accepts a bare
+    `host:port` or a full `http(s)://host:port` form, defaults the
+    port to 443 (or 80 when the scheme is http) when the URL omits it.
+    Raises RuntimeError on a malformed value so the operator sees a
+    clear cause rather than a curl failure.
 
-    The scheme is dropped on purpose, the client always speaks HTTPS,
-    a `http://` URL would silently mismatch otherwise.
+    The default scheme is `https`. A `http://` prefix is honoured so
+    the integration test stacks (which listen on plain HTTP on
+    localhost) can be reached without standing up TLS just for the
+    test suite. Production runs always use `https://` per the
+    project's read-only source banner.
     """
     if not url:
         raise RuntimeError("NB_URL is empty")
     stripped = url.strip()
-    for scheme in ("https://", "http://"):
-        if stripped.startswith(scheme):
-            stripped = stripped[len(scheme):]
-            break
+    scheme = "https"
+    if stripped.startswith("http://"):
+        scheme = "http"
+        stripped = stripped[len("http://"):]
+    elif stripped.startswith("https://"):
+        stripped = stripped[len("https://"):]
     stripped = stripped.rstrip("/")
     if "/" in stripped:
         stripped = stripped.split("/", 1)[0]
+    default_port = 443 if scheme == "https" else 80
     if ":" in stripped:
         host, port_str = stripped.rsplit(":", 1)
         try:
@@ -138,10 +144,10 @@ def _parse_netbox_url(url: str) -> tuple[str, int]:
                 f"NB_URL {url!r} has a non integer port {port_str!r}"
             ) from exc
     else:
-        host, port = stripped, 443
+        host, port = stripped, default_port
     if not host:
         raise RuntimeError(f"NB_URL {url!r} has no host component")
-    return host, port
+    return host, port, scheme
 
 # Bounded exponential backoff for transient failures (curl timeout, HTTP
 # 5xx, HTTP 429). Three retries with these waits cap the total recovery
@@ -248,9 +254,10 @@ class NetboxClient:
         # curl `--resolve` pin. This is the path lab and container
         # operators take to point the toolchain at host.docker.internal
         # or any other staging NetBox.
+        scheme = "https"
         nb_url = os.environ.get("NB_URL")
         if nb_url:
-            override_host, override_port = _parse_netbox_url(nb_url)
+            override_host, override_port, scheme = _parse_netbox_url(nb_url)
             host = override_host
             port = override_port
             ip = ""  # empty IP signals "skip --resolve, use DNS"
@@ -261,8 +268,12 @@ class NetboxClient:
         self._timeout = timeout
         self._ca_bundle = ca_bundle
         self._token = token
-        self._api_base = f"https://{host}:{port}/api" if port != 443 \
-            else f"https://{host}/api"
+        default_port = 443 if scheme == "https" else 80
+        self._api_base = (
+            f"{scheme}://{host}:{port}/api"
+            if port != default_port
+            else f"{scheme}://{host}/api"
+        )
         self._max_retries = max_retries
         # Defensive copy as a tuple keeps the schedule immutable from
         # the caller's side. The backoff array should be at least as
