@@ -116,6 +116,14 @@ module = "tests.*"
 disallow_untyped_defs = false
 check_untyped_defs = false
 
+# Third-party deps without typed releases on PyPI. requests ships a
+# py.typed marker but its public surface still resolves to Any under
+# strict mode; treat the boundary as untyped here and cast at the
+# call sites.
+[[tool.mypy.overrides]]
+module = ["zstandard", "zstandard.*", "requests", "requests.*", "urllib3", "urllib3.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # Pytest configuration
 # ---------------------------------------------------------------------------
