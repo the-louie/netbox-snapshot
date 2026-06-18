@@ -30,6 +30,7 @@ import logging
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 from nbsnap.cli.common import add_audit_flags, add_tls_flags
 from nbsnap.http.client import NetboxHTTP, NetboxHTTPError
@@ -450,7 +451,7 @@ def _install_termination_handlers(audit_path: Path) -> None:
     if _TERMINATION_HANDLER_INSTALLED:
         return
 
-    def _handler(signum: int, _frame) -> None:  # noqa: ANN001
+    def _handler(signum: int, _frame: object) -> None:
         sys.stderr.write(
             f"\nnbsnap import: received signal {signum}; partial audit at {audit_path}\n"
         )
@@ -490,7 +491,7 @@ def _parse_max_skipped_ct(values: list[str]) -> dict[str, int]:
     return out
 
 
-def _format_issue(issue: dict | str) -> str:
+def _format_issue(issue: dict[str, Any] | str) -> str:
     """Render a `snapshot_format_issues` entry as a human line.
 
     BUG-01a moved the report's issues from raw strings to

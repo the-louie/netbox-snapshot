@@ -141,7 +141,8 @@ def _known_custom_fields_for(http: NetboxHTTP, content_type: str) -> set[str] | 
         return None
     cached = getattr(http, "_cf_cache", None)
     if cached is not None:
-        return cached.get(content_type, set())
+        result: set[str] = cached.get(content_type, set())
+        return result
 
     try:
         by_ct = _load_destination_customfields(http)
@@ -293,7 +294,8 @@ def _classify_post_failure(content_type: str, error_text: str) -> str | None:
         if entry["content_type"] != content_type:
             continue
         if entry["regex"].search(error_text):
-            return entry["explanation"]
+            explanation: str = entry["explanation"]
+            return explanation
         if all(kw.lower() in error_text.lower() for kw in entry["keywords"]):
             log.info(
                 "BUG-05 near miss: %s error contains all pattern "
