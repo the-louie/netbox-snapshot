@@ -18,16 +18,6 @@ from tests.integration.conftest import (
 )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Second-import NK lookup for child FKs (dcim.device.location, "
-        "dcim.interface.device, ...) misses rows that the first import "
-        "wrote, so the second run reports `created: 0 updated: 4 "
-        "failed: 7` instead of all-NOOP. The fix lives in the NK "
-        "resolver's destination cache rebuild; tracked separately."
-    ),
-)
 @pytest.mark.usefixtures("require_stack", "clean_destination")
 def test_second_run_is_all_noop(tmp_path: Path) -> None:
     snap = tmp_path / "snap"
