@@ -282,6 +282,116 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
 
+### BUG-15: Second `nbsnap import` does not NOOP, child FK lookups miss recently-created parents
+
+* **Status.** Tracked via `@pytest.mark.xfail(strict=False)` on
+  `tests/integration/test_import_idempotency.py::test_second_run_is_all_noop`.
+  The marker stays until this ticket lands and the test passes;
+  pytest will then report `XPASSED` and the marker can come off.
+* **Context.** The test runs the same export through `nbsnap import`
+  twice in a row against an empty destination. The first invocation
+  is expected to create rows; the second is expected to find each row
+  by natural key and report `noop:` for every record.
+  The second invocation observes:
+  ```
+  destination NetBox refused the create for
+  dcim.device.location -> dcim.location ([dcim.location
+  (('hall-d',), 'the-forge') -> dcim.location] NK
+  (('hall-d',), 'the-forge') not found on destination
+  (hint: missing source data))
+  ```
+  The location was written during the first import (the log shows
+  `Phase dcim.location complete: 1 records in 0s`). The second
+  import's NK resolver does not find it, even though the row is on
+  the destination.
+* **Files.**
+  * `src/nbsnap/import_/nk_index.py` (build / rebuild path).
+  * `src/nbsnap/import_/upsert.py` (where the resolver is invoked).
+  * `tests/integration/test_import_idempotency.py` (current xfail target).
+* **Hypothesis.** The destination cache is built lazily per content
+  type at the moment the first FK reference is resolved. For
+  composite NKs that include a parent FK (Location keyed by
+  `(site, name)`), the cache lookup serialises the tuple in a shape
+  that does not match how the row was originally indexed. The first
+  import works because the index is built incrementally as rows are
+  written; the second import builds the index by paging the
+  destination and stumbles on the tuple shape.
+* **Requirements.**
+  * Add a focused unit test that builds an `NKIndex` from a mocked
+    destination response containing a Location with `site.slug`
+    `hall-d` and `name` `the-forge`, then asserts
+    `index.lookup("dcim.location", (("hall-d",), "the-forge"))`
+    returns the right id.
+  * Trace the divergence between the resolver's index population
+    during a fresh import and during a re-import.
+  * Fix the cache rebuild so the second-import path finds the same
+    rows it just wrote.
+  * Remove the xfail marker once the integration test passes.
+* **Testing.** `pytest tests/integration/test_import_idempotency.py`
+  reports `XPASSED` (then PASSED after the marker is removed) and
+  the full integration suite stays green.
+* **Estimated effort.** 3h.
+
+### TEST-09: Production-shaped renderer seed fixture (one dist, two access switches)
+
+* **Status.** Tracked via `@pytest.mark.xfail(strict=False)` on
+  `tests/integration/test_renderer_parity_source.py::test_nb2kea_renderers_run_against_source`,
+  `tests/integration/test_renderer_parity_roundtrip.py::test_renderers_against_destination`,
+  and `tests/integration/test_renderer_parity_roundtrip.py::test_rendered_outputs_match`.
+  All three xfail markers come off when this ticket lands.
+* **Context.** The vendored nb2kea renderers (`tests/_nb2kea/scripts/netbox2cisco.py`,
+  `netbox2junos.py`, `netbox2kea.py`) expect a production-shaped
+  NetBox: device roles plus the matching devices, dist hardware
+  with the `district_token` custom field, IP addresses with
+  `dns_name` starting `dhcp0` (family 4), IP ranges in the four
+  `kea-*` roles (`kea-dist-mgmt`, `kea-participant`, `kea-crew`,
+  `kea-bootstrap`), full uplink cabling between dist and access,
+  and a `Vlan600` SVI on every access switch. Our current seed
+  satisfies the role queries (00-roles.json carries every role
+  the renderers query for) and the access switch shape; the
+  renderers exit non-zero on the first missing dependency past
+  that point.
+* **Files.**
+  * `tests/fixtures/seed/` (extend the JSONL list; add files for
+    dist hardware, custom fields, kea pools, uplink cabling).
+  * `tests/fixtures/README.md` (document the production-shape
+    intent so the next maintainer does not minimise the fixture
+    by accident).
+* **Requirements.**
+  * Pick the smallest topology that exercises every renderer
+    path: one dist switch (`D-THE-FORGE-SW-PASTED-T-SW` or
+    similar from the nb2kea reference layout) plus two access
+    switches (`d39a`, `d39b`, already present). The dist switch
+    carries `irb.600` for management and `irb.239..irb.247` for
+    participants per `tests/external/nb2kea/CLAUDE.md`.
+  * Add the custom field definitions the renderers read
+    (`district_token` on dcim.device, `switch_count` on dcim.rack).
+  * Add IPAM rows the renderers need: a `kea-dist-mgmt` IP range
+    that owns the dist mgmt /24, a `kea-participant` IP range per
+    participant VLAN, and IP addresses with `dns_name` matching
+    `dhcp0*` so the netbox2junos check passes.
+  * Add the uplink cabling between dist `ge-0/0/x` and access
+    `Gi0/2` interfaces, plus the Vlan600 SVI IPs the
+    netbox2cisco renderer reads.
+  * Keep the fixture format consistent with the existing
+    `tests/fixtures/seed/*.json` files so the seeder picks them
+    up automatically.
+  * Once the seed lands, run the three renderer-parity tests
+    locally, confirm exit 0, and remove the xfail markers.
+* **Testing.**
+  ```bash
+  make stack-up stack-wait stack-bootstrap stack-seed
+  pytest tests/integration/test_renderer_parity_source.py \
+         tests/integration/test_renderer_parity_roundtrip.py -q
+  ```
+  All three tests pass. The full integration suite stays green
+  (xfailed count drops by three).
+* **Anchor.** `tests/external/nb2kea/reference_documentation/`
+  carries the production diagrams and the exact field set the
+  renderers expect; mirror the smallest viable subset into
+  `tests/fixtures/seed/`.
+* **Estimated effort.** 4h.
+
 ### INFRA-04: Periodic review of `tool.mypy.overrides` for typed deps
 
 * **Context.** Surfaced by `__doc/code_reviews/20260618-1315_ci_lint_remediation.md`. `pyproject.toml` carries an `ignore_missing_imports = true` override for `zstandard`, `requests`, and `urllib3` because their typed surface either does not exist or collapses to `Any` under strict mypy. The override is an escape hatch, not a permanent state. Once any of these libraries (or their `types-*` companion packages) ships richer stubs, we should remove the corresponding entry so we get the type signal back at our call sites.
