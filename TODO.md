@@ -81,19 +81,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 * **Testing.** `pytest tests/unit/import_/ --cov=src/nbsnap/import_/phase1_runner --cov=src/nbsnap/import_/phase2_runner --cov=src/nbsnap/import_/field_resolver` should show >85% line coverage on each.
 * **Estimated effort.** 2h.
 
-#### ARCH-02j: Finish threading `transient_keys`, `ctx`, and `queue_size_before` through the polymorphic and termination helpers
-
-* **Context.** Surfaced by `__doc/code_reviews/20260618-1315_ci_lint_remediation.md`. Two helpers in `src/nbsnap/import_/driver.py` carry orphaned arguments. `_resolve_polymorphic_id_pairs` (line 798) and `_resolve_termination_lists` (line 958) accept `transient_keys` and `ctx`, but their bodies never read them, and their internal `_try_lookahead` call sites at lines 924, 940, 1042 do not forward them. `_try_lookahead` itself accepts `transient_keys` and uses it at line 1170 to skip already-failed parents, so the missing thread means the helpers cannot reach the transient cache through these branches. There is also a `queue_size_before: int = 0` parameter on `_try_lookahead` whose value defaults to 0 at every call site that goes through these two helpers, which collapses the meaningful comparison at line 1170 to "always true if the queue is non-empty". The CI fix removed the dead local assignments that hinted at the original threading intent; this ticket restores the design.
-* **Files.**
-  * `src/nbsnap/import_/driver.py` (the two helpers, the `_try_lookahead` signature, and the four call sites).
-* **Requirements.**
-  * Decide whether the two helpers should accept and forward `transient_keys`, `ctx`, and `queue_size_before`, or whether the arguments should be removed from their signatures.
-  * If forwarding, drop the `# noqa: ARG001` markers added by the CI fix and pass the values into the `_try_lookahead` invocations.
-  * If dropping, remove the arguments from both signatures and update the two call sites in the main resolver loop (around line 539 and `_resolve_termination_lists`'s caller in the same loop).
-  * Either way, fix the `queue_size_before` situation so the comparison at line 1170 sees a meaningful value when the helpers are involved.
-* **Testing.** Add a regression test under `tests/unit/test_import_driver_lookahead.py` that walks a polymorphic FK with one already-failed parent through `_resolve_polymorphic_id_pairs` and asserts the second visit is short circuited by the `transient_keys` cache.
-* **Estimated effort.** 2h.
-
 ### ARCH-03: Bulk endpoints and bounded parallelism
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-03`. Depends on ARCH-02 because the Phase 1 and Phase 2 loops need to be cleanly extracted before they can be batched or parallelised. Sub-tickets ARCH-03a..g.
