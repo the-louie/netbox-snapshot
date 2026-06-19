@@ -298,3 +298,53 @@ def test_audit_records_missing_from_source_when_snapshot_has_ct_but_not_nk() -> 
     )
     assert len(auditor.events) == 1
     assert auditor.events[0].category is DropCategory.MISSING_FROM_SOURCE
+
+
+def test_transient_keys_is_forwarded_to_try_lookahead() -> None:
+    """ARCH-02j regression. The paired-polymorphic helper used
+    to drop `transient_keys` on the floor: the argument was
+    listed on the signature with a `# noqa: ARG001` but the
+    `_try_lookahead` invocation inside the except branch never
+    passed it through. The thread mattered because a parent NK
+    that already failed on a previous polymorphic branch could
+    otherwise be retried over and over. This test patches
+    `_try_lookahead` and asserts the helper hands it the
+    transient_keys set the caller supplied.
+    """
+
+    from unittest.mock import patch
+
+    transient: set[tuple[str, tuple]] = {("dcim.interface", ("ghost", "iface"))}
+
+    body = {
+        "address": "10.0.0.1/24",
+        "assigned_object_type": "dcim.interface",
+        "assigned_object_id": ("ghost", "iface"),
+    }
+
+    captured: dict[str, object] = {}
+
+    def fake_lookahead(**kwargs: object) -> tuple[None, bool]:
+        captured.update(kwargs)
+        return None, False
+
+    with patch("nbsnap.import_.driver._try_lookahead", side_effect=fake_lookahead):
+        _resolve_polymorphic_id_pairs(
+            body,
+            _minimal_schema(),
+            NKIndex(),
+            MagicMock(get_all=MagicMock(return_value=iter([]))),
+            default_registry(),
+            snapshot_index=SnapshotIndex(),
+            processing_stack=set(),
+            deferred_queue=[],
+            current_nk=("test",),
+            auditor=Auditor(),
+            owner_ct="ipam.ipaddress",
+            transient_keys=transient,
+        )
+
+    assert captured.get("transient_keys") is transient, (
+        "the helper must forward the caller's transient_keys identity, "
+        f"saw {captured.get('transient_keys')!r}"
+    )

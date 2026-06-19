@@ -825,7 +825,7 @@ def _resolve_polymorphic_id_pairs(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
-    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,  # noqa: ARG001
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     ctx: Any = None,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Resolve `<prefix>_type` + `<prefix>_id` paired polymorphic FKs.
@@ -921,6 +921,12 @@ def _resolve_polymorphic_id_pairs(
         except (KeyError, ValueError) as exc:
             # Try the look-ahead path so the parent can be
             # created on demand from the snapshot.
+            # ARCH-02j: forward `transient_keys` (and the
+            # `ctx` bundle when callers carry one) so the
+            # transient-failure cache reaches the look-ahead
+            # path here too. Without this thread, a parent
+            # that already failed on a previous polymorphic
+            # branch is retried over and over.
             recovered, was_deferred = _try_lookahead(
                 value=raw_id,
                 target_ct=target_ct,
@@ -937,6 +943,7 @@ def _resolve_polymorphic_id_pairs(
                 auditor=auditor,
                 failed_keys=failed_keys,
                 deferred_fields_by_ct=deferred_fields_by_ct,
+                transient_keys=transient_keys,
             )
             if recovered is not None:
                 new_body[id_field] = recovered
@@ -987,7 +994,7 @@ def _resolve_termination_lists(
     failed_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     deferred_fields_by_ct: dict[str, set[str]] | None = None,
     warn_dedup: set[tuple[str, str, str]] | None = None,
-    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,  # noqa: ARG001
+    transient_keys: set[tuple[str, tuple[Any, ...]]] | None = None,
     ctx: Any = None,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Convert termination dicts from snapshot to NetBox shape.
@@ -1064,6 +1071,12 @@ def _resolve_termination_lists(
             except (KeyError, ValueError) as exc:
                 # Look-ahead path so the target interface can be
                 # created from the snapshot if it is in scope.
+                # ARCH-02j: forward `transient_keys` so a
+                # previous failure on the same target NK short
+                # circuits this lookup. Cable termination
+                # resolution would otherwise re-attempt the
+                # same already-failed interface lookup on
+                # every termination in the same cable.
                 recovered, was_deferred = _try_lookahead(
                     value=raw_nk,
                     target_ct=target_ct,
@@ -1080,6 +1093,7 @@ def _resolve_termination_lists(
                     auditor=auditor,
                     failed_keys=failed_keys,
                     deferred_fields_by_ct=deferred_fields_by_ct,
+                    transient_keys=transient_keys,
                 )
                 if recovered is not None:
                     resolved_items.append(
