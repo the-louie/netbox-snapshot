@@ -1,0 +1,82 @@
+[
+  {
+    "endpoint": "dcim/device-types/",
+    "payload": {
+      "manufacturer": {"_resolve": ["dcim.manufacturer", "cisco"]},
+      "model": "EX4100-24P",
+      "slug": "ex4100-24p",
+      "u_height": 1
+    }
+  },
+  {
+    "endpoint": "dcim/devices/",
+    "payload": {
+      "name": "D-FORGE-SW",
+      "role": {"_resolve": ["dcim.devicerole", "distribution_switches"]},
+      "device_type": {"_resolve": ["dcim.devicetype", "ex4100-24p"]},
+      "site": {"_resolve": ["dcim.site", "hall-d"]},
+      "location": {"_resolve": ["dcim.location", "the-forge"]},
+      "status": "active"
+    }
+  },
+  {
+    "endpoint": "dcim/interfaces/",
+    "payload": {
+      "device": {"_resolve": ["dcim.device", "D-FORGE-SW"]},
+      "name": "irb.600",
+      "type": "virtual"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "172.16.1.1/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["D-FORGE-SW", "irb.600"]]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.0.0.10/24",
+      "dns_name": "dhcp01.infra.glitched.se"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.0.0.11/24",
+      "dns_name": "ns01.infra.glitched.se"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.0.0.12/24",
+      "dns_name": "tftp.infra.glitched.se"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.0.0.13/24",
+      "dns_name": "ntp01.infra.glitched.se"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-ranges/",
+    "payload": {
+      "start_address": "192.168.10.10/24",
+      "end_address": "192.168.10.250/24",
+      "role": {"_resolve": ["ipam.role", "kea-dist-mgmt"]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-ranges/",
+    "payload": {
+      "start_address": "192.168.20.10/24",
+      "end_address": "192.168.20.250/24",
+      "role": {"_resolve": ["ipam.role", "kea-participant"]}
+    }
+  }
+]
