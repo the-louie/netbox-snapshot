@@ -498,14 +498,36 @@ def upsert(
 def _matches(current: Any, desired: Any) -> bool:
     """Compare a desired snapshot value against the destination's current.
 
-    Special-cases NetBox's nested FK representation: the snapshot
-    carries the resolved destination id, while the destination GET
-    detail returns the nested object. We compare on `.id` when the
-    current side is a dict.
+    Three NetBox shapes have to compare equal even though they
+    serialise differently between the snapshot and a fresh GET:
+
+    1. **Nested FK.** The snapshot carries the resolved destination
+       id, the GET detail returns the nested object with `.id`.
+       Compare on `id` when the current side is a dict.
+    2. **Enum dict.** Choice fields (status, type, mode) are
+       collapsed to the bare value on the snapshot side
+       (`"active"`) but the GET response carries the
+       `{"value": "active", "label": "Active"}` shape. Treat the
+       two as equal when the desired side matches `current["value"]`.
+    3. **None vs empty.** NetBox sometimes returns `null` for an
+       unset nullable, sometimes `""`, sometimes an absent key.
+       The snapshot writes `None` for any of these and we should
+       not PATCH the noop.
+
+    Without these special cases every second import showed
+    `updated: N` instead of `noop: N` because each PATCH was a
+    write of the same value back to the destination.
     """
-    if isinstance(current, dict) and isinstance(desired, int):
-        return bool(current.get("id") == desired)
-    return bool(current == desired)
+    if current == desired:
+        return True
+    if current is None and desired in (None, ""):
+        return True
+    if isinstance(current, dict):
+        if isinstance(desired, int) and current.get("id") == desired:
+            return True
+        if "value" in current and current.get("value") == desired:
+            return True
+    return False
 
 
 def _record_bypass_coerced(
