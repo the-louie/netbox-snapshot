@@ -91,10 +91,27 @@ class NKIndex:
             return
 
         # `brief=true` keeps the response small. NetBox strips most
-        # nested representations from briefs, so the lookup table
-        # uses bare ids and slug/name.
-        sep = "&" if "?" in endpoint else "?"
-        for row in http.get_all(f"{endpoint}{sep}brief=true"):
+        # nested representations from briefs (a `dcim.location`
+        # brief row carries `id`, `name`, `slug`, and `display` but
+        # not `site`). The natural key resolver for any composite
+        # NKSpec needs those nested fields, so for content types
+        # whose NKSpec depends on a parent we have to ask NetBox
+        # for the full row. BUG-15 traced the second-import
+        # "NK not found on destination" failures back to this:
+        # the resolver raised on the missing nested field, the
+        # `except (KeyError, ValueError): continue` below swallowed
+        # the row, and the lookup against the populated row missed.
+        use_brief = True
+        if registry.has(content_type):
+            spec = registry.get(content_type)
+            if any(f.parent_content_type is not None for f in spec.fields):
+                use_brief = False
+        if use_brief:
+            sep = "&" if "?" in endpoint else "?"
+            request_url = f"{endpoint}{sep}brief=true"
+        else:
+            request_url = endpoint
+        for row in http.get_all(request_url):
             try:
                 nk = resolve(registry, content_type, row)
             except (KeyError, ValueError):
