@@ -1,0 +1,118 @@
+[
+  {
+    "endpoint": "extras/custom-fields/",
+    "payload": {
+      "object_types": ["dcim.device"],
+      "type": "text",
+      "name": "district_token",
+      "label": "District Token",
+      "required": false
+    }
+  },
+  {
+    "endpoint": "extras/custom-fields/",
+    "payload": {
+      "object_types": ["dcim.rack"],
+      "type": "integer",
+      "name": "switch_count",
+      "label": "Switch Count",
+      "required": false
+    }
+  },
+  {
+    "endpoint": "ipam/vlans/",
+    "payload": {
+      "vid": 1100,
+      "name": "OSPF_DEFAULT_1100",
+      "site": {"_resolve": ["dcim.site", "hall-d"]}
+    }
+  },
+  {
+    "endpoint": "ipam/vlans/",
+    "payload": {
+      "vid": 1101,
+      "name": "OSPF_INTERNET_1101",
+      "site": {"_resolve": ["dcim.site", "hall-d"]}
+    }
+  },
+  {
+    "endpoint": "ipam/vlans/",
+    "payload": {
+      "vid": 1200,
+      "name": "OSPF_DEFAULT_1200",
+      "site": {"_resolve": ["dcim.site", "hall-d"]}
+    }
+  },
+  {
+    "endpoint": "ipam/vlans/",
+    "payload": {
+      "vid": 1201,
+      "name": "OSPF_INTERNET_1201",
+      "site": {"_resolve": ["dcim.site", "hall-d"]}
+    }
+  },
+  {
+    "endpoint": "dcim/interfaces/",
+    "payload": {
+      "device": {"_resolve": ["dcim.device", "D-FORGE-SW"]},
+      "name": "irb.1100",
+      "type": "virtual"
+    }
+  },
+  {
+    "endpoint": "dcim/interfaces/",
+    "payload": {
+      "device": {"_resolve": ["dcim.device", "D-FORGE-SW"]},
+      "name": "irb.1101",
+      "type": "virtual"
+    }
+  },
+  {
+    "endpoint": "dcim/interfaces/",
+    "payload": {
+      "device": {"_resolve": ["dcim.device", "D-FORGE-SW"]},
+      "name": "irb.1200",
+      "type": "virtual"
+    }
+  },
+  {
+    "endpoint": "dcim/interfaces/",
+    "payload": {
+      "device": {"_resolve": ["dcim.device", "D-FORGE-SW"]},
+      "name": "irb.1201",
+      "type": "virtual"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.11.0.1/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["D-FORGE-SW", "irb.1100"]]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.11.1.1/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["D-FORGE-SW", "irb.1101"]]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.12.0.1/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["D-FORGE-SW", "irb.1200"]]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.12.1.1/24",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["D-FORGE-SW", "irb.1201"]]}
+    }
+  }
+]
