@@ -237,6 +237,74 @@ def test_composite_nk_content_type_is_listed_without_brief() -> None:
     )
 
 
+def test_grandchild_nk_resolves_through_parent_lookup_cache() -> None:
+    """BUG-15 regression. An interface row's `device` field is a
+    nested dict that only carries `id`, `name`, `slug`, and
+    `display`. The interface NKSpec needs the device's composite
+    NK, which itself needs `device.site.slug`. NetBox does not
+    serialise `site` inside `device` on the interface response,
+    so a naive resolver would raise. The fix stashes every
+    composite-NK row in `_record_by_id` during `ensure_built`
+    and hands the cache to `resolve()` as the `parent_lookup`,
+    so the resolver can look up the full device row by its id
+    and walk to the site from there.
+    """
+
+    reg = NKRegistry()
+    reg.register(NKSpec("dcim.site", Strategy.SLUG, (NKField("slug"),)))
+    reg.register(
+        NKSpec(
+            "dcim.device",
+            Strategy.COMPOSITE,
+            (NKField("site", "dcim.site"), NKField("name")),
+        )
+    )
+    reg.register(
+        NKSpec(
+            "dcim.interface",
+            Strategy.COMPOSITE,
+            (NKField("device", "dcim.device"), NKField("name")),
+        )
+    )
+
+    def fake(endpoint: str):
+        if "sites/" in endpoint:
+            return iter([{"id": 1, "slug": "hall-d"}])
+        if "devices/" in endpoint:
+            # Full device row carries `site` nested.
+            return iter(
+                [
+                    {
+                        "id": 10,
+                        "name": "d39a",
+                        "site": {"id": 1, "slug": "hall-d"},
+                    },
+                ]
+            )
+        if "interfaces/" in endpoint:
+            # The interface response from NetBox only carries the
+            # brief device shape (no `site`).
+            return iter(
+                [
+                    {
+                        "id": 100,
+                        "name": "Gi0/2",
+                        "device": {"id": 10, "name": "d39a"},
+                    },
+                ]
+            )
+        return iter([])
+
+    http = MagicMock()
+    http.get_all.side_effect = fake
+
+    idx = NKIndex()
+    idx.ensure_built(http, reg, "dcim.interface")
+
+    expected_nk = ((("hall-d",), "d39a"), "Gi0/2")
+    assert idx.lookup("dcim.interface", expected_nk) == 100
+
+
 def test_composite_nk_rows_land_in_the_index_after_listing() -> None:
     """BUG-15 regression. Once the listing returns full rows
     (with the nested `site` payload), the composite NK is

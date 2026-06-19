@@ -36,6 +36,14 @@ class NKIndex:
 
     _by_key: dict[tuple[str, NaturalKey], int] = field(default_factory=dict)
     _built_cts: set[str] = field(default_factory=set)
+    # `(content_type, destination_id) -> full row` cache. Populated
+    # during `ensure_built` for any content type whose NKSpec is
+    # composite and needs nested fields the brief representation
+    # strips. The cache is handed to `resolve()` as the
+    # `parent_lookup` argument when computing a child NK, so the
+    # nested `device={...}` on an interface row can resolve to the
+    # full device row and yield the device's composite NK.
+    _record_by_id: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
 
     def ensure_built(
         self,
@@ -102,23 +110,38 @@ class NKIndex:
         # `except (KeyError, ValueError): continue` below swallowed
         # the row, and the lookup against the populated row missed.
         use_brief = True
+        is_composite = False
         if registry.has(content_type):
             spec = registry.get(content_type)
             if any(f.parent_content_type is not None for f in spec.fields):
                 use_brief = False
+                is_composite = True
         if use_brief:
             sep = "&" if "?" in endpoint else "?"
             request_url = f"{endpoint}{sep}brief=true"
         else:
             request_url = endpoint
         for row in http.get_all(request_url):
+            rid = row.get("id")
+            if not isinstance(rid, int):
+                continue
+            # Stash the full row before computing the NK. Even if
+            # NK resolution fails (a child whose parent record is
+            # not yet built, a row with a half populated FK), the
+            # raw row is still useful as a parent_lookup entry
+            # for siblings later in the loop. The cache is small
+            # bounded by the destination's row count for this CT.
+            if is_composite:
+                self._record_by_id[(content_type, rid)] = dict(row)
             try:
-                nk = resolve(registry, content_type, row)
+                # Hand the cache to resolve() so nested FK fields
+                # whose representation lacks parent_content_type
+                # specific fields can be resolved against the full
+                # record collected in an earlier `ensure_built`.
+                nk = resolve(registry, content_type, row, parent_lookup=self._record_by_id)
             except (KeyError, ValueError):
                 continue
-            rid = row.get("id")
-            if isinstance(rid, int):
-                self._by_key[(content_type, nk)] = rid
+            self._by_key[(content_type, nk)] = rid
 
         self._built_cts.add(content_type)
         _building.discard(content_type)
