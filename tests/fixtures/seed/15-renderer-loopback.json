@@ -1,0 +1,32 @@
+[
+  {
+    "endpoint": "dcim/interfaces/",
+    "payload": {
+      "device": {"_resolve": ["dcim.device", "D-FORGE-SW"]},
+      "name": "lo0.0",
+      "type": "virtual"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "10.255.0.1/32",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": {"_resolve": ["dcim.interface", ["D-FORGE-SW", "lo0.0"]]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "fd00::10/128",
+      "dns_name": "dhcp01-v6.infra.glitched.se"
+    }
+  },
+  {
+    "endpoint": "ipam/ip-addresses/",
+    "payload": {
+      "address": "fd00::11/128",
+      "dns_name": "ns01-v6.infra.glitched.se"
+    }
+  }
+]
