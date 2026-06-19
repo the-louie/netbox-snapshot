@@ -1,0 +1,32 @@
+[
+  {
+    "endpoint": "ipam/prefixes/",
+    "payload": {
+      "prefix": "192.168.30.0/24",
+      "role": {"_resolve": ["ipam.role", "kea-bootstrap"]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-ranges/",
+    "payload": {
+      "start_address": "192.168.30.10/24",
+      "end_address": "192.168.30.250/24",
+      "role": {"_resolve": ["ipam.role", "kea-bootstrap"]}
+    }
+  },
+  {
+    "endpoint": "ipam/prefixes/",
+    "payload": {
+      "prefix": "192.168.40.0/24",
+      "role": {"_resolve": ["ipam.role", "kea-crew"]}
+    }
+  },
+  {
+    "endpoint": "ipam/ip-ranges/",
+    "payload": {
+      "start_address": "192.168.40.10/24",
+      "end_address": "192.168.40.250/24",
+      "role": {"_resolve": ["ipam.role", "kea-crew"]}
+    }
+  }
+]
