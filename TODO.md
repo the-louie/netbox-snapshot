@@ -282,56 +282,6 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
 
-### BUG-15: Second `nbsnap import` does not NOOP, child FK lookups miss recently-created parents
-
-* **Status.** Tracked via `@pytest.mark.xfail(strict=False)` on
-  `tests/integration/test_import_idempotency.py::test_second_run_is_all_noop`.
-  The marker stays until this ticket lands and the test passes;
-  pytest will then report `XPASSED` and the marker can come off.
-* **Context.** The test runs the same export through `nbsnap import`
-  twice in a row against an empty destination. The first invocation
-  is expected to create rows; the second is expected to find each row
-  by natural key and report `noop:` for every record.
-  The second invocation observes:
-  ```
-  destination NetBox refused the create for
-  dcim.device.location -> dcim.location ([dcim.location
-  (('hall-d',), 'the-forge') -> dcim.location] NK
-  (('hall-d',), 'the-forge') not found on destination
-  (hint: missing source data))
-  ```
-  The location was written during the first import (the log shows
-  `Phase dcim.location complete: 1 records in 0s`). The second
-  import's NK resolver does not find it, even though the row is on
-  the destination.
-* **Files.**
-  * `src/nbsnap/import_/nk_index.py` (build / rebuild path).
-  * `src/nbsnap/import_/upsert.py` (where the resolver is invoked).
-  * `tests/integration/test_import_idempotency.py` (current xfail target).
-* **Hypothesis.** The destination cache is built lazily per content
-  type at the moment the first FK reference is resolved. For
-  composite NKs that include a parent FK (Location keyed by
-  `(site, name)`), the cache lookup serialises the tuple in a shape
-  that does not match how the row was originally indexed. The first
-  import works because the index is built incrementally as rows are
-  written; the second import builds the index by paging the
-  destination and stumbles on the tuple shape.
-* **Requirements.**
-  * Add a focused unit test that builds an `NKIndex` from a mocked
-    destination response containing a Location with `site.slug`
-    `hall-d` and `name` `the-forge`, then asserts
-    `index.lookup("dcim.location", (("hall-d",), "the-forge"))`
-    returns the right id.
-  * Trace the divergence between the resolver's index population
-    during a fresh import and during a re-import.
-  * Fix the cache rebuild so the second-import path finds the same
-    rows it just wrote.
-  * Remove the xfail marker once the integration test passes.
-* **Testing.** `pytest tests/integration/test_import_idempotency.py`
-  reports `XPASSED` (then PASSED after the marker is removed) and
-  the full integration suite stays green.
-* **Estimated effort.** 3h.
-
 ### TEST-09: Production-shaped renderer seed fixture (one dist, two access switches)
 
 * **Status.** Tracked via `@pytest.mark.xfail(strict=False)` on
