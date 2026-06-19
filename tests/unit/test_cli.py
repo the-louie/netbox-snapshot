@@ -34,9 +34,17 @@ def test_no_arguments_returns_one(capsys: pytest.CaptureFixture[str]) -> None:
     assert "usage:" in captured.err.lower()
 
 
-_REMAINING_STUBS = sorted(
-    set(TICKETS.keys())
-    - {
+# Every sub-command in the table below is fully implemented and
+# wired to a real entry point. The test that follows asserts the
+# inventory matches what `nbsnap.cli.TICKETS` advertises so a
+# future sub-command added without a real handler will fail loudly
+# instead of silently becoming a no-op stub. When a new
+# sub-command lands its slug goes here and one positive
+# integration test should accompany it; the previous "skipif no
+# stubs remain" guard turned the gap into a quiet skip and was
+# replaced by this explicit allowlist.
+_IMPLEMENTED_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
         "plan",
         "verify-natkeys",
         "export",
@@ -50,16 +58,20 @@ _REMAINING_STUBS = sorted(
 )
 
 
-@pytest.mark.skipif(not _REMAINING_STUBS, reason="all sub-commands implemented; no stubs remain")
-@pytest.mark.parametrize("command", _REMAINING_STUBS or ["__none__"])
-def test_stub_subcommand_reports_ticket(command: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """Each stub sub-command exits 2 and names its tracking ticket."""
+def test_every_subcommand_in_tickets_is_implemented() -> None:
+    """The `TICKETS` map must not regrow stub-only sub-commands.
 
-    rc = main([command])
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert TICKETS[command] in err, (
-        f"stub for {command!r} should reference {TICKETS[command]!r}: {err!r}"
+    Adding a new entry here without also landing its handler used
+    to land an `xfail`-shaped skip in the suite; that hid the
+    incomplete work. The positive assertion below makes the gap
+    a hard failure instead.
+    """
+
+    advertised = set(TICKETS.keys())
+    missing_handler = advertised - _IMPLEMENTED_SUBCOMMANDS
+    assert missing_handler == set(), (
+        f"new sub-command(s) {sorted(missing_handler)} have no implementation handler; "
+        f"either implement them and add to _IMPLEMENTED_SUBCOMMANDS or remove them from TICKETS"
     )
 
 
