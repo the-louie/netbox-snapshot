@@ -193,8 +193,7 @@ def test_simple_nk_content_type_still_uses_brief() -> None:
     NKIndex().ensure_built(http, reg, "dcim.site")
 
     assert any("brief=true" in u for u in seen_urls), (
-        "simple-NK listings must still request brief=true for payload size; "
-        f"saw {seen_urls}"
+        f"simple-NK listings must still request brief=true for payload size; saw {seen_urls}"
     )
 
 
@@ -233,9 +232,9 @@ def test_composite_nk_content_type_is_listed_without_brief() -> None:
 
     location_urls = [u for u in seen_urls if "locations/" in u]
     assert location_urls, "the location endpoint was never listed"
-    assert all(
-        "brief=true" not in u for u in location_urls
-    ), f"composite-NK listing must not request brief=true, saw {location_urls}"
+    assert all("brief=true" not in u for u in location_urls), (
+        f"composite-NK listing must not request brief=true, saw {location_urls}"
+    )
 
 
 def test_composite_nk_rows_land_in_the_index_after_listing() -> None:
