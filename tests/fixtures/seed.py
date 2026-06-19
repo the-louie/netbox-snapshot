@@ -54,6 +54,7 @@ RESOLVER_ENDPOINTS: dict[str, tuple[str, str]] = {
     "ipam.ipaddress": ("ipam/ip-addresses/", "address"),
     "ipam.vlan": ("ipam/vlans/", "vid"),
     "ipam.prefix": ("ipam/prefixes/", "prefix"),
+    "ipam.role": ("ipam/roles/", "slug"),
     "dcim.site": ("dcim/sites/", "slug"),
     "dcim.location": ("dcim/locations/", "slug"),
     "dcim.devicerole": ("dcim/device-roles/", "slug"),
