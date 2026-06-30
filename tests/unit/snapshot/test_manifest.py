@@ -10,6 +10,7 @@ imports from ``nbsnap.snapshot``.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from nbsnap.snapshot.manifest import (
@@ -30,6 +31,38 @@ def test_manifest_roundtrip(tmp_path: Path) -> None:
 
 def test_compute_source_url_hash_length() -> None:
     assert len(compute_source_url_hash("https://x/")) == SOURCE_URL_HASH_LENGTH
+
+
+def test_load_drops_legacy_pre_sec04a_source_url(tmp_path: Path) -> None:
+    """BUG-16: pre-SEC-04a snapshots carry a literal ``source_url``.
+
+    The frozen rescue snapshot under
+    ``/workspace/snapshot-source-frozen/`` was exported before
+    SEC-04a replaced the literal field with ``source_url_hash``.
+    ``Manifest.load`` must drop the legacy key on the way in, the
+    leaked URL must not survive into the in-memory manifest, and
+    no other declared field may change shape.
+    """
+
+    legacy_payload = {
+        "version": 1,
+        "source_url": "https://localhost:8443",
+        "netbox_version": "4.6.2",
+        "nbsnap_version": "0.0.1",
+        "created_at": "2026-06-15T08:48:10.594220+00:00",
+        "counts": {"dcim.site": 10},
+        "perf": {},
+        "deferred_edges": [],
+    }
+    path = tmp_path / MANIFEST_FILENAME
+    path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    loaded = Manifest.load(path)
+
+    assert loaded.source_url_hash == ""
+    assert loaded.netbox_version == "4.6.2"
+    assert loaded.counts == {"dcim.site": 10}
+    assert not hasattr(loaded, "source_url")
 
 
 def test_legacy_export_manifest_no_longer_re_exports() -> None:

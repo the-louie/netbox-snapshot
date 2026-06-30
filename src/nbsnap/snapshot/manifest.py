@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -87,7 +87,14 @@ class Manifest:
     @classmethod
     def load(cls, path: Path) -> Manifest:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(**data)
+        # Drop unknown keys so pre-SEC-04a snapshots (which still
+        # carry the literal `source_url`) load without raising.
+        # Dropping is the right posture, not migrating: SEC-04a
+        # treats the URL as install-local data that must not reach
+        # the in-memory manifest, and we will not reconstruct the
+        # provenance hash from a leaked URL on load.
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 __all__ = [

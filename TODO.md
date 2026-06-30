@@ -5,7 +5,8 @@ Outstanding work to deliver the NetBox portable-snapshot tool
 for a 1, 2 hour focused work window. Each entry includes the file or
 area it touches, the technical context the implementer needs, the
 requirements as a concrete change list, and a testing step. Closed
-items move to the Completed section at the end.
+items are removed per the CLAUDE.md hygiene rule, git history is the
+authoritative record.
 
 ID conventions:
 
@@ -21,7 +22,7 @@ ID conventions:
 * `ARCH-nn` for architectural refactors.
 
 Sub-tickets carry a lowercase letter suffix on the parent ID, for
-example `ARCH-01a`, so a cross-reference from `PLAN.md` to the parent
+example `ARCH-02h`, so a cross-reference from `PLAN.md` to the parent
 concept still resolves.
 
 Cross-references:
@@ -37,7 +38,22 @@ Cross-references:
 
 ## Codebase status
 
-Phases 0 through 9 are implemented and committed; environment state, frozen-snapshot vintage, and the rescue iteration log live in the `/workspace/.claude/skills/rescue-loop/SKILL.md` runbook and in git history (`git log --oneline --grep="^feat\|^fix\|^refactor\|^test\|^docs"`). The architectural and security audit of 2026-06-16 is preserved in `docs/audits/20260616-architectural-and-security-audit.md`; the decomposed sub-tickets it produced are listed below under the relevant `ARCH-*` and `SEC-*` parents.
+Phases 0 through 9 are implemented and committed. The
+2026-06-16 architectural and security audit retired most of the
+open backlog: ARCH-01 (`snapshot/` package), ARCH-04 (plugin
+loader), ARCH-05 (`ContentType` value object), ARCH-07
+(`requests` containment), ARCH-09 (resolver record context),
+ARCH-10 (shared CLI flags), ARCH-11 (programmatic API), SEC-03
+(cross-host redirect refusal), SEC-04 (manifest stores
+`source_url_hash` only), and SEC-05 (audit log scrubs response
+bodies) have all shipped, see `git log --grep='ARCH-0[14579]\|ARCH-1[01]\|SEC-0[345]'`.
+
+The 2026-06-20 audit kept four areas open: the residual
+`driver.py` slim-down (ARCH-02h/i), the bulk and parallelism
+work (ARCH-03), the typed-models migration (ARCH-06), and the
+import-side silent `CONTENT_TYPE_FILES` fallback (ARCH-08, now
+narrowed to two call sites). Plus the operator-deferred BUG-09,
+BUG-11, BUG-12 that need source-side action.
 
 ---
 
@@ -45,86 +61,91 @@ Phases 0 through 9 are implemented and committed; environment state, frozen-snap
 
 These notes are anchors that did not fit cleanly into any single sub-ticket. They survive across contexts so the next implementer does not re-discover them the hard way.
 
-* **ARCH-01e and ARCH-02d both touch `import_/driver.py` and `import_/lookahead.py`.** If both land in the same session the second one will inherit merge conflicts on the same call sites. Sequence ARCH-01 to completion (through ARCH-01g) before starting any ARCH-02 sub-ticket.
-* **ARCH-03d (bulk partial-failure response shape) depends on the real NetBox 400 envelope.** Do not guess the schema; record one live response against `netbox.i.louie.se` (a deliberately malformed bulk POST is enough) and fixture it under `tests/fixtures/http/` before writing the parser.
-* **ARCH-06a requires `datamodel-code-generator` in the `dev` extra.** Pin the generator version in `pyproject.toml` as part of the sub-ticket; the generated output is sensitive to the generator's defaults, an unpinned version makes ARCH-06b's drift check fail intermittently.
-* **ARCH-07b is additive on top of existing 401/403 handling in `_request`.** The current branches are ad-hoc; the new `SnapshotAuthError` translation layers on top of them. Do **not** delete the old branches in the same sub-ticket, schedule that cleanup as a follow-up once ARCH-07c..e have proven the new exceptions reach the CLI.
-* **SEC-03b is the only place in the redirect work where the dev has to make a follow-or-refuse call.** If uncertain, default to refusing the redirect and raising `SnapshotTransportError` with a clear cross-host message. A false refusal is recoverable; a leaked token is not.
+* **ARCH-02h is the gating item for ARCH-03.** The current `phase1_runner.py` and `field_resolver.py` are audit-documented scaffolds, the working bodies still live in `driver.py`. ARCH-03c (bulk in Phase 1) cannot land cleanly until the Phase-1 loop is actually inside `phase1_runner.run_phase1`, not a `NotImplementedError` placeholder. Sequence ARCH-02h before any ARCH-03 sub-ticket.
+* **ARCH-03d (bulk partial-failure response shape) depends on the real NetBox 400 envelope.** Do not guess the schema, record one live response against `netbox.i.louie.se` (a deliberately malformed bulk POST is enough) and fixture it under `tests/fixtures/http/` before writing the parser.
+* **ARCH-06a requires `datamodel-code-generator` in the `dev` extra.** Pin the generator version in `pyproject.toml` as part of the sub-ticket, the generated output is sensitive to the generator's defaults, an unpinned version makes ARCH-06b's drift check fail intermittently.
 
 ---
 
 ## Open
 
-### ARCH-01: Extract `snapshot/` package owning the data contract
+### ARCH-02: Reduce `driver.py` to a thin orchestrator
 
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-01`. The goal is to make `export/` and `import_/` peers, each depending on a new `snapshot/` package that owns the manifest, the file layout, and the enum-dict coercion. Land sub-tickets in order, ARCH-01a through ARCH-01g.
+Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..g shipped (the `ResolveContext`, the `lookahead` extraction, and the three scaffold modules `phase1_runner.py`, `phase2_runner.py`, `field_resolver.py`). ARCH-02h and ARCH-02i are the remaining surgical pieces.
 
-### ARCH-02: Adopt `ResolveContext` and split `import_/driver.py`
+#### ARCH-02h: Move the Phase-1 loop body out of `driver.py`
 
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-02`. Sub-tickets ARCH-02a..i deliver the full refactor without touching public CLI behaviour.
-
-#### ARCH-02h: Reduce `driver.py` to a thin orchestrator
-
-* **Context.** With Phase 1, Phase 2, and field resolution extracted, `driver.py` is largely orchestration glue.
+* **Context.** `wc -l src/nbsnap/import_/driver.py` reports 1537 lines today (target: <300). The three runner modules added by ARCH-02e..g are scaffolds, `phase1_runner.run_phase1` raises `NotImplementedError`, `phase2_runner.py` is a 21-line re-export of `phase2.py`, `field_resolver.py` re-exports the four `_resolve_*` helpers from `driver.py`. The working code still lives in `driver.run_import`'s closure. This ticket moves the body.
+* **Files.**
+  * `src/nbsnap/import_/driver.py` (the `run_import` function and the local helpers it carries).
+  * `src/nbsnap/import_/phase1_runner.py` (becomes the real owner of the per-content-type loop).
+  * `src/nbsnap/import_/field_resolver.py` (becomes the real owner of `_resolve_body`, `_resolve_body_via_ctx`, `_resolve_polymorphic_id_pairs`, `_resolve_termination_lists`, `_safe_resolve_m2m`).
+  * `tests/unit/import_/test_phase1_runner.py` and friends (see ARCH-02i).
 * **Requirements.**
-  * Trim `driver.py` to under 300 lines: imports, `run_import` top-level function, the orchestration sequence (preflight, plan, phase1, phase2, summary).
-  * Move any helper that is not called from `run_import` into the appropriate runner module.
-* **Testing.** `wc -l src/nbsnap/import_/driver.py` is below 300. The full test suite stays green.
-* **Estimated effort.** 1.5h.
+  * Lift the Phase-1 loop body from `driver.run_import` into `phase1_runner.run_phase1`. The signature `run_phase1(plan_order: list[str], ctx: ResolveContext) -> None` is already documented; preserve it.
+  * Lift the four `_resolve_*` helper bodies from `driver.py` into `field_resolver.py`. Re-export aliases from `driver.py` for the duration of one commit, then drop them in a follow-up.
+  * After the move, `driver.run_import` should be the orchestration sequence only: build `ResolveContext`, run preflight, call `phase1_runner.run_phase1`, call `phase2_runner.run_phase2`, render summary.
+  * `wc -l src/nbsnap/import_/driver.py` returns under 300.
+* **Testing.** Existing integration tests (`tests/integration/test_import_*.py`, the renderer-parity tests) pass unchanged. `pytest tests/unit/import_/test_phase1_runner.py` exercises the lifted body, not the scaffold's `NotImplementedError`.
+* **Estimated effort.** 4h (the loop closes over `ctx`, the body has to thread it explicitly).
 
-#### ARCH-02i: Backfill regression tests for the new modules
+#### ARCH-02i: Backfill regression tests for the runner modules
 
-* **Context.** The refactor preserves behaviour but the new modules deserve targeted unit tests.
+* **Context.** After ARCH-02h lands, the runner modules carry the real bodies but the unit tests are still the audit-shaped placeholders (`tests/unit/import_/test_phase1_runner.py:19` is a single import smoke test). The next refactor needs anchors.
+* **Files.**
+  * `tests/unit/import_/test_phase1_runner.py` (replace the import-only test).
+  * `tests/unit/import_/test_phase2_runner.py` (replace the export-shape test).
+  * `tests/unit/import_/test_field_resolver.py` (extend beyond aliases).
 * **Requirements.**
-  * Add coverage for the public entry points of `phase1_runner`, `phase2_runner`, `field_resolver` so the next refactor has anchors.
-  * Aim for one happy-path and one failure-path test per module.
-* **Testing.** `pytest tests/unit/import_/ --cov=src/nbsnap/import_/phase1_runner --cov=src/nbsnap/import_/phase2_runner --cov=src/nbsnap/import_/field_resolver` should show >85% line coverage on each.
+  * For each module, add one happy-path test (a small snapshot dir, the function runs end-to-end against a recorded transport, the auditor sees the expected CREATED rows) and one failure-path test (a row whose FK does not resolve produces a SKIPPED audit row, no exception escapes).
+  * Aim for >85% line coverage on each module (`pytest --cov=src/nbsnap/import_/phase1_runner --cov=src/nbsnap/import_/phase2_runner --cov=src/nbsnap/import_/field_resolver`).
+* **Testing.** `pytest tests/unit/import_/ -q` stays green, coverage report shows the threshold.
 * **Estimated effort.** 2h.
 
 ### ARCH-03: Bulk endpoints and bounded parallelism
 
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-03`. Depends on ARCH-02 because the Phase 1 and Phase 2 loops need to be cleanly extracted before they can be batched or parallelised. Sub-tickets ARCH-03a..g.
+Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-03`. Blocked on ARCH-02h, the Phase 1 and Phase 2 loops have to be cleanly extracted into the runner modules before they can be batched or parallelised. Sub-tickets ARCH-03a..g.
 
 #### ARCH-03a: Add `HTTPClient.post_bulk`
 
-* **Context.** `http/client.py` has no bulk method today; every record is its own POST.
+* **Context.** `src/nbsnap/http/client.py` has no bulk method today, every record is its own POST.
 * **Requirements.**
   * Add `post_bulk(self, endpoint: str, payloads: list[dict[str, Any]], batch_size: int = 100) -> list[dict[str, Any]]`.
-  * Slice `payloads` into `batch_size` chunks; POST each as a JSON list; flatten responses.
-  * Preserve the existing retry/backoff and source-write guard.
-* **Testing.** Add `tests/unit/test_http_client_bulk.py` with a recorded-cassette or mocked transport, asserting: a 250-record payload splits into three POSTs with `batch_size=100`; the response list preserves order.
+  * Slice `payloads` into `batch_size` chunks, POST each as a JSON list, flatten responses.
+  * Preserve the existing retry/backoff and the source-write guard in `http/guard.py`.
+* **Testing.** Add `tests/unit/test_http_client_bulk.py` with a mocked transport, asserting: a 250-record payload splits into three POSTs with `batch_size=100`; the response list preserves order.
 * **Estimated effort.** 2h.
 
 #### ARCH-03b: Wire `--bulk-batch-size` into `import_cli.py`
 
 * **Context.** The bulk path needs an operator override and an environment variable fallback.
 * **Requirements.**
-  * Add `--bulk-batch-size INT` (default 100) in `import_cli.py`. Read fallback from `NBSNAP_BULK_BATCH_SIZE`.
-  * Thread the value into `run_import` and on into `phase1_runner`.
-* **Testing.** Add `tests/unit/test_import_cli_flags.py::test_bulk_batch_size_default_100`. Add `tests/unit/test_import_cli_flags.py::test_bulk_batch_size_env_override` exercising `monkeypatch.setenv`.
+  * Add `--bulk-batch-size INT` (default 100) in `src/nbsnap/import_cli.py`. Read fallback from `NBSNAP_BULK_BATCH_SIZE`.
+  * Thread the value into `run_import` and on into `phase1_runner.run_phase1`.
+* **Testing.** Add `tests/unit/test_import_cli_flags.py::test_bulk_batch_size_default_100` and `::test_bulk_batch_size_env_override` (uses `monkeypatch.setenv`).
 * **Estimated effort.** 1h.
 
 #### ARCH-03c: Switch `phase1_runner` to `post_bulk`
 
-* **Context.** Phase 1 groups records by content type already; the batching boundary is free.
+* **Context.** Phase 1 groups records by content type already, the batching boundary is free. Requires ARCH-02h and ARCH-03a both landed.
 * **Requirements.**
   * Replace the per-record POST loop in `phase1_runner.run_phase1` with a call to `http.post_bulk` per content type.
-  * Map each response item back to the source record so auditor still emits one CREATED row per record.
+  * Map each response item back to the source record so the auditor still emits one CREATED row per record.
 * **Testing.** Extend `tests/unit/import_/test_phase1_runner.py` with a 30-record content type and assert one bulk POST plus 30 audit CREATED rows.
 * **Estimated effort.** 2h.
 
 #### ARCH-03d: Handle bulk partial-failure response shape
 
-* **Context.** NetBox returns HTTP 400 with a list of per-row errors when one row in the batch fails.
+* **Context.** NetBox returns HTTP 400 with a list of per-row errors when one row in the batch fails. The exact envelope shape needs a recorded fixture, see the implementation hurdles note.
 * **Requirements.**
   * Update `post_bulk` to detect the partial-failure shape and raise `BulkPartialFailure(successes, failures)`.
   * In `phase1_runner`, catch `BulkPartialFailure`, mark successful rows CREATED, route failed rows to the auditor with the per-row error.
-* **Testing.** Add `tests/unit/test_http_client_bulk.py::test_partial_failure` using a cassette that returns the partial-failure shape. Confirm successes still land and failures are audited.
+* **Testing.** Add `tests/unit/test_http_client_bulk.py::test_partial_failure` using a fixture that returns the recorded partial-failure shape. Confirm successes still land and failures are audited.
 * **Estimated effort.** 2h.
 
 #### ARCH-03e: Add `import_/parallel.py` wrapper
 
-* **Context.** Per-record PATCH in Phase 2 cannot use bulk; bounded parallelism is the next lever.
+* **Context.** Per-record PATCH in Phase 2 cannot use bulk, bounded parallelism is the next lever.
 * **Requirements.**
   * Add `src/nbsnap/import_/parallel.py` exposing `run_bounded(fn, items, workers=4) -> list[Result]`.
   * Use `concurrent.futures.ThreadPoolExecutor` with a context manager and explicit shutdown.
@@ -133,10 +154,10 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 #### ARCH-03f: Apply `run_bounded` to Phase 2
 
-* **Context.** Phase 2 PATCH loop in `phase2_runner` is sequential.
+* **Context.** Phase 2 PATCH loop in `phase2.run_phase2` is sequential.
 * **Requirements.**
   * Use `run_bounded` to issue PATCH calls in parallel within a content type.
-  * Add `--phase2-workers INT` (default 4) to `import_cli.py`, env `NBSNAP_PHASE2_WORKERS`.
+  * Add `--phase2-workers INT` (default 4) to `src/nbsnap/import_cli.py`, env `NBSNAP_PHASE2_WORKERS`.
   * Preserve auditor ordering by sorting results by NK before emitting audit rows.
 * **Testing.** Extend `tests/unit/import_/test_phase2_runner.py` with a 50-record deferred map and `workers=4`; assert all 50 audit rows emit and total HTTP-call count is 50.
 * **Estimated effort.** 2h.
@@ -147,27 +168,19 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 * **Requirements.**
   * Add `tests/integration/test_import_throughput.py` that constructs a 500-record content type, runs the import against a mocked transport with 10 ms per HTTP call, and asserts wall-clock under 5 s.
   * Mark `@pytest.mark.slow` so default runs skip it.
-* **Testing.** Run `pytest tests/integration/test_import_throughput.py -m slow`. Confirm pass on a clean checkout.
+* **Testing.** `pytest tests/integration/test_import_throughput.py -m slow`. Pass on a clean checkout.
 * **Estimated effort.** 2h.
-
-### ARCH-04: Wire the plugin loader
-
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-04`.
-
-### ARCH-05: Introduce a `ContentType` value object
-
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-05`. Depends on ARCH-01 so the new value object can live under `snapshot/` if a shared home makes sense, or under `schema/` if not.
 
 ### ARCH-06: Pydantic v2 models from the OpenAPI schema
 
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-06`. Depends on ARCH-01 and ARCH-05. Sub-tickets ARCH-06a..j stage the migration without breaking the wire boundary.
+Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-06`. ARCH-01 and ARCH-05 (the previous blockers) are both shipped, so this is now unblocked. Sub-tickets ARCH-06a..j stage the migration without breaking the wire boundary.
 
 #### ARCH-06a: Generate the models module
 
-* **Context.** `schema/openapi.py` already parses the schema (613 lines). The generated dataclasses live elsewhere.
+* **Context.** `src/nbsnap/schema/openapi.py` already parses the schema (613 lines). The generated dataclasses live elsewhere.
 * **Requirements.**
   * Add `scripts/generate_models.py` that runs `datamodel-code-generator` over the bundled OpenAPI schema and writes `src/nbsnap/schema/generated_models.py`.
-  * Commit the generated file. Pin the generator version in `pyproject.toml` under a `dev` extra.
+  * Commit the generated file. Pin the generator version in `pyproject.toml` under the existing `dev` extra (line ~61-79).
 * **Testing.** Add `tests/unit/schema/test_generated_models_import.py` that imports `nbsnap.schema.generated_models` and asserts `Device`, `Interface`, `IPAddress`, `Cable` classes exist.
 * **Estimated effort.** 2h.
 
@@ -182,34 +195,32 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 
 #### ARCH-06c: Adopt Device and Interface at the export writer boundary
 
-* **Context.** `export/writer.py` writes raw dicts today.
+* **Context.** `src/nbsnap/export/writer.py` writes raw dicts today.
 * **Requirements.**
   * In `export/writer.py`, parse each Device and Interface response through the generated models before writing JSON.
-  * Catch `ValidationError` and re-raise as `SchemaDriftError(content_type, field, message)`.
-* **Testing.** Add `tests/unit/export/test_writer_typed_device.py` covering happy path plus a schema-drift case (extra field accepted by config_extra="allow", missing required field rejected).
+  * Catch `ValidationError` and re-raise as `SchemaDriftError(content_type, field, message)`. Define `SchemaDriftError` in `src/nbsnap/schema/__init__.py` (new exception).
+* **Testing.** Add `tests/unit/export/test_writer_typed_device.py` covering happy path plus a schema-drift case (extra field accepted by `config_extra="allow"`, missing required field rejected).
 * **Estimated effort.** 2h.
 
 #### ARCH-06d: Adopt IPAddress, Prefix, IPRange at the export writer boundary
 
-* **Context.** Same migration shape as ARCH-06c.
 * **Requirements.**
   * Update `export/writer.py` for `ipam.ipaddress`, `ipam.prefix`, `ipam.iprange`.
-* **Testing.** Extend `tests/unit/export/test_writer_typed_ipam.py`.
+* **Testing.** Add `tests/unit/export/test_writer_typed_ipam.py`.
 * **Estimated effort.** 2h.
 
 #### ARCH-06e: Adopt Cable, Site, Location, Rack at the export writer boundary
 
-* **Context.** Final batch on the export side.
 * **Requirements.**
   * Update `export/writer.py` for `dcim.cable`, `dcim.site`, `dcim.location`, `dcim.rack`.
-* **Testing.** Extend `tests/unit/export/test_writer_typed_dcim.py`. Run a full export against a recorded cassette to confirm parity with previous output.
+* **Testing.** Add `tests/unit/export/test_writer_typed_dcim.py`. Run a full export against a recorded cassette to confirm parity with previous output.
 * **Estimated effort.** 2h.
 
 #### ARCH-06f: Adopt models at the import upsert boundary
 
 * **Context.** Mirror the export migration on the import side.
 * **Requirements.**
-  * In `import_/upsert.py`, parse incoming snapshot rows through the generated models before HTTP submission.
+  * In `src/nbsnap/import_/upsert.py`, parse incoming snapshot rows through the generated models before HTTP submission.
   * Surface `ValidationError` as `SchemaDriftError`.
 * **Testing.** Add `tests/unit/import_/test_upsert_typed.py` covering one happy and one drift case per content type touched in ARCH-06c..e.
 * **Estimated effort.** 2h.
@@ -219,59 +230,50 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
 * **Context.** Two internal layers still see `dict[str, Any]`.
 * **Requirements.**
   * Change `SnapshotIndex._by_key` value type to the appropriate generated model.
-  * Update `natkey/resolver.py` to accept the model and read attributes.
-* **Testing.** Run `pytest tests/unit/natkey tests/unit/import_/test_snapshot_index.py`.
+  * Update `src/nbsnap/natkey/resolver.py` to accept the model and read attributes.
+* **Testing.** `pytest tests/unit/natkey tests/unit/test_import_snapshot_index.py`.
 * **Estimated effort.** 2h.
 
 #### ARCH-06h: Migrate `fk_resolve.py` to typed parameters
 
-* **Context.** `import_/fk_resolve.py:19-71` accepts and returns `Any`.
+* **Context.** `src/nbsnap/import_/fk_resolve.py` accepts and returns `Any` at the public surface.
 * **Requirements.**
-  * Replace `Any` with `Model` (the generated base) and the relevant subclass union.
+  * Replace `Any` with the generated base class and the relevant subclass union.
   * Add explicit return types.
-* **Testing.** Run `pytest tests/unit/import_/test_fk_resolve.py`. Confirm the type stubs satisfy `mypy --strict src/nbsnap/import_/fk_resolve.py`.
+* **Testing.** `pytest tests/unit/import_/test_fk_resolve.py`. `mypy --strict src/nbsnap/import_/fk_resolve.py` is clean.
 * **Estimated effort.** 1.5h.
 
 #### ARCH-06i: Tighten the type checker on the typed surface
 
-* **Context.** Once the boundary is typed, mypy can enforce it.
 * **Requirements.**
   * Add `[tool.mypy]` overrides for the typed modules to set `strict = true`.
   * Fix remaining mypy errors.
-* **Testing.** Run `mypy src/nbsnap/` and confirm zero errors on the migrated modules.
+* **Testing.** `mypy src/nbsnap/` reports zero errors on the migrated modules.
 * **Estimated effort.** 2h.
 
 #### ARCH-06j: End-to-end typed integration test
 
-* **Context.** A representative test proves export and import both run through the typed pipeline.
 * **Requirements.**
   * Add `tests/integration/test_typed_roundtrip.py` exporting a 200-record fixture, round-tripping through import, and asserting the import side observes typed models throughout.
-* **Testing.** Run `pytest tests/integration/test_typed_roundtrip.py`.
+* **Testing.** `pytest tests/integration/test_typed_roundtrip.py`.
 * **Estimated effort.** 2h.
 
-### ARCH-07: Stop leaking `requests` library details out of `http/`
+### ARCH-08: Close the two remaining silent `CONTENT_TYPE_FILES` fallbacks
 
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-07`.
-
-### ARCH-08: Replace the silent `CONTENT_TYPE_FILES` fallback
-
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-08`. Depends on ARCH-01.
-
-### ARCH-09: Record-level context on resolver exceptions
-
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-09`.
-
-### ARCH-10: Shared CLI flags
-
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-10`.
-
-### ARCH-11: Programmatic API surface
-
-Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#ARCH-11`.
+* **Status.** Reframed by the 2026-06-20 audit. The original ticket framed this as a single change, but the audit found that ARCH-08a (rename `relative_path`) and ARCH-08b (`UnknownContentTypeError` in `snapshot/layout.py`) already shipped, see `src/nbsnap/snapshot/layout.py:49-79`. Two silent `.get(ct, fallback)` call sites remain on the import side and need the same fail-loud treatment.
+* **Files.**
+  * `src/nbsnap/import_/driver.py:267` (`file_path = snapshot_dir / CONTENT_TYPE_FILES.get(ct, f"{ct.replace('.', '/')}.jsonl")` — silently invents a path).
+  * `src/nbsnap/import_/snapshot_index.py:78-93` (the docstring concedes "(content types we do not know about because they have no entry in `CONTENT_TYPE_FILES`) are also skipped silently").
+* **Requirements.**
+  * Replace the `driver.py:267` `.get(...)` with `relative_path(ct)` from `snapshot/layout.py`. An unknown content type at import time is a snapshot/destination contract violation, not a recoverable condition, raise `UnknownContentTypeError` and let it propagate to the CLI's existing error handler.
+  * In `snapshot_index.py`, replace the silent skip with a warning logged via `nbsnap.log` (so operators see the divergence) and, when `--strict` is set on the import CLI, escalate to `UnknownContentTypeError`. Wire the new flag in `src/nbsnap/import_cli.py`.
+  * Update both docstrings to describe the new fail-loud / warn-loud posture.
+* **Testing.** Add `tests/unit/import_/test_unknown_content_type.py` with three cases: (1) driver path raises `UnknownContentTypeError` on an unknown ct; (2) `SnapshotIndex` logs a warning on an unknown directory entry; (3) `--strict` flag promotes the warning to an exception. Run the full integration suite to confirm no real snapshot exercises the old fallback.
+* **Estimated effort.** 2h.
 
 ### INFRA-04: Periodic review of `tool.mypy.overrides` for typed deps
 
-* **Context.** Surfaced by `__doc/code_reviews/20260618-1315_ci_lint_remediation.md`. `pyproject.toml` carries an `ignore_missing_imports = true` override for `zstandard`, `requests`, and `urllib3` because their typed surface either does not exist or collapses to `Any` under strict mypy. The override is an escape hatch, not a permanent state. Once any of these libraries (or their `types-*` companion packages) ships richer stubs, we should remove the corresponding entry so we get the type signal back at our call sites.
+* **Context.** Surfaced by `__doc/code_reviews/20260618-1315_ci_lint_remediation.md`. `pyproject.toml:134` carries an `ignore_missing_imports = true` override for `zstandard`, `requests`, and `urllib3` because their typed surface either does not exist or collapses to `Any` under strict mypy. The override is an escape hatch, not a permanent state. Once any of these libraries (or their `types-*` companion packages) ships richer stubs, we should remove the corresponding entry so we get the type signal back at our call sites.
 * **Files.**
   * `pyproject.toml` (the `[[tool.mypy.overrides]]` block under "Third-party deps without typed releases on PyPI").
 * **Requirements.**
@@ -280,19 +282,8 @@ Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit
   * Leave a brief note in this ticket each time it is reviewed so we can see drift over time.
 * **Testing.** `mypy --strict src/` exits cleanly without the override entry for each module that has been declared graduated.
 * **Estimated effort.** 30 minutes per cycle.
-
-### SEC-03: Bearer token follows redirects across hosts
-
-Severity high. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-03`.
-
-### SEC-04: Manifest persists full `source_url`
-
-Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-04`.
-
-### SEC-05: Destination response bodies in audit log can leak tokens
-
-Severity medium. Parent rationale lives in `docs/audits/20260616-architectural-and-security-audit.md#SEC-05`.
-
+* **Review log.**
+  * 2026-06-19, initial entry, all three deps still need the override.
 
 ---
 
@@ -368,9 +359,4 @@ Confirmed in rescue-12 and rescue-13 audit.jsonl files. The four cables are **no
 
 ## Completed
 
-Per the audit on 2026-06-16, every ticket whose code has shipped
-has been removed from the open backlog. Git history is the
-authoritative implementation record. `git log --oneline TODO.md`
-shows the audit commit and every prior body update; the matching
-feat/fix/test/refactor/docs commits in `src/`, `tests/`, and
-`docs/` carry the implementation detail per ticket.
+Per the audit on 2026-06-16 (and the follow-up audit on 2026-06-20), every ticket whose code has shipped has been removed from the open backlog. Git history is the authoritative implementation record. `git log --oneline TODO.md` shows the audit commits and every prior body update; the matching `feat`/`fix`/`test`/`refactor`/`docs` commits in `src/`, `tests/`, and `docs/` carry the implementation detail per ticket. To find the commit that closed a specific ticket, `git log --all --grep="<TICKET-ID>"`.
